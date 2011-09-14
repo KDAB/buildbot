@@ -33,8 +33,7 @@ class JabberMucContact(Contact):
         self.roomJID = jid
 
     def act(self, action):
-        # Don't care.  This doesn't do anything productive.
-        pass
+        self.send("/me %s" % action)
 
     def handleMessage(self, message, who):
         message = message.lstrip()
@@ -123,10 +122,12 @@ class JabberStatusBot(MUCClient):
             return # Some kind of status message.  Ignore this, too.
         contact = self.getContact(room.roomJID)
         body = message.body
+        if body.startswith("/me"):
+            contact.handleAction(body, user.nick)
         if body.startswith("%s:" % room.nick) or \
           body.startswith("%s," % room.nick):
             body = body[len("%s:" % room.nick):]
-            contact.handleMessage(body, user)
+            contact.handleMessage(body, user.nick)
 
 class Jabber(StatusReceiver, XMPPClient):
     implements(IStatusReceiver)
