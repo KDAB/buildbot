@@ -147,6 +147,25 @@ class JabberStatusBot(words.StatusBot, MUCClient):
             contact.handleMessage(body, user.nick)
 
 class Jabber(base.StatusReceiver, XMPPClient):
+    """
+    I represent a status target for Jabber services.
+
+    It can be used to connect to a Jabber server.
+    A list of MUCs can be specified that will be joined on logon.
+
+    @type host: string
+    @cvar host: the host where the Jabber service lives, e.g. "localhost"
+    @type jid: string
+    @cvar jid: the JID that is used to login, in the form "nick@host/resource"
+    @type password: string
+    @cvar password: password that is used to login to the service
+    @type mucs: list of dicts
+    @ivar mucs: MUC list, specifying the chat and the nick to be used,
+        e.g. [{'muc':chat@conference.example.com,'nick':'user1'}]
+    @type port: integer
+    @ivar port: port of the Jabber service (optional)
+    """
+
     implements(IStatusReceiver)
 
     debug = False
@@ -161,6 +180,7 @@ class Jabber(base.StatusReceiver, XMPPClient):
 
         # Stash these so we can detect changes later.
         self.password = password
+        assert(isinstance(mucs, list))
         self.mucs = mucs
         self.allowForce = allowForce
         self.categories = categories
