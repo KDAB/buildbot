@@ -91,7 +91,7 @@ class ForceOptions(usage.Options):
             self['reason'] = " ".join(args)
 
 
-class IrcBuildRequest:
+class BuildRequest:
     hasStarted = False
     timer = None
 
@@ -124,7 +124,7 @@ class IrcBuildRequest:
         d = s.waitUntilFinished()
         d.addCallback(self.parent.watchedBuildFinished)
 
-class IRCContact(base.StatusReceiver):
+class Contact(base.StatusReceiver):
     implements(IStatusReceiver)
     """I hold the state for a single user's interaction with the buildbot.
 
@@ -149,6 +149,12 @@ class IRCContact(base.StatusReceiver):
         # us private messages (/msg buildbot command), self.dest is their
         # username.
         self.dest = dest
+
+    def _setMuted(self, muted):
+        self.muted = muted
+
+    def _isMuted(self):
+        return self.muted
 
     # silliness
 
@@ -553,8 +559,8 @@ class IRCContact(base.StatusReceiver):
         ss = SourceStamp(branch=branch, revision=revision)
         d = bc.submitBuildRequest(ss, reason, props=properties.asDict())
         def subscribe(buildreq):
-            ireq = IrcBuildRequest(self, self.useRevisions)
-            buildreq.subscribe(ireq.started)
+            req = BuildRequest(self, self.useRevisions)
+            buildreq.subscribe(req.started)
         d.addCallback(subscribe)
         d.addErrback(log.err, "while forcing a build")
 
@@ -659,9 +665,7 @@ class IRCContact(base.StatusReceiver):
         return commands
 
     def describeUser(self, user):
-        if self.dest[0] == '#':
-            return "IRC user <%s> on channel %s" % (user, self.dest)
-        return "IRC user <%s> (privmsg)" % user
+        raise NotImplementedError
 
     # commands
 
@@ -721,12 +725,10 @@ class IRCContact(base.StatusReceiver):
     # communication with the user
 
     def send(self, message):
-        if not self.muted:
-            self.bot.msgOrNotice(self.dest, message.encode("ascii", "replace"))
+        raise NotImplementedError
 
-    def act(self, action):
-        if not self.muted:
-            self.bot.describe(self.dest, action.encode("ascii", "replace"))
+    def act(self, message):
+        raise NotImplementedError
 
     # main dispatchers for incoming messages
 
@@ -771,6 +773,16 @@ class IRCContact(base.StatusReceiver):
             return d
         return defer.succeed(None)
 
+class IRCContact(Contact):
+
+    def __init__(self, bot, dest):
+        Contact.__init__(self, bot, dest)
+
+    def describeUser(self, user):
+        if self.dest[0] == '#':
+            return "IRC user <%s> on channel %s" % (user, self.dest)
+        return "IRC user <%s> (privmsg)" % user
+
     def handleAction(self, data, user):
         # this is sent when somebody performs an action that mentions the
         # buildbot (like '/me kicks buildbot'). 'user' is the name/nick/id of
@@ -786,39 +798,30 @@ class IRCContact(base.StatusReceiver):
             response = "%s %s too" % (verb, user)
         self.act(response)
 
+    def send(self, message):
+        if not self.muted:
+            self.bot.msgOrNotice(self.dest, message.encode("ascii", "replace"))
 
-class IrcStatusBot(irc.IRCClient):
-    """I represent the buildbot to an IRC server.
-    """
-    contactClass = IRCContact
+    def act(self, action):
+        if not self.muted:
+            self.bot.describe(self.dest, action.encode("ascii", "replace"))
 
-    def __init__(self, nickname, password, channels, pm_to_nicks, status,
-            categories, notify_events, noticeOnChannel=False,
+class StatusBot:
+    """Generic status bot"""
+
+    # overwrite in subclass
+    contactClass = None
+
+    def __init__(self, noticeOnChannel=False,
             useRevisions=False, showBlameList=False, useColors=True):
-        self.nickname = nickname
-        self.channels = channels
-        self.pm_to_nicks = pm_to_nicks
-        self.password = password
-        self.status = status
-        self.master = status.master
-        self.categories = categories
-        self.notify_events = notify_events
-        self.hasQuit = 0
-        self.contacts = {}
         self.noticeOnChannel = noticeOnChannel
         self.useColors = useColors
         self.useRevisions = useRevisions
         self.showBlameList = showBlameList
-        self._keepAliveCall = task.LoopingCall(lambda: self.ping(self.nickname))
 
-    def connectionMade(self):
-        irc.IRCClient.connectionMade(self)
-        self._keepAliveCall.start(60)
-
-    def connectionLost(self, reason):
-        if self._keepAliveCall.running:
-            self._keepAliveCall.stop()
-        irc.IRCClient.connectionLost(self, reason)
+        self.status = None
+        self.master = None
+        self.control = None
 
     def msgOrNotice(self, dest, message):
         if self.noticeOnChannel and dest[0] == '#':
@@ -827,6 +830,8 @@ class IrcStatusBot(irc.IRCClient):
             self.msg(dest, message)
 
     def getContact(self, name):
+        assert(self.contactClass != None)
+
         name = name.lower() # nicknames and channel names are case insensitive
         if name in self.contacts:
             return self.contacts[name]
@@ -837,6 +842,37 @@ class IrcStatusBot(irc.IRCClient):
     def log(self, msg):
         log.msg("%s: %s" % (self, msg))
 
+
+class IrcStatusBot(StatusBot, irc.IRCClient):
+    """I represent the buildbot to an IRC server.
+    """
+
+    contactClass = IRCContact
+
+    def __init__(self, nickname, password, channels, pm_to_nicks, status,
+            categories, notify_events, noticeOnChannel=False,
+            useRevisions=False, showBlameList=False, useColors=True):
+        StatusBot.__init__(self, noticeOnChannel, useRevisions, showBlameList, useColors)
+        self.nickname = nickname
+        self.channels = channels
+        self.pm_to_nicks = pm_to_nicks
+        self.password = password
+        self.status = status
+        self.master = status.master
+        self.categories = categories
+        self.notify_events = notify_events
+        self.hasQuit = 0
+        self.contacts = {}
+        self._keepAliveCall = task.LoopingCall(lambda: self.ping(self.nickname))
+
+    def connectionMade(self):
+        irc.IRCClient.connectionMade(self)
+        self._keepAliveCall.start(60)
+
+    def connectionLost(self, reason):
+        if self._keepAliveCall.running:
+            self._keepAliveCall.stop()
+        irc.IRCClient.connectionLost(self, reason)
 
     # the following irc.IRCClient methods are called when we have input
 
