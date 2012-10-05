@@ -1,3 +1,18 @@
+# This file is part of Buildbot.  Buildbot is free software: you can
+# redistribute it and/or modify it under the terms of the GNU General Public
+# License as published by the Free Software Foundation, version 2.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 51
+# Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+# Copyright Buildbot Team Members
+
 # Deliver build status to a Jabber MUC (multi-user chat room).
 
 from __future__ import absolute_import
@@ -11,11 +26,12 @@ from wokkel.ping import PingHandler
 
 # We can reuse words.py's concept of `broadcast contacts' in XMPP.  A
 # channel in IRC is a MUC in XMPP.
-from buildbot.status.words import Contact, IChannel, UsageError
+from buildbot.status.words import UsageError, StatusBot
 
 from buildbot import interfaces
 from buildbot.interfaces import IStatusReceiver
 from buildbot.status.base import StatusReceiver
+from buildbot.status import base
 from twisted.python import log, failure
 from twisted.words.protocols.jabber.jid import JID
 from zope.interface import implements
@@ -25,12 +41,16 @@ def avoid_shlex_split_because_xmpp_is_all_unicode(s):
 from buildbot.status import words
 words.shlex.split = avoid_shlex_split_because_xmpp_is_all_unicode
 
-class JabberMucContact(Contact):
+class JabberMucContact(words.IRCContact):
     implements(IStatusReceiver)
 
     def __init__(self, channel, jid):
-        Contact.__init__(self, channel)
+        words.IRCContact.__init__(self, channel, jid)
+        self.channel = channel
         self.roomJID = jid
+
+    def describeUser(self, user):
+        return "Jabber user <%s> on %s" % (user, self.dest)
 
     def act(self, action):
         self.send("/me %s" % action)
@@ -69,33 +89,29 @@ class JabberMucContact(Contact):
         self.channel.counter += 1
 
     def send(self, message):
-        if not self.muted:
+        if not self._isMuted():
             self.channel.groupChat(self.roomJID, message)
 
-class JabberStatusBot(MUCClient):
-    implements(IChannel)
+class JabberStatusBot(words.StatusBot, MUCClient):
 
-    def __init__(self, mucs, categories, notify_events,
-      showBlameList=False):
+    contactClass = JabberMucContact
+
+    def __init__(self, mucs, categories, notify_events, **kwargs):
+        # colors make sense for IRC only atm, so disable them for Jabber
+        words.StatusBot.__init__(self, useColors=False, **kwargs)
         MUCClient.__init__(self)
+
         self.mucs = mucs
         self.categories = categories
         self.notify_events = notify_events
-        self.showBlameList = showBlameList
         self.contacts = {}
         self.counter = 0
-
-    def addContact(self, jid, contact):
-        self.contacts[jid] = contact
 
     def connectionInitialized(self):
         MUCClient.connectionInitialized(self)
         for m in self.mucs:
             (muc, nick) = (m['muc'], m['nick'])
             self.join(JID(muc), nick)
-
-    def deleteContact(self, jid):
-        del self.contacts[jid]
 
     def getContact(self, jid):
         if jid in self.contacts:
@@ -120,6 +136,7 @@ class JabberStatusBot(MUCClient):
                 return
         except AttributeError:
             return # Some kind of status message.  Ignore this, too.
+
         contact = self.getContact(room.roomJID)
         body = message.body
         if body.startswith("/me"):
@@ -129,7 +146,7 @@ class JabberStatusBot(MUCClient):
             body = body[len("%s:" % room.nick):]
             contact.handleMessage(body, user.nick)
 
-class Jabber(StatusReceiver, XMPPClient):
+class Jabber(base.StatusReceiver, XMPPClient):
     implements(IStatusReceiver)
 
     debug = False
@@ -138,8 +155,8 @@ class Jabber(StatusReceiver, XMPPClient):
       'allowForce', 'categories', 'notify_events', 'showBlameList']
 
     def __init__(self, host, jid, password, mucs, port=5222,
-      allowForce=False, categories=None, notify_events={},
-      showBlameList=True):
+                 allowForce=False, categories=None, notify_events={},
+                 noticeOnChannel=False, useRevisions=False, showBlameList=False):
         assert allowForce in (True, False)
 
         # Stash these so we can detect changes later.
@@ -148,7 +165,6 @@ class Jabber(StatusReceiver, XMPPClient):
         self.allowForce = allowForce
         self.categories = categories
         self.notify_events = notify_events
-        self.showBlameList = showBlameList
 
         if not isinstance(jid, JID):
             jid = JID(str(jid))
@@ -158,14 +174,17 @@ class Jabber(StatusReceiver, XMPPClient):
         self.addHandler(ping_handler)
         ping_handler.setHandlerParent(self)
         muc_handler = JabberStatusBot(self.mucs, self.categories,
-          self.notify_events, self.showBlameList)
+                                      self.notify_events, noticeOnChannel=noticeOnChannel,
+                                      useRevisions=useRevisions, showBlameList=showBlameList
+                                      )
         self.addHandler(muc_handler)
         muc_handler.setHandlerParent(self)
         self.channel = muc_handler
 
     def setServiceParent(self, parent):
-        self.channel.status = parent.getStatus()
-        self.channel.status.master = self.channel.status.master
+        base.StatusReceiver.setServiceParent(self, parent)
+        self.channel.status = parent
+        self.channel.master = parent.master
         if self.allowForce:
-            self.channel.control = interfaces.IControl(parent)
+            self.channel.control = interfaces.IControl(self.master)
         XMPPClient.setServiceParent(self, parent)
