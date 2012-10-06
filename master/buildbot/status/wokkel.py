@@ -113,6 +113,10 @@ class JabberStatusBot(words.StatusBot, MUCClient):
             (muc, nick) = (m['muc'], m['nick'])
             self.join(JID(muc), nick)
 
+    def connectionLost(self, reason):
+        MUCClient.connectionLost(self, reason)
+        log.msg("Got disconnected: {0}".format(reason))
+
     def getContact(self, jid):
         if jid in self.contacts:
             return self.contacts[jid]
