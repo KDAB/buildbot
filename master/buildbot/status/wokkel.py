@@ -23,6 +23,7 @@ from __future__ import absolute_import
 from wokkel.client import XMPPClient
 from wokkel.muc import MUCClient
 from wokkel.ping import PingHandler
+from wokkel.subprotocols import XMPPHandler
 
 # We can reuse words.py's concept of `broadcast contacts' in XMPP.  A
 # channel in IRC is a MUC in XMPP.
@@ -33,6 +34,7 @@ from buildbot.interfaces import IStatusReceiver
 from buildbot.status.base import StatusReceiver
 from buildbot.status import base
 from twisted.python import log, failure
+from twisted.internet import task
 from twisted.words.protocols.jabber.jid import JID
 from zope.interface import implements
 
@@ -40,6 +42,30 @@ def avoid_shlex_split_because_xmpp_is_all_unicode(s):
     return s.split()
 from buildbot.status import words
 words.shlex.split = avoid_shlex_split_because_xmpp_is_all_unicode
+
+class KeepAliveHandler(XMPPHandler):
+    """
+    This handler implements client-to-server pings to prevent timeouts
+
+    Example: The OpenFirce jabberd will disconnect you after 6 minutes if you don't send active pings
+
+    @see https://developer.pidgin.im/ticket/10767
+    @see https://github.com/dustin/wokkel/blob/master/wokkel/keepalive.py
+    """
+
+    interval = 300
+    lc = None
+
+    def connectionInitialized(self):
+        self.lc = task.LoopingCall(self.ping)
+        self.lc.start(self.interval)
+
+    def connectionLost(self, *args):
+        if self.lc:
+            self.lc.stop()
+
+    def ping(self):
+        self.send(" ")
 
 class JabberMucContact(words.IRCContact):
     implements(IStatusReceiver)
@@ -192,11 +218,21 @@ class Jabber(base.StatusReceiver, XMPPClient):
 
         if not isinstance(jid, JID):
             jid = JID(str(jid))
+
         XMPPClient.__init__(self, jid, self.password, host, port)
         self.logTraffic = self.debug
+
+        # add ping handler
         ping_handler = PingHandler()
         self.addHandler(ping_handler)
         ping_handler.setHandlerParent(self)
+
+        # add keep alive handler
+        keepalive_handler = KeepAliveHandler()
+        self.addHandler(keepalive_handler)
+        keepalive_handler.setHandlerParent(self)
+
+        # add MUC handler
         muc_handler = JabberStatusBot(self.mucs, self.categories,
                                       self.notify_events, noticeOnChannel=noticeOnChannel,
                                       useRevisions=useRevisions, showBlameList=showBlameList
