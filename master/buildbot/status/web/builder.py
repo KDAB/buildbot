@@ -281,7 +281,7 @@ class StatusResourceBuilder(HtmlResource, BuildLineMixin):
                 'properties' : properties,
                 })
 
-        numbuilds = int(req.args.get('numbuilds', ['5'])[0])
+        numbuilds = int(req.args.get('numbuilds', ['100'])[0])
         recent = cxt['recent'] = []
         for build in b.generateFinishedBuilds(num_builds=int(numbuilds)):
             recent.append(self.get_line_values(req, build, False))
