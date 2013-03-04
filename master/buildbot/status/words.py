@@ -372,7 +372,7 @@ class Contact(base.StatusReceiver):
             builder.category not in self.bot.categories):
             return
 
-        log.msg('[Contact] Builder %s added' % (builder))
+        log.msg('[Contact] Builder %s added' % (builderName))
         builder.subscribe(self)
 
     def builderRemoved(self, builderName):
