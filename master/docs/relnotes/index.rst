@@ -14,6 +14,8 @@ Master
 Features
 ~~~~~~~~
 
+* Gerrit integration with Git Source step on master side.
+
 Deprecations, Removals, and Non-Compatible Changes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
