@@ -13,6 +13,7 @@
 #
 # Copyright Buildbot Team Members
 
+from twisted.python import log
 import mock
 
 from twisted.internet import defer
