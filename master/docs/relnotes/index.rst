@@ -38,6 +38,8 @@ Fixes
   Now if SVN reports such a situation during initial check, the checkout will be clobbered.
 
 * Fixed master-side source steps to respect the specified timeout when removing files.
+* With Git(), force the updating submodules to ensure local changes by the build are overwitten.
+  This both ensures more consistent builds and avoids errors when updating submodules.
 
 Deprecations, Removals, and Non-Compatible Changes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
