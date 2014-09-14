@@ -250,24 +250,9 @@ class GerritStatusPush(StatusReceiverMultiService, buildset.BuildSetSummaryNotif
 
     def sendBuildSetSummary(self, buildset, builds):
         if self.summaryCB:
-            def getBuildInfo(build):
-                result = build.getResults()
-                resultText = {
-                    SUCCESS: "succeeded",
-                    FAILURE: "failed",
-                    WARNINGS: "completed with warnings",
-                    EXCEPTION: "encountered an exception",
-                }.get(result, "completed with unknown result %d" % result)
+            buildList = sorted(builds, key=lambda build: build.getBuilder().getName())
 
-                return {'name': build.getBuilder().getName(),
-                        'result': result,
-                        'resultText': resultText,
-                        'text': ' '.join(build.getText()),
-                        'url': self.master_status.getURLForThing(build),
-                        }
-            buildInfoList = sorted([getBuildInfo(build) for build in builds], key=lambda bi: bi['name'])
-
-            message, verified, reviewed = self.summaryCB(buildInfoList, Results[buildset['results']], self.master_status, self.summaryArg)
+            message, verified, reviewed = self.summaryCB(buildList, Results[buildset['results']], self.master_status, self.summaryArg)
             self.sendCodeReviews(builds[0], message, verified, reviewed)
 
     def sendCodeReviews(self, build, message, verified=0, reviewed=0):
