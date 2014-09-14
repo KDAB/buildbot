@@ -423,10 +423,7 @@ class WebStatus(service.MultiService):
         # self.putChild("", IndexOrWaterfallRedirection())
         self.putChild("waterfall", WaterfallStatusResource(num_events=num_events,
                                                            num_events_max=num_events_max))
-        self.putChild("grid", GridStatusResource())
-        self.putChild("console", ConsoleStatusResource(
-            orderByTime=self.orderConsoleByTime))
-        self.putChild("tgrid", TransposedGridStatusResource())
+
         self.putChild("builders", BuildersResource(numbuilds=numbuilds))  # has builds/steps/logs
         self.putChild("one_box_per_builder", Redirect("builders"))
         self.putChild("changes", ChangesResource())
