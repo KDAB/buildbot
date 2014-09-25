@@ -507,6 +507,10 @@ class Contact(base.StatusReceiver):
             self.send(r)
 
     def notify_for_finished(self, build):
+        # HACK: Don't make buildbot send out notifications for builds triggered from within Gerrit
+        if build.properties.hasProperty('event.patchSet.ref'):
+            return False
+
         results = build.getResults()
 
         if self.notify_for('finished'):
