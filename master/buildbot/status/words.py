@@ -486,6 +486,7 @@ class Contact(base.StatusReceiver):
         builder_name = builder.getName()
         buildnum = build.getNumber()
         buildrevs = build.getRevisions()
+        buildbranch = build.properties.getProperty('branch')
 
         results = self.getResultsDescriptionAndColor(build.getResults())
         if self.reportBuild(builder_name, buildnum):
@@ -493,8 +494,8 @@ class Contact(base.StatusReceiver):
                 r = "build containing revision(s) [%s] on %s is complete: %s" % \
                     (buildrevs, builder_name, results[0])
             else:
-                r = "build #%d of %s is complete: %s" % \
-                    (buildnum, builder_name, results[0])
+                r = "build #%d of %s (%s) is complete: %s" % \
+                    (buildnum, builder_name, buildbranch or "default branch", results[0])
 
             r += ' [%s]' % maybeColorize(" ".join(build.getText()), results[1], self.useColors)
             buildurl = self.bot.status.getURLForThing(build)
