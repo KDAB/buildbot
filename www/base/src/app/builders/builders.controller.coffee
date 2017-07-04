@@ -103,6 +103,6 @@ class Builders extends Controller
         # as there is usually lots of builders, its better to get the overall
         # list of workers, masters, and builds and then associate by builder
         workers = data.getWorkers()
-        builds = data.getBuilds(limit: 200, order: '-started_at')
+        builds = data.getBuilds(limit: 200, order: '-started_at', property: "branch")
         dataGrouperService.groupBy($scope.builders, workers, 'builderid', 'workers', 'configured_on')
         dataGrouperService.groupBy($scope.builders, builds, 'builderid', 'builds')
