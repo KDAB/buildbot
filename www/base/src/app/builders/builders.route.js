@@ -5,12 +5,14 @@ class BuildersState {
         const name = 'builders';
 
         // Menu configuration
-        glMenuServiceProvider.addGroup({
+        const group = {
             name: "builds",
             caption: 'Builds',
             icon: 'cogs',
             order: 10
-        });
+        };
+        glMenuServiceProvider.addGroup(group);
+        glMenuServiceProvider.setDefaultGroup(group);
 
         // Configuration
         const cfg = {
