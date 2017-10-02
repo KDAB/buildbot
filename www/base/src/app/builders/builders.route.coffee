@@ -5,11 +5,13 @@ class State extends Config
         name = 'builders'
 
         # Menu configuration
-        glMenuServiceProvider.addGroup
+        group =
             name: "builds"
             caption: 'Builds'
             icon: 'cogs'
             order: 10
+        glMenuServiceProvider.addGroup group
+        glMenuServiceProvider.setDefaultGroup group
 
         # Configuration
         cfg =
