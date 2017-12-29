@@ -56,7 +56,7 @@ class TestAddEnvPath(unittest.TestCase):
 
     def test_new(self):
         self.do_test({}, 'PATH', r'C:\NOTHING',
-                     {'PATH': r'C:\NOTHING;'})
+                     {'PATH': r'C:\NOTHING'})
 
     def test_new_semi(self):
         self.do_test({}, 'PATH', r'C:\NOTHING;',
@@ -65,6 +65,10 @@ class TestAddEnvPath(unittest.TestCase):
     def test_existing(self):
         self.do_test({'PATH': '/bin'}, 'PATH', r'C:\NOTHING',
                      {'PATH': r'/bin;C:\NOTHING;'})
+
+    def test_existing_as_list(self):
+        self.do_test({'PATH': ['/bin']}, 'PATH', r'C:\NOTHING',
+                     {'PATH': ['/bin', 'C:\NOTHING']})
 
     def test_existing_semi(self):
         self.do_test({'PATH': '/bin;'}, 'PATH', r'C:\NOTHING',
