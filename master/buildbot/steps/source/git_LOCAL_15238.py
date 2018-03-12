@@ -140,7 +140,7 @@ class Git(Source):
         self.getDescription = getDescription
         self.config = config
         self.supportsBranch = True
-        self.supportsSubmoduleForce = True
+        self.supportsSubmoduleCheckout = True
         self.srcdir = 'source'
         self.origin = origin
         Source.__init__(self, **kwargs)
@@ -553,9 +553,9 @@ class Git(Source):
     def _updateSubmodule(self, _=None):
         rc = RC_SUCCESS
         if self.submodules:
-            vccmd = ['submodule', 'update', '--init', '--recursive']
-            if self.supportsSubmoduleForce:
-                vccmd.extend(['--force'])
+            vccmd = ['submodule', 'update', '--init', '--recursive', '--force']
+            if self.supportsSubmoduleCheckout:
+                vccmd.extend(['--checkout'])
             rc = yield self._dovccmd(vccmd)
         defer.returnValue(rc)
 
@@ -592,8 +592,8 @@ class Git(Source):
                 gitInstalled = False
         if LooseVersion(version) < LooseVersion("1.6.5"):
             self.supportsBranch = False
-        if LooseVersion(version) < LooseVersion("1.7.6"):
-            self.supportsSubmoduleForce = False
+        if LooseVersion(version) < LooseVersion("1.7.8"):
+            self.supportsSubmoduleCheckout = False
         defer.returnValue(gitInstalled)
 
     @defer.inlineCallbacks

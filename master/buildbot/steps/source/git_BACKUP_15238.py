@@ -140,7 +140,6 @@ class Git(Source):
         self.getDescription = getDescription
         self.config = config
         self.supportsBranch = True
-        self.supportsSubmoduleForce = True
         self.srcdir = 'source'
         self.origin = origin
         Source.__init__(self, **kwargs)
@@ -553,11 +552,18 @@ class Git(Source):
     def _updateSubmodule(self, _=None):
         rc = RC_SUCCESS
         if self.submodules:
-            vccmd = ['submodule', 'update', '--init', '--recursive']
-            if self.supportsSubmoduleForce:
-                vccmd.extend(['--force'])
+<<<<<<< HEAD
+            vccmd = ['submodule', 'update', '--init', '--recursive', '--force']
+            if self.supportsSubmoduleCheckout:
+                vccmd.extend(['--checkout'])
             rc = yield self._dovccmd(vccmd)
         defer.returnValue(rc)
+=======
+            return self._dovccmd(['submodule', 'update',
+                                  '--init', '--recursive', '--force'])
+        else:
+            return defer.succeed(0)
+>>>>>>> parent of a310e30af... git: Update git submodules with --checkout
 
     @defer.inlineCallbacks
     def _cleanSubmodule(self, _=None):
@@ -580,6 +586,7 @@ class Git(Source):
 
     @defer.inlineCallbacks
     def checkBranchSupport(self):
+<<<<<<< HEAD
         stdout = yield self._dovccmd(['--version'], collectStdout=True)
 
         gitInstalled = False
@@ -592,9 +599,23 @@ class Git(Source):
                 gitInstalled = False
         if LooseVersion(version) < LooseVersion("1.6.5"):
             self.supportsBranch = False
-        if LooseVersion(version) < LooseVersion("1.7.6"):
-            self.supportsSubmoduleForce = False
+        if LooseVersion(version) < LooseVersion("1.7.8"):
+            self.supportsSubmoduleCheckout = False
         defer.returnValue(gitInstalled)
+=======
+        d = self._dovccmd(['--version'], collectStdout=True)
+
+        @d.addCallback
+        def checkSupport(stdout):
+            gitInstalled = False
+            if 'git' in stdout:
+                gitInstalled = True
+            version = stdout.strip().split(' ')[2]
+            if LooseVersion(version) < LooseVersion("1.6.5"):
+                self.supportsBranch = False
+            return gitInstalled
+        return d
+>>>>>>> parent of a310e30af... git: Update git submodules with --checkout
 
     @defer.inlineCallbacks
     def applyPatch(self, patch):
