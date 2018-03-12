@@ -530,8 +530,6 @@ class Git(Source, GitStepMixin):
             vccmd = ['submodule', 'update', '--init', '--recursive']
             if self.supportsSubmoduleForce:
                 vccmd.extend(['--force'])
-            if self.supportsSubmoduleCheckout:
-                vccmd.extend(['--checkout'])
             rc = yield self._dovccmd(vccmd)
         defer.returnValue(rc)
 
