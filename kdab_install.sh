@@ -24,6 +24,7 @@ popd
 # DISABLED: console_view waterfall_view grid_view
 for i in base wsgi_dashboards codeparameter nestedexample; do
   cd www/${i}
+  npm install
   py_install
   cd ../..
 done
