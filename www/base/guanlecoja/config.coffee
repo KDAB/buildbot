@@ -54,6 +54,9 @@ config =
             "angular-bootstrap-multiselect":
                 version: "https://github.com/bentorfs/angular-bootstrap-multiselect.git#^1.1.6"
                 files: 'dist/angular-bootstrap-multiselect.js'
+            'angular-sanitize':
+                version: ANGULAR_TAG
+                files: 'angular-sanitize.js'
 
         testdeps:
             "angular-mocks":
