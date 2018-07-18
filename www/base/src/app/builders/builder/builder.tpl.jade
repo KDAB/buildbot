@@ -1,7 +1,7 @@
 .container
   .row(ng-show='builder.description')
     h4 Description:
-    | {{ builder.description }}
+    ng-bind-html(ng-bind-html='builder.description')
   .row
     h4 Build times:
     line-plot(data="successful_builds", xattr="started_at", yattr="duration", xunit="timestamp", yunit="seconds", width=800, height=200)
