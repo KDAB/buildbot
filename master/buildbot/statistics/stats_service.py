@@ -43,7 +43,6 @@ class StatsService(service.BuildbotService):
         for svc in storage_backends:
             self.registeredStorageServices.append(svc)
 
-        self.consumers = []
         self.registerConsumers()
 
     @defer.inlineCallbacks
