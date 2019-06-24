@@ -3,17 +3,19 @@
 set -e
 set -x
 
+PREFIX=~/opt/buildbot
+
 function py_install() {
-  python setup.py build || exit 1
-  python setup.py install --prefix=~/opt || exit 1
+  python3 setup.py build || exit 1
+  python3 setup.py install --prefix=$PREFIX || exit 1
 }
 
 cd master/
 py_install
 cd ../
 
-pip install --prefix=~/opt -e pkg || exit 1
-pip install --prefix=~/opt mock || exit 1
+pip3 install --system --prefix=$PREFIX -e pkg || exit 1
+pip3 install --system --prefix=$PREFIX mock || exit 1
 
 pushd www/data_module
 npm install
