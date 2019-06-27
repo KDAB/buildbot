@@ -3,6 +3,9 @@
 set -e
 set -x
 
+# required for yarn
+export PATH="$PATH:$PWD/node_modules/.bin"
+
 PREFIX=~/opt/buildbot
 
 function py_install() {
@@ -18,15 +21,15 @@ pip3 install --system --prefix=$PREFIX -e pkg || exit 1
 pip3 install --system --prefix=$PREFIX mock || exit 1
 
 pushd www/data_module
-npm install
+yarn install
 node_modules/.bin/gulp prod --no-tests
 popd
 
 # copied from Buildbot's Makefile, adapt as required
 # DISABLED: console_view waterfall_view grid_view
 for i in base wsgi_dashboards codeparameter nestedexample; do
-  cd www/${i}
-  npm install
+  pushd www/${i}
+  yarn install
   py_install
-  cd ../..
+  popd
 done
