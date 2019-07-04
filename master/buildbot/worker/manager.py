@@ -46,9 +46,11 @@ class WorkerRegistration:
         # For most protocols, there's nothing to do, but for PB we must
         # update the registration in case the port or password has changed.
         if 'pb' in global_config.protocols:
-            self.pbReg = yield self.master.workers.pb.updateRegistration(
+            reg = yield self.master.workers.pb.updateRegistration(
                 worker_config.workername, worker_config.password,
                 global_config.protocols['pb']['port'])
+            if reg is not None:
+                self.pbReg = reg
 
     def getPBPort(self):
         return self.pbReg.getPort()
