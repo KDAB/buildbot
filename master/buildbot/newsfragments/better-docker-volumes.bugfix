@@ -1,0 +1,1 @@
+DockerLatentWorker: Allow to bind the same volume twice into a worker's container
