@@ -120,7 +120,7 @@ class BuilderController {
                 // reinstall contextual actions when coming back from forcesched
                 $scope.$on('$stateChangeSuccess', () => refreshContextMenu());
             };
-            $scope.numbuilds = 200;
+            $scope.numbuilds = 50;
             if ($stateParams.numbuilds != null) {
                 $scope.numbuilds = +$stateParams.numbuilds;
             }

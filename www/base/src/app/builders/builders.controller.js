@@ -145,7 +145,7 @@ class Builders {
             let builderIds = filteredBuilds.map(builder => builder.builderid);
             if (builderIds.length === $scope.builders.length) { builderIds = []; }
 
-            builds = data.getBuilds({limit: buildFetchLimit, order: '-started_at', builderid__eq: builderIds});
+            builds = data.getBuilds({limit: buildFetchLimit, order: '-started_at', builderid__eq: builderIds, property: "branch"});
             dataGrouperService.groupBy($scope.builders, workers, 'builderid', 'workers', 'configured_on');
             dataGrouperService.groupBy($scope.builders, builds, 'builderid', 'builds');
         };
