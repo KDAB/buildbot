@@ -177,8 +177,9 @@ class GerritChangeSourceBase(base.ChangeSource):
             "codebase": '',
         }
 
-        stampid, found_existing = yield(
-             self.master.db.sourcestamps.findOrCreateId(**stampdict))
+        #stampid, found_existing = yield(
+        #     self.master.db.sourcestamps.findOrCreateId(**stampdict))
+        found_existing = False
 
         if found_existing:
             if self.debug or True:
