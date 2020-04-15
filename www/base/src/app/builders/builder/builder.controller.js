@@ -6,7 +6,7 @@
  */
 class BuilderController {
     constructor($rootScope, $scope, dataService, $stateParams, resultsService,
-        glBreadcrumbService, $state, glTopbarContextualActionsService, $q, $window) {
+        glBreadcrumbService, $state, glTopbarContextualActionsService, $q, $window, $sce) {
         // make resultsService utilities available in the template
         _.mixin($scope, resultsService);
         const data = dataService.open().closeOnDestroy($scope);
@@ -17,6 +17,7 @@ class BuilderController {
             $window.document.title = $state.current.data.pageTitle({
                 builder: builder['name']});
             $scope.builder = builder;
+	    $scope.builderTrustedDesc = $sce.trustAsHtml(builder.description);
             const breadcrumb = [{
                     caption: "Builders",
                     sref: "builders"
@@ -174,4 +175,4 @@ class BuilderController {
 
 
 angular.module('app')
-.controller('builderController', ['$rootScope', '$scope', 'dataService', '$stateParams', 'resultsService', 'glBreadcrumbService', '$state', 'glTopbarContextualActionsService', '$q', '$window', BuilderController]);
+.controller('builderController', ['$rootScope', '$scope', 'dataService', '$stateParams', 'resultsService', 'glBreadcrumbService', '$state', 'glTopbarContextualActionsService', '$q', '$window', '$sce', BuilderController]);

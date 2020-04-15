@@ -1,7 +1,7 @@
 .container
   .row(ng-show='builder.description')
     h4 Description:
-    ng-bind-html(ng-bind-html='builder.description')
+    ng-bind-html(ng-bind-html='builderTrustedDesc')
   uib-tabset
       uib-tab(heading="Build requests")
         span(ng-hide='buildrequests.length>0')
