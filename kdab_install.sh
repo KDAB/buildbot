@@ -3,6 +3,10 @@
 set -e
 set -x
 
+# make sure we get the right version number
+git fetch kdab --tags
+git fetch origin --tags
+
 # required for yarn
 export PATH="$PATH:$PWD/node_modules/.bin/"
 npm install yarn webpack-cli
