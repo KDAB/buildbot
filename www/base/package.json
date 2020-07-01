@@ -18,6 +18,7 @@
         "lodash": "^4.17.11",
         "pug-cli": "^1.0.0-alpha6",
         "rimraf": "^2.6.3",
+        "webpack-cli": "^3.3.11",
         "webpack-shell-plugin": "^0.5.0"
     },
     "dependencies": {
@@ -27,6 +28,7 @@
         "angular-bootstrap-multiselect": "^1.1.11",
         "angular-recursion": "^1.0.5",
         "angular-ui-bootstrap": "^2.5.6",
+        "babel-loader": "^8.0.6",
         "bootstrap": "^3.1.1",
         "buildbot-data-js": "link:../data_module",
         "d3": "^3.5.17",
@@ -34,6 +36,7 @@
         "guanlecoja-ui": "link:../guanlecoja-ui",
         "moment": "^2.24.0",
         "outdated-browser-rework": "^2.8.0",
-        "popper.js": "^1.15.0"
+        "popper.js": "^1.15.0",
+        "webpack": "^4.42.0"
     }
 }
