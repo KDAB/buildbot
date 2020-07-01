@@ -64,6 +64,10 @@
                         .badge-active {{worker.name}}
                     span.badge-status(title="{{worker.name}}" ng-class="connected2class(worker, 'pulse')" ng-if="settings.show_workers_name.value")
                       | {{ worker.name }}
+      ul(uib-pagination, total-items="(builders | filter: {name: searchQuery} | filter: isBuilderFiltered).length",
+        ng-model="currentPage", class="pagination-sm", boundary-link-numbers="true",
+        max-size=10, items-per-page="page_size") <!-- same as above -->
+
   .row
       .form-group
           label.checkbox-inline
