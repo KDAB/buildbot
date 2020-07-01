@@ -84,7 +84,7 @@ class LogWatcher(LineOnlyReceiver):
         else:
             tailBin = "/usr/bin/tail"
 
-        args = ("tail", "-f", "-n", "0", self.logfile)
+        args = ("tail", "-F", "-n", "0", self.logfile)
         self.p = self._reactor.spawnProcess(self.pp, tailBin, args,
                                             env=os.environ)
         self.running = True
