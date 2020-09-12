@@ -127,54 +127,67 @@ class GitHubStatusPush(http.HttpStatusPushBase):
             return
 
         for sourcestamp in sourcestamps:
-            project = sourcestamp['project']
-
-            # If branch is None, so is issue
             issue = None
-            if 'branch' in props:
-                m = re.search(r"refs/pull/([0-9]*)/merge", props['branch'])
+            branch = props.getProperty('branch')
+            if branch:
+                m = re.search(r"refs/pull/([0-9]*)/merge", branch)
                 if m:
                     issue = m.group(1)
 
-            repoOwner = None
-            repoName = None
-            if "/" in project:
-                repoOwner, repoName = project.split('/')
-            else:
-                giturl = giturlparse(sourcestamp['repository'])
+            repo_owner = None
+            repo_name = None
+            project = sourcestamp['project']
+            repository = sourcestamp['repository']
+            if project and "/" in project:
+                repo_owner, repo_name = project.split('/')
+            elif repository:
+                giturl = giturlparse(repository)
                 if giturl:
-                    repoOwner = giturl.owner
-                    repoName = giturl.repo
+                    repo_owner = giturl.owner
+                    repo_name = giturl.repo
+
+            if not repo_owner or not repo_name:
+                log.msg('Skipped status update because required repo information is missing.')
+                continue
 
             sha = sourcestamp['revision']
             response = None
+
+            # If the scheduler specifies multiple codebases, don't bother updating
+            # the ones for which there is no revision
+            if not sha:
+                log.msg(
+                    'Skipped status update for codebase {codebase}, '
+                    'context "{context}", issue {issue}.'.format(
+                        codebase=sourcestamp['codebase'], issue=issue, context=context))
+                continue
+
             try:
                 if self.verbose:
-                    log.msg("Updating github status: repoOwner={repoOwner}, repoName={repoName}".format(
-                        repoOwner=repoOwner, repoName=repoName))
+                    log.msg("Updating github status: repo_owner={}, repo_name={}".format(
+                            repo_owner, repo_name))
 
-                repo_user = repoOwner
-                repo_name = repoName
-                target_url = build['url']
-                response = yield self.createStatus(
-                    repo_user=repo_user,
-                    repo_name=repo_name,
-                    sha=sha,
-                    state=state,
-                    target_url=target_url,
-                    context=context,
-                    issue=issue,
-                    description=description
-                )
+                response = yield self.createStatus(repo_user=repo_owner,
+                                                   repo_name=repo_name,
+                                                   sha=sha,
+                                                   state=state,
+                                                   target_url=build['url'],
+                                                   context=context,
+                                                   issue=issue,
+                                                   description=description)
+
+                if not response:
+                    # the implementation of createStatus refused to post update due to missing data
+                    continue
 
                 if not self.isStatus2XX(response.code):
                     raise Exception()
 
                 if self.verbose:
                     log.msg(
-                        'Updated status with "{state}" for {repoOwner}/{repoName} '
+                        'Updated status with "{state}" for {repo_owner}/{repo_name} '
                         'at {sha}, context "{context}", issue {issue}.'.format(
-                            state=state, repoOwner=repoOwner, repoName=repoName,
+                            state=state, repo_owner=repo_owner, repo_name=repo_name,
                             sha=sha, issue=issue, context=context))
             except Exception as e:
                 if response:
@@ -184,10 +197,10 @@ class GitHubStatusPush(http.HttpStatusPushBase):
                     content = code = "n/a"
                 log.err(
                     e,
-                    'Failed to update "{state}" for {repoOwner}/{repoName} '
+                    'Failed to update "{state}" for {repo_owner}/{repo_name} '
                     'at {sha}, context "{context}", issue {issue}. '
                     'http {code}, {content}'.format(
-                        state=state, repoOwner=repoOwner, repoName=repoName,
+                        state=state, repo_owner=repo_owner, repo_name=repo_name,
                         sha=sha, issue=issue, context=context,
                         code=code, content=content))
 
@@ -201,6 +214,7 @@ class GitHubCommentPush(GitHubStatusPush):
         self.startDescription = startDescription
         self.endDescription = endDescription or 'Build done.'
 
+    @defer.inlineCallbacks
     def createStatus(self,
                      repo_user, repo_name, sha, state, target_url=None,
                      context=None, issue=None, description=None):
@@ -219,6 +233,11 @@ class GitHubCommentPush(GitHubStatusPush):
         """
         payload = {'body': description}
 
-        return self._http.post(
-            '/'.join(['/repos', repo_user, repo_name, 'issues', issue, 'comments']),
-            json=payload)
+        if issue is None:
+            log.msg('Skipped status update for repo {} sha {} as issue is not specified'.format(
+                repo_name, sha))
+            return None
+
+        url = '/'.join(['/repos', repo_user, repo_name, 'issues', issue, 'comments'])
+        ret = yield self._http.post(url, json=payload)
+        return ret
