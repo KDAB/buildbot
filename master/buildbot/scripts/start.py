@@ -115,6 +115,7 @@ def launch(config):
             # windows.
             "from twisted.scripts import twistd; twistd.run()",
             "--no_save",
+            "--umask=022",
             "--logfile=twistd.log",  # windows doesn't use the same default
             "--python=buildbot.tac"]
 
