@@ -225,6 +225,8 @@ class BuildStepMixin:
 
         def addCompleteLog(name, text):
             _log = logfile.FakeLogFile(name, step)
+            if name in self.step.logs:
+                raise Exception('Attempt to add log {} twice to the logs'.format(name))
             self.step.logs[name] = _log
             _log.addStdout(text)
             return defer.succeed(None)
