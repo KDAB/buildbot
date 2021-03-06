@@ -26,7 +26,12 @@ class Buildsummary {
                 parentrelationship: '=?'
             },
             bindToController: true,
-            template: require('./buildsummary.tpl.jade'),
+            template: function (element, attrs) {
+                          if (attrs.type === "tooltip")
+                              return require('./buildsummarytooltip.tpl.jade');
+                          else
+                              return require('./buildsummary.tpl.jade');
+                      },
             compile: RecursionHelper.compile,
             controller: '_buildsummaryController',
             controllerAs: 'buildsummary'
@@ -164,6 +169,11 @@ class _buildsummary {
                 }
                 return Array.from(this.steps).map((step) =>
                     (step.fulldisplay = this.fulldisplay));
+            };
+
+            this.closeParentModal = function () {
+                if ('modal' in $scope.$parent)
+                    return $scope.$parent.modal.close();
             };
 
             const data = dataService.open().closeOnDestroy($scope);

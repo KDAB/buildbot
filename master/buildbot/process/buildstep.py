@@ -16,18 +16,19 @@
 import inspect
 import re
 import sys
+from io import StringIO
 
 from twisted.internet import defer
 from twisted.internet import error
-from twisted.python import components
 from twisted.python import deprecate
 from twisted.python import failure
 from twisted.python import log
 from twisted.python import util as twutil
 from twisted.python import versions
-from twisted.python.compat import NativeStringIO
+from twisted.python.deprecate import deprecatedModuleAttribute
 from twisted.python.failure import Failure
 from twisted.python.reflect import accumulateClassList
+from twisted.python.versions import Version
 from twisted.web.util import formatFailure
 from zope.interface import implementer
 
@@ -35,7 +36,7 @@ from buildbot import config
 from buildbot import interfaces
 from buildbot import util
 from buildbot.interfaces import IRenderable
-from buildbot.interfaces import WorkerTooOldError
+from buildbot.interfaces import WorkerSetupError
 from buildbot.process import log as plog
 from buildbot.process import logobserver
 from buildbot.process import properties
@@ -56,6 +57,8 @@ from buildbot.process.results import worst_status
 from buildbot.util import bytes2unicode
 from buildbot.util import debounce
 from buildbot.util import flatten
+from buildbot.util.test_result_submitter import TestResultSubmitter
+from buildbot.warnings import warn_deprecated
 
 
 class BuildStepFailed(Exception):
@@ -74,14 +77,52 @@ class CallableAttributeError(Exception):
 
 # old import paths for these classes
 RemoteCommand = remotecommand.RemoteCommand
+deprecatedModuleAttribute(
+    Version("buildbot", 2, 10, 1),
+    message="Use buildbot.process.remotecommand.RemoteCommand instead.",
+    moduleName="buildbot.process.buildstep",
+    name="RemoteCommand",
+)
+
 LoggedRemoteCommand = remotecommand.LoggedRemoteCommand
+deprecatedModuleAttribute(
+    Version("buildbot", 2, 10, 1),
+    message="Use buildbot.process.remotecommand.LoggedRemoteCommand instead.",
+    moduleName="buildbot.process.buildstep",
+    name="LoggedRemoteCommand",
+)
+
 RemoteShellCommand = remotecommand.RemoteShellCommand
+deprecatedModuleAttribute(
+    Version("buildbot", 2, 10, 1),
+    message="Use buildbot.process.remotecommand.RemoteShellCommand instead.",
+    moduleName="buildbot.process.buildstep",
+    name="RemoteShellCommand",
+)
+
 LogObserver = logobserver.LogObserver
+deprecatedModuleAttribute(
+    Version("buildbot", 2, 10, 1),
+    message="Use buildbot.process.logobserver.LogObserver instead.",
+    moduleName="buildbot.process.buildstep",
+    name="LogObserver",
+)
+
 LogLineObserver = logobserver.LogLineObserver
+deprecatedModuleAttribute(
+    Version("buildbot", 2, 10, 1),
+    message="Use buildbot.util.LogLineObserver instead.",
+    moduleName="buildbot.process.buildstep",
+    name="LogLineObserver",
+)
+
 OutputProgressObserver = logobserver.OutputProgressObserver
-_hush_pyflakes = [
-    RemoteCommand, LoggedRemoteCommand, RemoteShellCommand,
-    LogObserver, LogLineObserver, OutputProgressObserver]
+deprecatedModuleAttribute(
+    Version("buildbot", 2, 10, 1),
+    message="Use buildbot.process.logobserver.OutputProgressObserver instead.",
+    moduleName="buildbot.process.buildstep",
+    name="OutputProgressObserver",
+)
 
 
 @implementer(interfaces.IBuildStepFactory)
@@ -222,7 +263,7 @@ class SyncLogFileWrapper(logobserver.LogObserver):
 
     def readlines(self):
         alltext = "".join(self.getChunks([self.STDOUT], onlyText=True))
-        io = NativeStringIO(alltext)
+        io = StringIO(alltext)
         return io.readlines()
 
     def getChunks(self, channels=None, onlyText=False):
@@ -248,10 +289,26 @@ class BuildStepStatus:
     pass
 
 
+def get_factory_from_step_or_factory(step_or_factory):
+    if hasattr(step_or_factory, 'get_step_factory'):
+        factory = step_or_factory.get_step_factory()
+    else:
+        factory = step_or_factory
+    # make sure the returned value actually implements IBuildStepFactory
+    return interfaces.IBuildStepFactory(factory)
+
+
+def create_step_from_step_or_factory(step_or_factory):
+    return get_factory_from_step_or_factory(step_or_factory).buildStep()
+
+
 @implementer(interfaces.IBuildStep)
 class BuildStep(results.ResultComputingConfigMixin,
                 properties.PropertiesMixin,
                 util.ComparableMixin):
+    # Note that the BuildStep is at the same time a template from which per-build steps are
+    # constructed. This works by creating a new IBuildStepFactory in __new__, retrieving it via
+    # get_step_factory() and then calling buildStep() on that factory.
 
     alwaysRun = False
     doStepIf = True
@@ -365,6 +422,7 @@ class BuildStep(results.ResultComputingConfigMixin,
         self.stepid = None
         self.results = None
         self._start_unhandled_deferreds = None
+        self._test_result_submitters = {}
 
     def __new__(klass, *args, **kwargs):
         self = object.__new__(klass)
@@ -418,11 +476,10 @@ class BuildStep(results.ResultComputingConfigMixin,
     def workdir(self, workdir):
         self._workdir = workdir
 
-    def addFactoryArguments(self, **kwargs):
-        # this is here for backwards compatibility
-        pass
+    def getProperties(self):
+        return self.build.getProperties()
 
-    def _getStepFactory(self):
+    def get_step_factory(self):
         return self._factory
 
     def setupProgress(self):
@@ -565,6 +622,7 @@ class BuildStep(results.ResultComputingConfigMixin,
 
             # run -- or skip -- the step
             if doStep:
+                yield self.addTestResultSets()
                 try:
                     self._running = True
                     self.results = yield self.run()
@@ -599,11 +657,6 @@ class BuildStep(results.ResultComputingConfigMixin,
             if self.results != CANCELLED:
                 self.results = EXCEPTION
 
-        # update the summary one last time, make sure that completes,
-        # and then don't update it any more.
-        self.realUpdateSummary()
-        yield self.realUpdateSummary.stop()
-
         # determine whether we should hide this step
         hidden = self.hideStepIf
         if callable(hidden):
@@ -618,26 +671,56 @@ class BuildStep(results.ResultComputingConfigMixin,
 
         yield self.master.data.updates.finishStep(self.stepid, self.results,
                                                   hidden)
-        # finish unfinished logs
-        all_finished = yield self.finishUnfinishedLogs()
-        if not all_finished:
+        # perform final clean ups
+        success = yield self._cleanup_logs()
+        if not success:
             self.results = EXCEPTION
+
+        # update the summary one last time, make sure that completes,
+        # and then don't update it any more.
+        self.realUpdateSummary()
+        yield self.realUpdateSummary.stop()
+
+        for sub in self._test_result_submitters.values():
+            yield sub.finish()
+
         self.releaseLocks()
 
         return self.results
 
     @defer.inlineCallbacks
-    def finishUnfinishedLogs(self):
-        ok = True
-        not_finished_logs = [v for (k, v) in self.logs.items()
-                             if not v.finished]
+    def _cleanup_logs(self):
+        all_success = True
+        not_finished_logs = [v for (k, v) in self.logs.items() if not v.finished]
         finish_logs = yield defer.DeferredList([v.finish() for v in not_finished_logs],
                                                consumeErrors=True)
         for success, res in finish_logs:
             if not success:
                 log.err(res, "when trying to finish a log")
-                ok = False
-        return ok
+                all_success = False
+
+        for log_ in self.logs.values():
+            if log_.had_errors():
+                all_success = False
+
+        return all_success
+
+    def addTestResultSets(self):
+        return defer.succeed(None)
+
+    @defer.inlineCallbacks
+    def addTestResultSet(self, description, category, value_unit):
+        sub = TestResultSubmitter()
+        yield sub.setup(self, description, category, value_unit)
+        setid = sub.get_test_result_set_id()
+        self._test_result_submitters[setid] = sub
+        return setid
+
+    def addTestResult(self, setid, value, test_name=None, test_code_path=None, line=None,
+                      duration_ns=None):
+        self._test_result_submitters[setid].add_test_result(value, test_name=test_name,
+                                                            test_code_path=test_code_path,
+                                                            line=line, duration_ns=duration_ns)
 
     def acquireLocks(self, res=None):
         if not self.locks:
@@ -750,6 +833,8 @@ class BuildStep(results.ResultComputingConfigMixin,
         raise NotImplementedError("your subclass must implement run()")
 
     def interrupt(self, reason):
+        if self.stopped:
+            return
         self.stopped = True
         if self._acquiringLocks:
             for (lock, access, d) in self._acquiringLocks:
@@ -791,7 +876,7 @@ class BuildStep(results.ResultComputingConfigMixin,
     def checkWorkerHasCommand(self, command):
         if not self.workerVersion(command):
             message = "worker is too old, does not know about {}".format(command)
-            raise WorkerTooOldError(message)
+            raise WorkerSetupError(message)
 
     def getWorkerName(self):
         return self.build.getWorkerName()
@@ -891,6 +976,9 @@ class BuildStep(results.ResultComputingConfigMixin,
 
     @defer.inlineCallbacks
     def runCommand(self, command):
+        if self.stopped:
+            return CANCELLED
+
         self.cmd = command
         command.worker = self.worker
         try:
@@ -926,13 +1014,11 @@ class BuildStep(results.ResultComputingConfigMixin,
             desc += self.descriptionSuffix
         return desc
 
-
-components.registerAdapter(
-    BuildStep._getStepFactory,
-    BuildStep, interfaces.IBuildStepFactory)
-components.registerAdapter(
-    lambda step: interfaces.IProperties(step.build),
-    BuildStep, interfaces.IProperties)
+    def warn_deprecated_if_oldstyle_subclass(self, name):
+        if self.__class__.__name__ != name:
+            warn_deprecated('2.9.0', ('Subclassing old-style step {0} in {1} is deprecated, '
+                                      'please migrate to new-style equivalent {0}NewStyle'
+                                      ).format(name, self.__class__.__name__))
 
 
 class LoggingBuildStep(BuildStep):
@@ -1263,10 +1349,14 @@ class ShellMixin:
         return cmd
 
     def getResultSummary(self):
+        if self.descriptionDone is not None:
+            return super().getResultSummary()
         summary = util.command_to_string(self.command)
-        if not summary:
-            return super(ShellMixin, self).getResultSummary()
-        return {'step': summary}
+        if summary:
+            if self.results != SUCCESS:
+                summary += ' ({})'.format(Results[self.results])
+            return {'step': summary}
+        return super().getResultSummary()
 
 # Parses the logs for a list of regexs. Meant to be invoked like:
 # regexes = ((re.compile(...), FAILURE), (re.compile(...), WARNINGS))

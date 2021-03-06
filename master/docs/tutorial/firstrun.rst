@@ -70,8 +70,8 @@ We will also use a separate directory to demonstrate the distinction between a m
 
 .. code-block:: bash
 
-  mkdir -p ~/tmp/bb-master
-  cd ~/tmp/bb-master
+  mkdir -p ~/buildbot-test/master
+  cd ~/buildbot-test/master
 
 
 On Python 3:
@@ -80,6 +80,28 @@ On Python 3:
 
   python3 -m venv sandbox
   source sandbox/bin/activate
+
+
+Next, we need to install several build dependencies to make sure we can install buildbot and its supporting packages.
+These build dependencies are:
+
+* GCC build tools (``gcc`` for RHEL/CentOS/Fedora based distributions, or ``build-essential``  for Ubuntu/Debian based distributions).
+* Python development library (``python3-devel`` for RHEL/CentOS/Fedora based distributions, or ``python3-dev`` for Ubuntu/Debian based distributions).
+* OpenSSL development library (``openssl-devel`` for RHEL/CentOS/Fedora based distributions, or ``libssl-dev`` for Ubuntu/Debian based distributions).
+* `libffi` development library (``libffi-devel`` for RHEL/CentOS/Fedora based distributions, or ``libffi-dev`` for Ubuntu/Debian based distributions).
+
+Install these build dependencies:
+
+.. code-block:: bash
+
+  # if in Ubuntu/Debian based distributions:
+  sudo apt-get install build-essential python3-dev libssl-dev libffi-dev
+
+  # if in RHEL/CentOS/Fedora based distributions:
+  sudo yum install gcc python3-devel openssl-devel libffi-devel
+
+
+or refer to your distribution's documentation on how to install these packages.
 
 
 Now that we are ready, we need to install buildbot:
@@ -136,8 +158,8 @@ It would however be completely ok to do this on another computer - as long as th
 
 .. code-block:: bash
 
-  mkdir -p ~/tmp/bb-worker
-  cd ~/tmp/bb-worker
+  mkdir -p ~/buildbot-test/worker
+  cd ~/buildbot-test/worker
 
 On Python 2:
 

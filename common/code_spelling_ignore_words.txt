@@ -123,6 +123,7 @@ benchmarking
 benjamin
 bennetts
 berlin
+bindparam
 bitbucket
 blahblah
 blamelist
@@ -384,6 +385,7 @@ deferreds
 defertothread
 delayedcall
 denormalized
+dependabot
 deprecatedmoduleattribute
 descriptionsuffix
 desynchronization
@@ -692,6 +694,7 @@ interruptable
 interruptsignal
 intialization
 intranet
+invariants
 io
 ip
 ippolito
@@ -709,6 +712,7 @@ isdir
 ish
 isinstance
 ismessageneeded
+isort
 isotoma
 istatus
 istatusreceiver
@@ -814,6 +818,7 @@ lookahead
 lookup
 lookups
 loopback
+LoopingCall
 loseconnection
 lostremote
 lotem
@@ -1085,6 +1090,7 @@ pyjade
 pylint
 pylint's
 pyparsing
+pypugjs
 pythonpath
 qa
 qmail
@@ -1205,11 +1211,11 @@ rpc
 rpmdir
 rpmlint
 rpms
-rpmspec
 rsa
 rsh
 rst
 rstrip
+rtd
 rtype
 rtypes
 runcommand
@@ -1375,6 +1381,7 @@ subdirectory
 subfields
 sublicense
 submittedat
+submitters
 submodule
 submodules
 suboption
@@ -1525,6 +1532,7 @@ unsubstantiated
 untarring
 untracked
 upcall
+upcloud
 updatable
 updatebuilderlist
 updatebuildsummarypolicy

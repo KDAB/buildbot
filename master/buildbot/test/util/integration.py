@@ -95,14 +95,18 @@ class RunFakeMasterTestCase(unittest.TestCase, TestReactorMixin,
         self.assertFalse(self.master.running, "master is still running!")
 
     @defer.inlineCallbacks
-    def getMaster(self, config_dict):
+    def setup_master(self, config_dict):
         self.master = yield getMaster(self, self.reactor, config_dict)
-        return self.master
 
     @defer.inlineCallbacks
-    def reconfigMaster(self, config_dict):
-        self.master.config_loader.config_dict = config_dict
+    def reconfig_master(self, config_dict=None):
+        if config_dict is not None:
+            self.master.config_loader.config_dict = config_dict
         yield self.master.doReconfig()
+
+    @defer.inlineCallbacks
+    def clean_master_shutdown(self, quick=False):
+        yield self.master.botmaster.cleanShutdown(quickMode=quick, stopReactor=False)
 
     def createLocalWorker(self, name, **kwargs):
         workdir = FilePath(self.mktemp())
@@ -115,9 +119,27 @@ class RunFakeMasterTestCase(unittest.TestCase, TestReactorMixin,
         self.assertEqual(result, dbdict['results'])
 
     @defer.inlineCallbacks
-    def createBuildrequest(self, master, builder_ids, properties=None):
+    def assertStepStateString(self, step_id, state_string):
+        datadict = yield self.master.data.get(('steps', step_id))
+        self.assertEqual(datadict['state_string'], state_string)
+
+    @defer.inlineCallbacks
+    def assertLogs(self, build_id, exp_logs):
+        got_logs = {}
+        data_logs = yield self.master.data.get(('builds', build_id, 'steps', 1, 'logs'))
+        for log in data_logs:
+            self.assertTrue(log['complete'])
+            log_contents = yield self.master.data.get(('builds', build_id, 'steps', 1, 'logs',
+                                                       log['slug'], 'contents'))
+
+            got_logs[log['name']] = log_contents['content']
+
+        self.assertEqual(got_logs, exp_logs)
+
+    @defer.inlineCallbacks
+    def create_build_request(self, builder_ids, properties=None):
         properties = properties.asDict() if properties is not None else None
-        ret = yield master.data.updates.addBuildset(
+        ret = yield self.master.data.updates.addBuildset(
             waited_for=False,
             builderids=builder_ids,
             sourcestamps=[
@@ -299,21 +321,32 @@ class RunMasterBase(unittest.TestCase):
                 if step['results'] != SUCCESS or withLogs:
                     self.printLog(log, out)
 
+    def _match_patterns_consume(self, text, patterns, is_regex):
+        for pattern in patterns[:]:
+            if is_regex:
+                if re.search(pattern, text):
+                    patterns.remove(pattern)
+            else:
+                if pattern in text:
+                    patterns.remove(pattern)
+        return patterns
+
     @defer.inlineCallbacks
     def checkBuildStepLogExist(self, build, expectedLog, onlyStdout=False, regex=False):
+        if isinstance(expectedLog, str):
+            expectedLog = [expectedLog]
+        if not isinstance(expectedLog, list):
+            raise Exception('The expectedLog argument must be either string or a list of strings')
+
         yield self.enrichBuild(build, wantSteps=True, wantProperties=True, wantLogs=True)
         for step in build['steps']:
             for log in step['logs']:
                 for line in log['contents']['content'].splitlines():
                     if onlyStdout and line[0] != 'o':
                         continue
-                    if regex:
-                        if re.search(expectedLog, line):
-                            return True
-                    else:
-                        if expectedLog in line:
-                            return True
-        return False
+                    expectedLog = self._match_patterns_consume(line, expectedLog, is_regex=regex)
+
+        return len(expectedLog) == 0
 
     def printLog(self, log, out):
         print(u" " * 8 + "*********** LOG: {} *********".format(log['name']), file=out)

@@ -123,6 +123,7 @@ bzr
 Bzr
 bzrignore
 CaaS
+cacert
 callables
 Callables
 called
@@ -136,6 +137,7 @@ canonicalize
 canStartBuild
 canStartWithWorkerForBuilder
 catchup
+Certifi
 cd
 cfg
 changehook
@@ -156,6 +158,7 @@ checkconfig
 checkConfig
 checkin
 childs
+choco
 chroot
 chroots
 ci
@@ -238,6 +241,8 @@ debouncer
 debounces
 decodable
 decodeRC
+deduplicated
+deduplication
 deepcopy
 deferreds
 Deferreds
@@ -337,6 +342,7 @@ getRecipients
 getter
 getters
 GiB
+gibibytes
 github
 GitHub
 GitLab
@@ -500,6 +506,7 @@ metabuildbot
 metacharacters
 metadata
 MiB
+mebibytes
 minified
 minifies
 minimalistic
@@ -536,6 +543,7 @@ nd
 ne
 ness
 nestedParameter
+netrc
 netstring
 netstrings
 Nevow
@@ -554,6 +562,7 @@ noticeOnChannel
 novaclient
 npm
 nullability
+nupkg
 oauth
 oAuth
 OAuth
@@ -591,6 +600,7 @@ perl
 petmail
 Phantomjs
 PhantomJS
+picoseconds
 pidfile
 pids
 plaintext
@@ -621,6 +631,7 @@ prepend
 prepended
 prepending
 prev
+PrivateTemporaryDirectory
 procmail
 prois
 propertiesDict
@@ -636,7 +647,7 @@ pyflakes
 Pyflakes
 pyjade
 pypi
-PyPy
+pypugjs
 pysqlite
 pythonic
 Pythonic
@@ -668,6 +679,7 @@ refspec
 regex
 regexp
 regexps
+registerAdapter
 reimplement
 relayhost
 remappings
@@ -691,6 +703,7 @@ revlink
 revlinks
 rmdir
 rmfile
+rmtree
 Robocopy
 rootlink
 routingkeys
@@ -716,6 +729,7 @@ secretsmount
 sed
 selectable
 sendchange
+sendMessage
 serializable
 serviceid
 setDefaultWorkdir
@@ -767,6 +781,7 @@ stepdicts
 stepid
 stopService
 storages
+strports
 subclassed
 subclasses
 subclassing
@@ -808,6 +823,7 @@ tac
 tarball
 tarballs
 Tarballs
+tcp
 templateCache
 templating
 testability
@@ -820,6 +836,8 @@ th
 timestamp
 Todo
 tokenUri
+tooltip
+topbar
 topicmatch
 trac
 tracebacks
@@ -869,6 +887,7 @@ unsubscribes
 untracked
 untrusted
 unversioned
+UpCloud
 uploadDirectory
 uploader
 uploadFile
@@ -891,6 +910,7 @@ username
 Username
 usernames
 useTls
+usr
 utf
 UTF
 util

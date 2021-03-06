@@ -27,7 +27,7 @@ For CVS, the static specifications are *repository* and *module*.
 In addition to those, each build uses a timestamp (or omits the timestamp to mean *the latest*) and *branch tag* (which defaults to ``HEAD``).
 These parameters collectively specify a set of sources from which a build may be performed.
 
-`Subversion <http://subversion.tigris.org>`_,  combines the repository, module, and branch into a single *Subversion URL* parameter.
+`Subversion <https://subversion.apache.org>`_ combines the repository, module, and branch into a single *Subversion URL* parameter.
 Within that scope, source checkouts can be specified by a numeric *revision number* (a repository-wide monotonically-increasing marker, such that each transaction that changes the repository is indexed by a different revision number), or a revision timestamp.
 When branches are used, the repository and module form a static ``baseURL``, while each build has a *revision number* and a *branch* (which defaults to a statically-specified ``defaultBranch``).
 The ``baseURL`` and ``branch`` are simply concatenated together to derive the ``repourl`` to use for the checkout.
@@ -688,7 +688,7 @@ SVNPoller
 
 .. py:class:: buildbot.changes.svnpoller.SVNPoller
 
-The :bb:chsrc:`SVNPoller` is a ChangeSource which periodically polls a `Subversion <http://subversion.tigris.org>`_ repository for new revisions, by running the ``svn log`` command in a subshell.
+The :bb:chsrc:`SVNPoller` is a ChangeSource which periodically polls a `Subversion <https://subversion.apache.org>`_ repository for new revisions, by running the ``svn log`` command in a subshell.
 It can watch a single branch or multiple branches.
 
 :bb:chsrc:`SVNPoller` accepts the following arguments:
@@ -1233,6 +1233,9 @@ GerritChangeSource
 The :bb:chsrc:`GerritChangeSource` class connects to a Gerrit server by its SSH interface and uses its event source mechanism, `gerrit stream-events <https://gerrit-documentation.storage.googleapis.com/Documentation/2.2.1/cmd-stream-events.html>`_.
 
 Note that the Gerrit event stream is stateless and any events that occur while buildbot is not connected to Gerrit will be lost. See :bb:chsrc:`GerritEventLogPoller` for a stateful change source.
+
+The ``patchset-created`` and ``ref-updated`` events will be deduplicated, that is, if multiple events related to the same revision are received, only the first will be acted upon.
+This allows ``GerritChangeSource`` to be used together with :bb:chsrc:`GerritEventLogPoller`.
 
 The :bb:chsrc:`GerritChangeSource` accepts the following arguments:
 

@@ -35,17 +35,17 @@ except ImportError:
 try:
     import sphinxcontrib.blockdiag
     assert sphinxcontrib.blockdiag
-except ImportError:
+except ImportError as e:
     raise RuntimeError("sphinxcontrib.blockdiag is not installed. "
                        "Please install documentation dependencies with "
-                       "`pip install buildbot[docs]`")
+                       "`pip install buildbot[docs]`") from e
 
 try:
     pkg_resources.require('docutils>=0.8')
-except pkg_resources.ResolutionError:
+except pkg_resources.ResolutionError as e:
     raise RuntimeError("docutils is not installed or has incompatible version. "
                        "Please install documentation dependencies with `pip "
-                       "install buildbot[docs]`")
+                       "install buildbot[docs]`") from e
 # If your documentation needs a minimal Sphinx version, state it here.
 needs_sphinx = '1.0'
 
@@ -56,6 +56,7 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.extlinks',
     'bbdocs.ext',
+    'bbdocs.api_index',
     'sphinxcontrib.blockdiag',
     'sphinxcontrib.jinja',
     'sphinx_rtd_theme',
@@ -229,6 +230,9 @@ html_favicon = os.path.join('_static', 'icon.png')
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+# We customize the rtd theme slightly
+html_css_files = ['buildbot_rtd.css']
+
 # If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
 # using the given strftime format.
 # html_last_updated_fmt = '%b %d, %Y'
@@ -246,7 +250,7 @@ html_sidebars = {
 # html_domain_indices = True
 
 html_use_index = True
-html_use_modindex = True
+html_use_modindex = False
 
 # If true, the index is split into individual pages for each letter.
 # html_split_index = False

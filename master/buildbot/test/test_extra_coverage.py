@@ -29,7 +29,7 @@ from buildbot.scripts import checkconfig
 from buildbot.scripts import logwatcher
 from buildbot.scripts import reconfig
 from buildbot.scripts import runner
-from buildbot.status import client
+from buildbot.status import client_compat
 from buildbot.steps import master
 from buildbot.steps import maxq
 from buildbot.steps import python
@@ -39,7 +39,6 @@ from buildbot.steps import trigger
 from buildbot.steps import vstudio
 from buildbot.steps.package.rpm import rpmbuild
 from buildbot.steps.package.rpm import rpmlint
-from buildbot.steps.package.rpm import rpmspec
 from buildbot.util import eventual
 
 modules = []  # for the benefit of pyflakes
@@ -48,8 +47,8 @@ modules.extend([p4poller, svnpoller])
 modules.extend([base, sendchange, tryclient])
 modules.extend([subunitlogobserver])
 modules.extend([checkconfig, logwatcher, reconfig, runner])
-modules.extend([client])
+modules.extend([client_compat])
 modules.extend([master, maxq, python, python_twisted, subunit])
 modules.extend([trigger, vstudio])
-modules.extend([rpmbuild, rpmlint, rpmspec])
+modules.extend([rpmbuild, rpmlint])
 modules.extend([eventual])

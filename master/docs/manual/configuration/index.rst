@@ -21,11 +21,15 @@ The next section, :doc:`../customization`, describes this approach, with frequen
     buildfactories
     buildsets
     properties
-    buildsteps
+    steps/index
     interlocks
-    reporters
+    report_generators/index
+    reporters/index
     www
     wwwhooks
     services
     dbconfig
     configurators
+    manhole
+    multimaster
+    multicodebase

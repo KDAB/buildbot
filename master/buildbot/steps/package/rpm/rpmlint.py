@@ -19,10 +19,10 @@ Steps and objects related to rpmlint.
 
 
 from buildbot.steps.package import util as pkgutil
-from buildbot.steps.shell import Test
+from buildbot.steps.shell import TestNewStyle
 
 
-class RpmLint(Test):
+class RpmLint(TestNewStyle):
 
     """
     Rpmlint build step.
@@ -55,7 +55,6 @@ class RpmLint(Test):
             self.fileloc = fileloc
         if config:
             self.config = config
-        self.addFactoryArguments(fileloc=fileloc, config=config)
 
         self.command = ["rpmlint", "-i"]
         if self.config:
@@ -65,7 +64,7 @@ class RpmLint(Test):
         self.obs = pkgutil.WEObserver()
         self.addLogObserver('stdio', self.obs)
 
-    def createSummary(self, log):
+    def createSummary(self):
         """
         Create nice summary logs.
 

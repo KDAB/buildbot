@@ -13,29 +13,17 @@
 #
 # Copyright Buildbot Team Members
 
+from buildbot.status.event_compat import Event
+from buildbot.warnings import warn_deprecated
 
-from zope.interface import implementer
+# This file is here to allow few remaining users of status within Buildbot to use it
+# without triggering deprecation warnings
 
-from buildbot import interfaces
-from buildbot import util
+_hush_pyflakes = [
+    Event
+]
 
-
-@implementer(interfaces.IStatusEvent)
-class Event:
-
-    started = None
-    finished = None
-    text = []
-
-    # IStatusEvent methods
-    def getTimes(self):
-        return (self.started, self.finished)
-
-    def getText(self):
-        return self.text
-
-    def getLogs(self):
-        return []
-
-    def finish(self):
-        self.finished = util.now()
+warn_deprecated(
+    '0.9.0',
+    'buildbot.status.event has been deprecated, consume the buildbot.data APIs'
+)

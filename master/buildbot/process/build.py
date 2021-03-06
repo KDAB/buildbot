@@ -18,7 +18,6 @@ from functools import reduce
 
 from twisted.internet import defer
 from twisted.internet import error
-from twisted.python import components
 from twisted.python import failure
 from twisted.python import log
 from twisted.python.failure import Failure
@@ -38,6 +37,7 @@ from buildbot.process.results import computeResultAndTermination
 from buildbot.process.results import statusToString
 from buildbot.process.results import worst_status
 from buildbot.reporters.utils import getURLForBuild
+from buildbot.util import Notifier
 from buildbot.util import bytes2unicode
 from buildbot.util.eventual import eventually
 
@@ -91,6 +91,7 @@ class Build(properties.PropertiesMixin):
         self.currentStep = None
         self.workerEnvironment = {}
         self.buildid = None
+        self._buildid_notifier = Notifier()
         self.number = None
         self.executedSteps = []
         self.stepnames = {}
@@ -107,8 +108,14 @@ class Build(properties.PropertiesMixin):
         self._locks_released = False
         self._build_finished = False
 
+        # tracks execution during substantiation
+        self._is_substantiating = False
+
         # tracks the config version for locks
         self.config_version = None
+
+    def getProperties(self):
+        return self.properties
 
     def setBuilder(self, builder):
         """
@@ -304,6 +311,7 @@ class Build(properties.PropertiesMixin):
                 builderid=builderid,
                 buildrequestid=brid,
                 workerid=worker.workerid)
+        self._buildid_notifier.notify(self.buildid)
 
         self.stopBuildConsumer = yield self.master.mq.startConsuming(self.controlStopBuild,
                                                                      ("control", "builds",
@@ -326,7 +334,7 @@ class Build(properties.PropertiesMixin):
 
         # make sure properties are available to people listening on 'new'
         # events
-        yield self._flushProperties(None)
+        yield self.master.data.updates.setBuildProperties(self.buildid, self)
         self.build_status.buildStarted(self)
         yield self.master.data.updates.setBuildStateString(self.buildid, 'starting')
         yield self.master.data.updates.generateNewBuildEvent(self.buildid)
@@ -335,30 +343,34 @@ class Build(properties.PropertiesMixin):
             self.setupBuild()  # create .steps
         except Exception:
             yield self.buildPreparationFailure(Failure(), "setupBuild")
-            self.buildFinished(['Build.setupBuild', 'failed'], EXCEPTION)
+            yield self.buildFinished(['Build.setupBuild', 'failed'], EXCEPTION)
             return
 
         # flush properties in the beginning of the build
-        yield self._flushProperties(None)
-
+        yield self.master.data.updates.setBuildProperties(self.buildid, self)
         yield self.master.data.updates.setBuildStateString(self.buildid,
                                                            'preparing worker')
         try:
-            ready_or_failure = yield workerforbuilder.prepare(self)
+            ready_or_failure = False
+            if workerforbuilder.worker and workerforbuilder.worker.acquireLocks():
+                self._is_substantiating = True
+                ready_or_failure = yield workerforbuilder.substantiate_if_needed(self)
         except Exception:
             ready_or_failure = Failure()
+        finally:
+            self._is_substantiating = False
 
         # If prepare returns True then it is ready and we start a build
         # If it returns failure then we don't start a new build.
         if ready_or_failure is not True:
             yield self.buildPreparationFailure(ready_or_failure, "worker_prepare")
             if self.stopped:
-                self.buildFinished(["worker", "cancelled"], self.results)
+                yield self.buildFinished(["worker", "cancelled"], self.results)
             elif isinstance(ready_or_failure, Failure) and \
                     ready_or_failure.check(interfaces.LatentWorkerCannotSubstantiate):
-                self.buildFinished(["worker", "cannot", "substantiate"], EXCEPTION)
+                yield self.buildFinished(["worker", "cannot", "substantiate"], EXCEPTION)
             else:
-                self.buildFinished(["worker", "not", "available"], RETRY)
+                yield self.buildFinished(["worker", "not", "available"], RETRY)
             return
 
         # ping the worker to make sure they're still there. If they've
@@ -379,7 +391,7 @@ class Build(properties.PropertiesMixin):
 
         if ping_success_or_failure is not True:
             yield self.buildPreparationFailure(ping_success_or_failure, "worker_ping")
-            self.buildFinished(["worker", "not", "pinged"], RETRY)
+            yield self.buildFinished(["worker", "not", "pinged"], RETRY)
             return
 
         self.conn = workerforbuilder.worker.conn
@@ -397,14 +409,15 @@ class Build(properties.PropertiesMixin):
             yield self.conn.remoteStartBuild(self.builder.name)
         except Exception:
             yield self.buildPreparationFailure(Failure(), "start_build")
-            self.buildFinished(["worker", "not", "building"], RETRY)
+            yield self.buildFinished(["worker", "not", "building"], RETRY)
             return
 
         yield self.master.data.updates.setBuildStateString(self.buildid,
                                                            'acquiring locks')
         yield self.acquireLocks()
-        yield self.master.data.updates.setStepStateString(self.preparation_step.stepid,
-                                                          "worker ready")
+
+        readymsg = "worker {} ready".format(self.getWorkerName())
+        yield self.master.data.updates.setStepStateString(self.preparation_step.stepid, readymsg)
         yield self.master.data.updates.finishStep(self.preparation_step.stepid, SUCCESS, False)
 
         yield self.master.data.updates.setBuildStateString(self.buildid,
@@ -415,13 +428,21 @@ class Build(properties.PropertiesMixin):
 
     @defer.inlineCallbacks
     def buildPreparationFailure(self, why, state_string):
-        log.err(why, "while " + state_string)
-        self.workerforbuilder.worker.putInQuarantine()
-        if isinstance(why, failure.Failure):
-            yield self.preparation_step.addLogWithFailure(why)
-        yield self.master.data.updates.setStepStateString(self.preparation_step.stepid,
-                                                          "error while " + state_string)
-        yield self.master.data.updates.finishStep(self.preparation_step.stepid, EXCEPTION, False)
+        if self.stopped:
+            # if self.stopped, then this failure is a LatentWorker's failure to substantiate
+            # which we triggered on purpose in stopBuild()
+            log.msg("worker stopped while " + state_string, why)
+            yield self.master.data.updates.finishStep(self.preparation_step.stepid,
+                                                      CANCELLED, False)
+        else:
+            log.err(why, "while " + state_string)
+            self.workerforbuilder.worker.putInQuarantine()
+            if isinstance(why, failure.Failure):
+                yield self.preparation_step.addLogWithFailure(why)
+            yield self.master.data.updates.setStepStateString(self.preparation_step.stepid,
+                                                            "error while " + state_string)
+            yield self.master.data.updates.finishStep(self.preparation_step.stepid,
+                                                      EXCEPTION, False)
 
     @staticmethod
     def _canAcquireLocks(lockList, workerforbuilder):
@@ -467,7 +488,7 @@ class Build(properties.PropertiesMixin):
     def setupBuildSteps(self, step_factories):
         steps = []
         for factory in step_factories:
-            step = factory.buildStep()
+            step = buildstep.create_step_from_step_or_factory(factory)
             step.setBuild(self)
             step.setWorker(self.workerforbuilder.worker)
             steps.append(step)
@@ -489,18 +510,14 @@ class Build(properties.PropertiesMixin):
             self.setProperty('owners', sorted(owners), 'Build')
         self.text = []  # list of text string lists (text2)
 
-    def _addBuildSteps(self, step_factories):
-        factories = [interfaces.IBuildStepFactory(s) for s in step_factories]
-        return self.setupBuildSteps(factories)
-
     def addStepsAfterCurrentStep(self, step_factories):
         # Add the new steps after the step that is running.
         # The running step has already been popped from self.steps
-        self.steps[0:0] = self._addBuildSteps(step_factories)
+        self.steps[0:0] = self.setupBuildSteps(step_factories)
 
     def addStepsAfterLastStep(self, step_factories):
         # Add the new steps to the end.
-        self.steps.extend(self._addBuildSteps(step_factories))
+        self.steps.extend(self.setupBuildSteps(step_factories))
 
     def getNextStep(self):
         """This method is called to obtain the next BuildStep for this build.
@@ -530,28 +547,34 @@ class Build(properties.PropertiesMixin):
             return self.allStepsDone()
         self.executedSteps.append(s)
         self.currentStep = s
-        d = defer.maybeDeferred(s.startStep, self.conn)
-        d.addBoth(self._flushProperties)
-        d.addCallback(self._stepDone, s)
-        d.addErrback(self.buildException)
-        return None
+
+        # the following function returns a deferred, but we don't wait for it
+        self._start_next_step_impl(s)
+        return defer.succeed(None)
 
     @defer.inlineCallbacks
-    def _flushProperties(self, results):
-        # `results` is just passed on to the next callback
-        yield self.master.data.updates.setBuildProperties(self.buildid, self)
+    def _start_next_step_impl(self, step):
+        try:
+            results = yield step.startStep(self.conn)
+            yield self.master.data.updates.setBuildProperties(self.buildid, self)
 
-        return results
+            self.currentStep = None
+            if self.finished:
+                return  # build was interrupted, don't keep building
 
-    @defer.inlineCallbacks
-    def _stepDone(self, results, step):
-        self.currentStep = None
-        if self.finished:
-            return  # build was interrupted, don't keep building
-        terminate = yield self.stepDone(results, step)  # interpret/merge results
-        if terminate:
-            self.terminate = True
-        yield self.startNextStep()
+            terminate = yield self.stepDone(results, step)  # interpret/merge results
+            if terminate:
+                self.terminate = True
+            yield self.startNextStep()
+
+        except Exception as e:
+            log.msg("{} build got exception when running step {}".format(self, step))
+            log.err(e)
+
+            yield self.master.data.updates.setBuildProperties(self.buildid, self)
+
+            # Note that buildFinished can't throw exception
+            yield self.buildFinished(["build", "exception"], EXCEPTION)
 
     @defer.inlineCallbacks
     def stepDone(self, results, step):
@@ -623,6 +646,10 @@ class Build(properties.PropertiesMixin):
         if self._acquiringLock:
             lock, access, d = self._acquiringLock
             lock.stopWaitingUntilAvailable(self, access, d)
+        elif self._is_substantiating:
+            # We're having a latent worker that hasn't been substantiated yet. We need to abort
+            # that to not have a latent worker without an associated build
+            self.workerforbuilder.insubstantiate_if_needed()
 
     def allStepsDone(self):
         if self.results == FAILURE:
@@ -640,16 +667,6 @@ class Build(properties.PropertiesMixin):
         text.extend(self.text)
         return self.buildFinished(text, self.results)
 
-    def buildException(self, why):
-        log.msg("{}.buildException".format(self))
-        log.err(why)
-        # try to finish the build, but since we've already faced an exception,
-        # this may not work well.
-        try:
-            self.buildFinished(["build", "exception"], EXCEPTION)
-        except Exception:
-            log.err(Failure(), 'while finishing a build with an exception')
-
     @defer.inlineCallbacks
     def buildFinished(self, text, results):
         """This method must be called when the last Step has completed. It
@@ -661,7 +678,9 @@ class Build(properties.PropertiesMixin):
 
         If 'results' is SUCCESS or WARNINGS, we will permit any dependent
         builds to start. If it is 'FAILURE', those builds will be
-        abandoned."""
+        abandoned.
+
+        This method never throws."""
         try:
             self.stopBuildConsumer.stopConsuming()
             self.finished = True
@@ -751,10 +770,18 @@ class Build(properties.PropertiesMixin):
         builder_id = yield self.getBuilderId()
         return getURLForBuild(self.master, builder_id, self.number)
 
+    @defer.inlineCallbacks
+    def get_buildid(self):
+        if self.buildid is not None:
+            return self.buildid
+        buildid = yield self._buildid_notifier.wait()
+        return buildid
+
+    @defer.inlineCallbacks
     def waitUntilFinished(self):
-        return self.master.mq.waitUntilEvent(
-            ('builds', str(self.buildid), 'finished'),
-            lambda: self.finished)
+        buildid = yield self.get_buildid()
+        yield self.master.mq.waitUntilEvent(('builds', str(buildid), 'finished'),
+                                            lambda: self.finished)
 
     def getWorkerInfo(self):
         return self.workerforbuilder.worker.worker_status.info
@@ -765,8 +792,3 @@ class Build(properties.PropertiesMixin):
         return self.build_status
 
     # stopBuild is defined earlier
-
-
-components.registerAdapter(
-    lambda build: interfaces.IProperties(build.properties),
-    Build, interfaces.IProperties)

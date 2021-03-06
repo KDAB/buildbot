@@ -92,6 +92,13 @@ class BuildController {
         };
         $scope.$watch('build.complete', refreshContextMenu);
 
+        // Clear breadcrumb and contextual action buttons on destroy
+        const clearGl = function () {
+            glBreadcrumbService.setBreadcrumb([]);
+            glTopbarContextualActionsService.setContextualActions([]);
+        };
+        $scope.$on('$destroy', clearGl);
+
         const data = dataService.open().closeOnDestroy($scope);
         data.getBuilders(builderid).onChange = function(builders) {
             let builder;
@@ -147,9 +154,17 @@ class BuildController {
                     }
                 });
 
-                build.getProperties().onNew = properties => $scope.properties = properties;
-                $scope.changes = build.getChanges();
                 $scope.responsibles = {};
+                build.getProperties().onNew = function(properties) {
+                    $scope.properties = properties;
+                    var owner = properties.owner[0];
+                    if (properties.scheduler[0] === 'force' && owner.match(/^.+\<.+\@.+\..+\>.*$/)) {
+                        var name = owner.split(new RegExp('<|>'))[0];
+                        var email = owner.split(new RegExp('<|>'))[1];
+                        $scope.responsibles[name] = email;
+                    }
+                };
+                $scope.changes = build.getChanges();
                 $scope.changes.onNew = change => $scope.responsibles[change.author_name] = change.author_email;
 
                 data.getWorkers(build.workerid).onNew = worker => $scope.worker = publicFieldsFilter(worker);

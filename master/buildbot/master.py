@@ -43,7 +43,7 @@ from buildbot.process.botmaster import BotMaster
 from buildbot.process.users.manager import UserManagerManager
 from buildbot.schedulers.manager import SchedulerManager
 from buildbot.secrets.manager import SecretManager
-from buildbot.status.master import Status
+from buildbot.status.master_compat import Status
 from buildbot.util import check_functional_environment
 from buildbot.util import service
 from buildbot.util.eventual import eventually
@@ -268,11 +268,13 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
 
             yield self.mq.setup()
 
+            # the buildbot scripts send the SIGHUP signal to reconfig master
             if hasattr(signal, "SIGHUP"):
                 def sighup(*args):
                     eventually(self.reconfig)
                 signal.signal(signal.SIGHUP, sighup)
 
+            # the buildbot scripts send the SIGUSR1 signal to stop master
             if hasattr(signal, "SIGUSR1"):
                 def sigusr1(*args):
                     eventually(self.botmaster.cleanShutdown)
@@ -335,12 +337,19 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
     def stopService(self):
         try:
             yield self.initLock.acquire()
+
+            if self.running:
+                yield self.botmaster.cleanShutdown(quickMode=True, stopReactor=False)
+
+            # Mark master as stopped only after all builds are shut down. Note that masterStopped
+            # would forcibly mark all related build requests, builds, steps, logs, etc. as
+            # complete, so this may make state inconsistent if done while the builds are still
+            # running.
             if self.masterid is not None:
                 yield self.data.updates.masterStopped(
                     name=self.name, masterid=self.masterid)
+
             if self.running:
-                yield self.botmaster.cleanShutdown(
-                    quickMode=True, stopReactor=False)
                 yield super().stopService()
 
             log.msg("BuildMaster is stopped")

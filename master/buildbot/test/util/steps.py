@@ -19,7 +19,6 @@ from twisted.internet import defer
 from twisted.python import log
 from twisted.python.reflect import namedModule
 
-from buildbot import interfaces
 from buildbot.process import buildstep
 from buildbot.process import remotecommand as real_remotecommand
 from buildbot.process.results import EXCEPTION
@@ -65,17 +64,20 @@ def _dict_diff(d1, d2):
     return missing_in_d1, missing_in_d2, different
 
 
-def _describe_cmd_difference(exp, command):
-    if exp.args == command.args:
+def _describe_cmd_difference(exp_command, exp_args, got_command, got_args):
+    if exp_command != got_command:
+        return 'Expected command type {} got {}. Expected args {}'.format(exp_command, got_command,
+                                                                          repr(exp_args))
+    if exp_args == got_args:
         return ""
     text = ""
-    missing_in_exp, missing_in_cmd, diff = _dict_diff(exp.args, command.args)
+    missing_in_exp, missing_in_cmd, diff = _dict_diff(exp_args, got_args)
     if missing_in_exp:
-        text += (
-            'Keys in cmd missing from expectation: {0}\n'.format(missing_in_exp))
+        missing_dict = {key: got_args[key] for key in missing_in_exp}
+        text += 'Keys in cmd missing from expectation: {0!r}\n'.format(missing_dict)
     if missing_in_cmd:
-        text += (
-            'Keys in expectation missing from command: {0}\n'.format(missing_in_cmd))
+        missing_dict = {key: exp_args[key] for key in missing_in_cmd}
+        text += 'Keys in expectation missing from command: {0!r}\n'.format(missing_dict)
     if diff:
         formatted_diff = [
             '"{0}": expected {1!r}, got {2!r}'.format(*d) for d in diff]
@@ -118,30 +120,34 @@ class BuildStepMixin:
         if not hasattr(self, 'reactor'):
             raise Exception('Reactor has not yet been setup for step')
 
-        # make an (admittedly global) reference to this test case so that
-        # the fakes can call back to us
-        remotecommand.FakeRemoteCommand.testcase = self
-        for module in buildstep, real_remotecommand:
-            self.patch(module, 'RemoteCommand',
-                       remotecommand.FakeRemoteCommand)
-            self.patch(module, 'RemoteShellCommand',
-                       remotecommand.FakeRemoteShellCommand)
+        self._next_remote_command_number = 0
+        self._interrupt_remote_command_numbers = []
+
+        def create_fake_remote_command(*args, **kwargs):
+            cmd = remotecommand.FakeRemoteCommand(*args, **kwargs)
+            cmd.testcase = self
+            if self._next_remote_command_number in self._interrupt_remote_command_numbers:
+                cmd.set_run_interrupt()
+            self._next_remote_command_number += 1
+            return cmd
+
+        def create_fake_remote_shell_command(*args, **kwargs):
+            cmd = remotecommand.FakeRemoteShellCommand(*args, **kwargs)
+            cmd.testcase = self
+            if self._next_remote_command_number in self._interrupt_remote_command_numbers:
+                cmd.set_run_interrupt()
+            self._next_remote_command_number += 1
+            return cmd
+
+        self.patch(real_remotecommand, 'RemoteCommand', create_fake_remote_command)
+        self.patch(real_remotecommand, 'RemoteShellCommand', create_fake_remote_shell_command)
         self.expected_remote_commands = []
+        self._expected_remote_commands_popped = 0
 
         self.master = fakemaster.make_master(self, wantData=wantData, wantDb=wantDb, wantMq=wantMq)
 
     def tearDownBuildStep(self):
-        # delete the reference added in setUp
-        del remotecommand.FakeRemoteCommand.testcase
-
-    # utilities
-    def _getWorkerCommandVersionWrapper(self):
-        originalGetWorkerCommandVersion = self.step.build.getWorkerCommandVersion
-
-        def getWorkerCommandVersion(cmd, oldversion):
-            return originalGetWorkerCommandVersion(cmd, oldversion)
-
-        return getWorkerCommandVersion
+        pass
 
     def setupStep(self, step, worker_version=None, worker_env=None,
                   buildFiles=None, wantDefaultWorkdir=True):
@@ -171,9 +177,7 @@ class BuildStepMixin:
         if buildFiles is None:
             buildFiles = list()
 
-        factory = interfaces.IBuildStepFactory(step)
-
-        step = self.step = factory.buildStep()
+        step = self.step = buildstep.create_step_from_step_or_factory(step)
 
         # set defaults
         if wantDefaultWorkdir:
@@ -195,8 +199,10 @@ class BuildStepMixin:
         b.workerEnvironment = worker_env.copy()
         step.setBuild(b)
 
+        self.build.builder.config.env = worker_env.copy()
+
         # watch for properties being set
-        self.properties = interfaces.IProperties(b)
+        self.properties = b.getProperties()
 
         # step.progress
 
@@ -210,37 +216,48 @@ class BuildStepMixin:
         # step overrides
 
         def addLog(name, type='s', logEncoding=None):
-            _log = logfile.FakeLogFile(name, step)
+            _log = logfile.FakeLogFile(name)
             self.step.logs[name] = _log
+            self.step._connectPendingLogObservers()
             return defer.succeed(_log)
         step.addLog = addLog
         step.addLog_newStyle = addLog
 
         def addHTMLLog(name, html):
-            _log = logfile.FakeLogFile(name, step)
+            _log = logfile.FakeLogFile(name)
             html = bytes2unicode(html)
             _log.addStdout(html)
             return defer.succeed(None)
         step.addHTMLLog = addHTMLLog
 
         def addCompleteLog(name, text):
-            _log = logfile.FakeLogFile(name, step)
+            _log = logfile.FakeLogFile(name)
+            if name in self.step.logs:
+                raise Exception('Attempt to add log {} twice to the logs'.format(name))
             self.step.logs[name] = _log
             _log.addStdout(text)
             return defer.succeed(None)
         step.addCompleteLog = addCompleteLog
 
-        step.logobservers = self.logobservers = {}
+        self._got_test_result_sets = []
+        self._next_test_result_set_id = 1000
 
-        def addLogObserver(logname, observer):
-            self.logobservers.setdefault(logname, []).append(observer)
-            observer.step = step
-        step.addLogObserver = addLogObserver
+        def add_test_result_set(description, category, value_unit):
+            self._got_test_result_sets.append((description, category, value_unit))
 
-        # add any observers defined in the constructor, before this
-        # monkey-patch
-        for n, o in step._pendingLogObservers:
-            addLogObserver(n, o)
+            setid = self._next_test_result_set_id
+            self._next_test_result_set_id += 1
+            return defer.succeed(setid)
+
+        step.addTestResultSet = add_test_result_set
+
+        self._got_test_results = []
+
+        def add_test_result(setid, value, test_name=None, test_code_path=None, line=None,
+                            duration_ns=None):
+            self._got_test_results.append((setid, value, test_name, test_code_path, line,
+                                           duration_ns))
+        step.addTestResult = add_test_result
 
         # expectations
 
@@ -251,6 +268,8 @@ class BuildStepMixin:
         self.exp_logfiles = {}
         self.exp_hidden = False
         self.exp_exception = None
+        self._exp_test_result_sets = []
+        self._exp_test_results = []
 
         # check that the step's name is not None
         self.assertNotEqual(step.name, None)
@@ -304,6 +323,19 @@ class BuildStepMixin:
         self.exp_exception = exception_class
         self.expectOutcome(EXCEPTION)
 
+    def expectTestResultSets(self, sets):
+        self._exp_test_result_sets = sets
+
+    def expectTestResults(self, results):
+        self._exp_test_results = results
+
+    def _dump_logs(self):
+        for l in self.step.logs.values():
+            if l.stdout:
+                log.msg("{0} stdout:\n{1}".format(l.name, l.stdout))
+            if l.stderr:
+                log.msg("{0} stderr:\n{1}".format(l.name, l.stderr))
+
     @defer.inlineCallbacks
     def runStep(self):
         """
@@ -311,8 +343,6 @@ class BuildStepMixin:
 
         @returns: Deferred
         """
-        self.step.build.getWorkerCommandVersion = self._getWorkerCommandVersionWrapper()
-
         self.conn = mock.Mock(name="WorkerForBuilder(connection)")
         self.step.setupProgress()
         result = yield self.step.startStep(self.conn)
@@ -328,13 +358,10 @@ class BuildStepMixin:
         # in case of unexpected result, display logs in stdout for
         # debugging failing tests
         if result != self.exp_result:
-            log.msg("unexpected result from step; dumping logs")
-            for l in self.step.logs.values():
-                if l.stdout:
-                    log.msg("{0} stdout:\n{1}".format(l.name, l.stdout))
-                if l.stderr:
-                    log.msg("{0} stderr:\n{1}".format(l.name, l.stderr))
-            raise AssertionError("unexpected result; see logs")
+            msg = "unexpected result from step; expected {}, got {}".format(self.exp_result, result)
+            log.msg("{}; dumping logs".format(msg))
+            self._dump_logs()
+            raise AssertionError("{}; see logs".format(msg))
 
         if self.exp_state_string:
             stepStateString = self.master.data.updates.stepStateString
@@ -360,10 +387,14 @@ class BuildStepMixin:
             got = self.step.logs[l].stdout
             if got != exp:
                 log.msg("Unexpected log output:\n" + got)
+                log.msg("Expected log output:\n" + exp)
                 raise AssertionError("Unexpected log output; see logs")
         if self.exp_exception:
             self.assertEqual(
                 len(self.flushLoggedErrors(self.exp_exception)), 1)
+
+        self.assertEqual(self._exp_test_result_sets, self._got_test_result_sets)
+        self.assertEqual(self._exp_test_results, self._got_test_results)
 
         # XXX TODO: hidden
         # self.step_status.setHidden.assert_called_once_with(self.exp_hidden)
@@ -387,17 +418,16 @@ class BuildStepMixin:
                 exp.raiseExpectationFailure(child_exp, e)
 
         if exp.shouldAssertCommandEqualExpectation():
-            # handle any incomparable args
-            for arg in exp.incomparable_args:
-                self.assertTrue(arg in got[1], "incomparable arg '{}' not received".format(arg))
-                del got[1][arg]
+            self.assertEqual(exp.interrupted, command.interrupted)
 
             # first check any ExpectedRemoteReference instances
             exp_tup = (exp.remote_command, exp.args)
             if exp_tup != got:
-                text = _describe_cmd_difference(exp, command)
-                raise AssertionError(
-                    "Command contents different from expected; " + text)
+                msg = "Command contents different from expected (command index: {}); {}".format(
+                    self._expected_remote_commands_popped,
+                    _describe_cmd_difference(exp.remote_command, exp.args,
+                                             command.remote_command, command.args))
+                raise AssertionError(msg)
 
         if exp.shouldRunBehaviors():
             # let the Expect object show any behaviors that are required
@@ -427,6 +457,7 @@ class BuildStepMixin:
         finally:
             if not exp.shouldKeepMatchingAfter(command):
                 self.expected_remote_commands.pop(0)
+                self._expected_remote_commands_popped += 1
         return command
 
     def changeWorkerSystem(self, system):
@@ -437,3 +468,6 @@ class BuildStepMixin:
         else:
             self.build.path_module = namedModule('posixpath')
             self.worker.worker_basedir = '/wrk'
+
+    def interrupt_nth_remote_command(self, number):
+        self._interrupt_remote_command_numbers.append(number)
