@@ -342,7 +342,6 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
             return defer.succeed(None)
         instance = self.instance
         self.instance = None
-        self._actual_build_props = None  # on tear down we lose our properties
         return threads.deferToThread(self._thd_stop_instance, instance, fast)
 
     def _thd_stop_instance(self, instance, fast):

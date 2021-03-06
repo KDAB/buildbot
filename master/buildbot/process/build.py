@@ -38,10 +38,8 @@ from buildbot.process.results import computeResultAndTermination
 from buildbot.process.results import statusToString
 from buildbot.process.results import worst_status
 from buildbot.reporters.utils import getURLForBuild
-from buildbot.util import Notifier
 from buildbot.util import bytes2unicode
 from buildbot.util.eventual import eventually
-from buildbot.worker.latent import AbstractLatentWorker
 
 
 @implementer(interfaces.IBuildControl)
@@ -93,7 +91,6 @@ class Build(properties.PropertiesMixin):
         self.currentStep = None
         self.workerEnvironment = {}
         self.buildid = None
-        self._buildid_notifier = Notifier()
         self.number = None
         self.executedSteps = []
         self.stepnames = {}
@@ -307,7 +304,6 @@ class Build(properties.PropertiesMixin):
                 builderid=builderid,
                 buildrequestid=brid,
                 workerid=worker.workerid)
-        self._buildid_notifier.notify(self.buildid)
 
         self.stopBuildConsumer = yield self.master.mq.startConsuming(self.controlStopBuild,
                                                                      ("control", "builds",
@@ -419,21 +415,13 @@ class Build(properties.PropertiesMixin):
 
     @defer.inlineCallbacks
     def buildPreparationFailure(self, why, state_string):
-        if self.stopped:
-            # if self.stopped, then this failure is a LatentWorker's failure to substantiate
-            # which we triggered on purpose in stopBuild()
-            log.msg("worker stopped while " + state_string, why)
-            yield self.master.data.updates.finishStep(self.preparation_step.stepid,
-                                                      CANCELLED, False)
-        else:
-            log.err(why, "while " + state_string)
-            self.workerforbuilder.worker.putInQuarantine()
-            if isinstance(why, failure.Failure):
-                yield self.preparation_step.addLogWithFailure(why)
-            yield self.master.data.updates.setStepStateString(self.preparation_step.stepid,
-                                                            "error while " + state_string)
-            yield self.master.data.updates.finishStep(self.preparation_step.stepid,
-                                                      EXCEPTION, False)
+        log.err(why, "while " + state_string)
+        self.workerforbuilder.worker.putInQuarantine()
+        if isinstance(why, failure.Failure):
+            yield self.preparation_step.addLogWithFailure(why)
+        yield self.master.data.updates.setStepStateString(self.preparation_step.stepid,
+                                                          "error while " + state_string)
+        yield self.master.data.updates.finishStep(self.preparation_step.stepid, EXCEPTION, False)
 
     @staticmethod
     def _canAcquireLocks(lockList, workerforbuilder):
@@ -635,13 +623,6 @@ class Build(properties.PropertiesMixin):
         if self._acquiringLock:
             lock, access, d = self._acquiringLock
             lock.stopWaitingUntilAvailable(self, access, d)
-        elif not self.conn and isinstance(self.workerforbuilder.worker, AbstractLatentWorker):
-            # if this function can be called (because we appear to be building)
-            # if there is no connection, but we are also not waiting for locks
-            # then we are likely having a LatentWorker which hasn't been substantiated yet
-            # (maybe it couldn't connect to the master?)
-            # and the substantiation needs to be aborted
-            self.workerforbuilder.worker.insubstantiate()
 
     def allStepsDone(self):
         if self.results == FAILURE:
@@ -770,18 +751,10 @@ class Build(properties.PropertiesMixin):
         builder_id = yield self.getBuilderId()
         return getURLForBuild(self.master, builder_id, self.number)
 
-    @defer.inlineCallbacks
-    def get_buildid(self):
-        if self.buildid is not None:
-            return self.buildid
-        buildid = yield self._buildid_notifier.wait()
-        return buildid
-
-    @defer.inlineCallbacks
     def waitUntilFinished(self):
-        buildid = yield self.get_buildid()
-        yield self.master.mq.waitUntilEvent(('builds', str(buildid), 'finished'),
-                                            lambda: self.finished)
+        return self.master.mq.waitUntilEvent(
+            ('builds', str(self.buildid), 'finished'),
+            lambda: self.finished)
 
     def getWorkerInfo(self):
         return self.workerforbuilder.worker.worker_status.info

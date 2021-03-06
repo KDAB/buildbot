@@ -84,7 +84,7 @@ class ReconfigurablePollingChangeSource(ChangeSource):
         yield super().reconfigService(name=name)
 
         # pollInterval change is the only value which makes sense to reconfigure check.
-        if prevPollInterval != pollInterval and self.doPoll.running:
+        if prevPollInterval != pollInterval and self.doPoll.started:
             yield self.doPoll.stop()
             # As a implementation detail, poller will 'pollAtReconfigure' if poll interval changes
             # and pollAtLaunch=True

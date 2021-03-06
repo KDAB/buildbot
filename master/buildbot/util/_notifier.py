@@ -33,10 +33,9 @@ class Notifier:
         return d
 
     def notify(self, result):
-        if self._waiters:
-            waiters, self._waiters = self._waiters, []
-            for waiter in waiters:
-                waiter.callback(result)
+        waiters, self._waiters = self._waiters, []
+        for waiter in waiters:
+            waiter.callback(result)
 
     def __bool__(self):
         return bool(self._waiters)
