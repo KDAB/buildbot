@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# NOTE: currently buildbot is installed as an editable package to ~/opt/buildbot_venv. This means
+# that any source code changes are immediately visible and one just needs to do a buildbot restart
+# in order to pick them up.
+#
+# Thus most of the time it's not necessary to run this script.
+#
+# It is recommended to run it after upgrading buildbot to synchronize the binaries of the
+# buildbot www-related packages.
+
 set -e
 set -x
 
@@ -8,50 +17,26 @@ git fetch kdab --tags
 git fetch origin --tags
 
 # required for yarn
-export PATH="$PATH:$PWD/node_modules/.bin/"
-npm install yarn webpack-cli
+# TODO: looks like this does not work from a completely clean git repository.
+# export PATH="$PATH:$PWD/node_modules/.bin/"
+# npm install yarn webpack-cli less-loader css-loader
 
-PREFIX=~/opt/buildbot
+# This will build all frontend packages in a custom virtualenv maintained by the Makefile.
+# This is what upstream uses to run their frontend tests, so it should work for us too.
+# rm -rf .venv
+# make frontend
 
-function py_install() {
-  python3 setup.py build || exit 1
-  python3 setup.py install --prefix=$PREFIX || exit 1
-}
+source ~/opt/buildbot_venv/bin/activate
 
-cd master/
-py_install
-cd ../
+pip install \
+    -e pkg \
+    -e 'master[tls,test,docs]' \
+    -e 'worker[test]' \
+    buildbot-www \
+    buildbot-badges \
+    buildbot-console-view \
+    buildbot-grid-view \
+    buildbot-waterfall-view \
+    buildbot-wsgi-dashboards
 
-pip3 install --system --prefix=$PREFIX -e pkg || exit 1
-pip3 install --system --prefix=$PREFIX mock || exit 1
-
-pushd www/build_common
-rm -rf node_modules
-yarn install
-popd
-
-pushd www/
-rm -rf node_modules
-cp -r build_common/node_modules .
-popd
-
-pushd www/guanlecoja-ui/
-rm -rf node_modules
-yarn install
-yarn build
-popd
-
-pushd www/data_module
-rm -rf node_modules
-yarn install
-popd
-
-# copied from Buildbot's Makefile, adapt as required
-# DISABLED: console_view waterfall_view grid_view
-for i in base wsgi_dashboards codeparameter nestedexample; do
-  pushd www/${i}
-  export PATH="$PATH:$PWD/node_modules/.bin/"
-  rm -rf node_modules
-  py_install
-  popd
-done
+pip install -r requirements-kdabci.txt
