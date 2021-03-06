@@ -17,26 +17,31 @@ git fetch kdab --tags
 git fetch origin --tags
 
 # required for yarn
-# TODO: looks like this does not work from a completely clean git repository.
-# export PATH="$PATH:$PWD/node_modules/.bin/"
-# npm install yarn webpack-cli less-loader css-loader
+export PATH="$PATH:$PWD/node_modules/.bin/"
+npm install yarn webpack-cli
 
 # This will build all frontend packages in a custom virtualenv maintained by the Makefile.
 # This is what upstream uses to run their frontend tests, so it should work for us too.
-# rm -rf .venv
-# make frontend
+rm -rf .venv
+make frontend
+
+rm -rf ~/opt/buildbot_venv/
+virtualenv --python=/usr/bin/python3 ~/opt/buildbot_venv/
 
 source ~/opt/buildbot_venv/bin/activate
 
 pip install \
     -e pkg \
     -e 'master[tls,test,docs]' \
-    -e 'worker[test]' \
-    buildbot-www \
-    buildbot-badges \
-    buildbot-console-view \
-    buildbot-grid-view \
-    buildbot-waterfall-view \
-    buildbot-wsgi-dashboards
+    -e 'worker[test]'
+
+pip install \
+    -e www/base \
+    -e www/console_view \
+    -e www/grid_view \
+    -e www/waterfall_view \
+    -e www/wsgi_dashboards \
+    -e www/badges \
+    -e www/codeparameter
 
 pip install -r requirements-kdabci.txt
