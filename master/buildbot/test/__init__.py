@@ -85,6 +85,9 @@ warnings.filterwarnings('ignore', "1300 Invalid utf8 character string")
 # twisted.compat.execfile is using 'U' https://twistedmatrix.com/trac/ticket/9023
 warnings.filterwarnings('ignore', "'U' mode is deprecated", DeprecationWarning)
 
+# Does not happen on master branch as of 2021-05-23
+warnings.filterwarnings('ignore', ".*Obsolete alias for str builtin type.*", DeprecationWarning)
+
 # sqlalchemy.migrate is calling inspect.getargspec()
 # https://bugs.launchpad.net/sqlalchemy-migrate/+bug/1662472
 warnings.filterwarnings('ignore', r"inspect.getargspec\(\) is deprecated")
