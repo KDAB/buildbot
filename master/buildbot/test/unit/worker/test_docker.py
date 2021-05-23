@@ -243,7 +243,7 @@ class TestDockerLatentWorker(unittest.TestCase, TestReactorMixin):
         self.assertEqual(len(client.call_args_create_container), 1)
         self.assertEqual(len(client.call_args_create_host_config), 1)
         self.assertEqual(client.call_args_create_container[0]['volumes'],
-                         ['/opt/webapp', '/backup'])
+                         ['/opt/webapp', '~:/backup'])
         self.assertEqual(client.call_args_create_host_config[0]['binds'],
                          ['/src/webapp:/opt/webapp:ro', '~:/backup:rw'])
 
@@ -253,15 +253,6 @@ class TestDockerLatentWorker(unittest.TestCase, TestReactorMixin):
             yield self.setupWorker('bot', 'pass', 'http://localhost:2375',
                                    image="worker",
                                    volumes=['abcd=efgh'])
-
-    @defer.inlineCallbacks
-    def test_volume_bad_format_renderable(self):
-        bs = yield self.setupWorker(
-            'bot', 'pass', 'http://localhost:2375', image="worker",
-            volumes=[Interpolate('/data==/worker/%(kw:builder)s/build',
-                                 builder=Property('builder'))])
-        with self.assertRaises(config.ConfigErrors):
-            yield bs.start_instance(self.build)
 
     @defer.inlineCallbacks
     def test_start_instance_image_no_version(self):
