@@ -569,11 +569,11 @@ class TestGetNewestCompleteTime(TestReactorMixin, BuilderMixin, unittest.TestCas
             fakedb.BuildsetSourceStamp(buildsetid=11, sourcestampid=21),
             fakedb.Builder(id=77, name='bldr1'),
             fakedb.Builder(id=78, name='bldr2'),
-            fakedb.BuildRequest(id=111, submitted_at=1000, complete_at=1000,
+            fakedb.BuildRequest(id=111, submitted_at=1000, complete=1, complete_at=1000,
                                 builderid=77, buildsetid=11),
-            fakedb.BuildRequest(id=222, submitted_at=2000, complete_at=4000,
+            fakedb.BuildRequest(id=222, submitted_at=2000, complete=1, complete_at=4000,
                                 builderid=77, buildsetid=11),
-            fakedb.BuildRequest(id=333, submitted_at=3000, complete_at=3000,
+            fakedb.BuildRequest(id=333, submitted_at=3000, complete=1, complete_at=3000,
                                 builderid=77, buildsetid=11),
             fakedb.BuildRequest(id=444, submitted_at=2500,
                                 builderid=78, buildsetid=11),
@@ -613,11 +613,14 @@ class TestReconfig(TestReactorMixin, BuilderMixin, unittest.TestCase):
         mastercfg = config.MasterConfig()
         mastercfg.builders = [new_builder_config]
         yield self.bldr.reconfigServiceWithBuildbotConfig(mastercfg)
-        self.assertEqual(
-            dict(description=self.bldr.builder_status.getDescription(),
-                 tags=self.bldr.builder_status.getTags()),
-            dict(description="New",
-                 tags=["NewTag"]))
+
+        # check that the reconfig grabbed a builderid
+        self.assertIsNotNone(self.bldr._builderid)
+
+        builder_dict = yield self.master.data.get(('builders', self.bldr._builderid))
+        self.assertEqual(builder_dict['description'], 'New')
+        self.assertEqual(builder_dict['tags'], ['NewTag'])
+
         self.assertIdentical(self.bldr.config, new_builder_config)
 
     @parameterized.expand([

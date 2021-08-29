@@ -257,6 +257,7 @@ dicts
 didn
 didn
 diff
+diffinfo
 diffs
 dirname
 dirwatcher
@@ -402,6 +403,7 @@ inlineCallbacks
 inrepo
 inrepos
 instantiation
+instantiations
 insubstantiating
 insubstantiation
 integrators
@@ -495,6 +497,7 @@ maildir
 maildirs
 Maildirs
 mailstatus
+makeChecker
 matcher
 matchers
 MaxQ
@@ -518,6 +521,7 @@ mistyped
 mixin
 Mixins
 mkdir
+mouseover
 mq
 Msbuild
 MsBuild
@@ -585,6 +589,7 @@ parameterizes
 parseable
 parsers
 passthrough
+passwd
 passwordless
 patchlevel
 patchset
@@ -647,6 +652,7 @@ pyasn
 pyflakes
 Pyflakes
 pyjade
+pylint
 pypi
 pypugjs
 pysqlite
@@ -848,7 +854,7 @@ travis
 triallog
 triggerable
 Triggerable
-trustRoot
+trustRoots
 tryclient
 tuple
 tuples

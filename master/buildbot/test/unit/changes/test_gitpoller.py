@@ -1547,10 +1547,10 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
             .stdout(b'git version 2.10.0\n'),
             ExpectMaster(['git', 'init', '--bare', 'gitpoller-work']),
             ExpectMaster(['git',
-                          '-c', 'core.sshCommand=ssh -i "{0}"'.format(key_path),
+                          '-c', 'core.sshCommand=ssh -o "BatchMode=yes" -i "{0}"'.format(key_path),
                           'ls-remote', '--refs', self.REPOURL]),
             ExpectMaster(['git',
-                          '-c', 'core.sshCommand=ssh -i "{0}"'.format(key_path),
+                          '-c', 'core.sshCommand=ssh -o "BatchMode=yes" -i "{0}"'.format(key_path),
                           'fetch', self.REPOURL,
                           '+master:refs/buildbot/' + self.REPOURL_QUOTED + '/master'])
             .workdir('gitpoller-work'),
@@ -1597,7 +1597,7 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
             ExpectMaster(['git', 'fetch', self.REPOURL,
                           '+master:refs/buildbot/' + self.REPOURL_QUOTED + '/master'])
             .workdir('gitpoller-work')
-            .env({'GIT_SSH_COMMAND': 'ssh -i "{0}"'.format(key_path)}),
+            .env({'GIT_SSH_COMMAND': 'ssh -o "BatchMode=yes" -i "{0}"'.format(key_path)}),
             ExpectMaster(['git', 'rev-parse',
                           'refs/buildbot/' + self.REPOURL_QUOTED + '/master'])
             .workdir('gitpoller-work')
@@ -1638,10 +1638,10 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
             .stdout(b'git version 2.10.0\n'),
             ExpectMaster(['git', 'init', '--bare', 'gitpoller-work']),
             ExpectMaster(['git',
-                          '-c', 'core.sshCommand=ssh -i "{0}"'.format(key_path),
+                          '-c', 'core.sshCommand=ssh -o "BatchMode=yes" -i "{0}"'.format(key_path),
                           'ls-remote', '--refs', self.REPOURL]),
             ExpectMaster(['git',
-                          '-c', 'core.sshCommand=ssh -i "{0}"'.format(key_path),
+                          '-c', 'core.sshCommand=ssh -o "BatchMode=yes" -i "{0}"'.format(key_path),
                           'fetch', self.REPOURL,
                           '+master:refs/buildbot/' + self.REPOURL_QUOTED + '/master'])
             .workdir('gitpoller-work')
@@ -1682,11 +1682,11 @@ class TestGitPollerWithSshHostKey(TestGitPollerBase):
             .stdout(b'git version 2.10.0\n'),
             ExpectMaster(['git', 'init', '--bare', 'gitpoller-work']),
             ExpectMaster(['git',
-                          '-c', 'core.sshCommand=ssh -i "{0}" '
+                          '-c', 'core.sshCommand=ssh -o "BatchMode=yes" -i "{0}" '
                           '-o "UserKnownHostsFile={1}"'.format(key_path, known_hosts_path),
                           'ls-remote', '--refs', self.REPOURL]),
             ExpectMaster(['git',
-                          '-c', 'core.sshCommand=ssh -i "{0}" '
+                          '-c', 'core.sshCommand=ssh -o "BatchMode=yes" -i "{0}" '
                           '-o "UserKnownHostsFile={1}"'.format(key_path, known_hosts_path),
                           'fetch', self.REPOURL,
                           '+master:refs/buildbot/' + self.REPOURL_QUOTED + '/master'])
@@ -1747,11 +1747,11 @@ class TestGitPollerWithSshKnownHosts(TestGitPollerBase):
             .stdout(b'git version 2.10.0\n'),
             ExpectMaster(['git', 'init', '--bare', 'gitpoller-work']),
             ExpectMaster(['git',
-                          '-c', 'core.sshCommand=ssh -i "{0}" '
+                          '-c', 'core.sshCommand=ssh -o "BatchMode=yes" -i "{0}" '
                           '-o "UserKnownHostsFile={1}"'.format(key_path, known_hosts_path),
                           'ls-remote', '--refs', self.REPOURL]),
             ExpectMaster(['git',
-                          '-c', 'core.sshCommand=ssh -i "{0}" '
+                          '-c', 'core.sshCommand=ssh -o "BatchMode=yes" -i "{0}" '
                           '-o "UserKnownHostsFile={1}"'.format(key_path, known_hosts_path),
                           'fetch', self.REPOURL,
                           '+master:refs/buildbot/' + self.REPOURL_QUOTED + '/master'])

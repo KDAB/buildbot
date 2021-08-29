@@ -288,6 +288,21 @@ class TestPollerAsync(TestReactorMixin, unittest.TestCase):
         self.reactor.advance(1)
         self.assertTrue(d.called)
 
+    def test_call_while_waiting_schedules_immediately(self):
+        self.poll.start(interval=10)
+        self.reactor.advance(0)
+        self.reactor.advance(5)
+        self.poll()
+        self.reactor.advance(0)
+        self.assertTrue(self.running)
+        self.reactor.advance(1)
+        self.assertEqual(self.calls, 1)
+        self.assertFalse(self.running)
+        self.reactor.advance(4)
+        self.assertTrue(self.running)
+        self.reactor.advance(1)
+        self.assertEqual(self.calls, 2)
+
     def test_call_while_running_reschedules_immediately_after(self):
         self.duration = 5
         self.poll.start(interval=10, now=True)

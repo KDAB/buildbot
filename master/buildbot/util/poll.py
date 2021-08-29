@@ -1,3 +1,4 @@
+
 # This file is part of Buildbot.  Buildbot is free software: you can
 # redistribute it and/or modify it under the terms of the GNU General Public
 # License as published by the Free Software Foundation, version 2.
@@ -94,10 +95,7 @@ class Poller:
         next_call_time = curr_time + wait_time
 
         if self._call is not None:
-            # if there's a call already scheduled then we replace it if the new call would come
-            # earlier
-            if self._next_call_time <= next_call_time:
-                return
+            # Note that self._call can ever be moved to earlier time, so we can always cancel it.
             self._call.cancel()
 
         self._next_call_time = next_call_time

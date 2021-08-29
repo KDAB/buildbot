@@ -13,17 +13,31 @@
 #
 # Copyright Buildbot Team Members
 
-from buildbot.status.worker_compat import WorkerStatus
-from buildbot.warnings import warn_deprecated
 
-# This file is here to allow few remaining users of status within Buildbot to use it
-# without triggering deprecation warnings
+import os
+import sys
 
-_hush_pyflakes = [
-    WorkerStatus
-]
+from twisted.internet import defer
 
-warn_deprecated(
-    '0.9.0',
-    'buildbot.status.worker has been deprecated, consume the buildbot.data APIs'
-)
+from buildbot.data import connector
+from buildbot.test.fake import fakemaster
+from buildbot.util import in_reactor
+
+
+@in_reactor
+@defer.inlineCallbacks
+def gengraphql(config):
+    master = yield fakemaster.make_master(None, wantRealReactor=True)
+    data = connector.DataConnector()
+    yield data.setServiceParent(master)
+
+    if config['out'] != '--':
+        dirs = os.path.dirname(config['out'])
+        if dirs and not os.path.exists(dirs):
+            os.makedirs(dirs)
+        f = open(config['out'], "w")
+    else:
+        f = sys.stdout
+    schema = data.genGraphQLSchema()
+    f.write(schema)
+    return 0
