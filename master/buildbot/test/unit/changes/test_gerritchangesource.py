@@ -412,7 +412,7 @@ class TestGerritChangeSource(changesource.ChangeSourceMixin,
         c = self.master.data.updates.changesAdded[0]
         self.assertEqual(c, {
             'files': ['unknown'],
-            'comments': 'Gerrit: patchset(s) merged.',
+            'comments': 'Gerrit: commit(s) pushed.',
             'author': 'tester <tester@example.com>',
             'committer': None,
             'revision': '56785678',
@@ -439,18 +439,6 @@ class TestGerritChangeSource(changesource.ChangeSourceMixin,
         })
 
     @defer.inlineCallbacks
-    def test_duplicate_events_ignored(self):
-        s = self.newChangeSource('somehost', 'someuser')
-        yield s.lineReceived(json.dumps(self.patchset_created_event))
-        self.assertEqual(len(self.master.data.updates.changesAdded), 1)
-
-        patchset_created_event = copy.deepcopy(self.patchset_created_event)
-        patchset_created_event['change']['project'] = {'name': 'test'}
-
-        yield s.lineReceived(json.dumps(patchset_created_event))
-        self.assertEqual(len(self.master.data.updates.changesAdded), 1)
-
-    @defer.inlineCallbacks
     def test_duplicate_non_source_events_not_ignored(self):
         s = self.newChangeSource('somehost', 'someuser',
                                  handled_events=['patchset-created', 'ref-updated',
@@ -465,7 +453,7 @@ class TestGerritChangeSource(changesource.ChangeSourceMixin,
                 'url': "http://buildbot.net",
                 'subject': "fix 1234"
             },
-            'patchSet': {'revision': "abcdef", 'number': "12"}
+            'patchSet': {'revision': "abcdef", 'number': "12", 'ref': 'refs/changes/21/4321/1'}
         }))
         self.assertEqual(len(self.master.data.updates.changesAdded), 1)
 
@@ -479,7 +467,7 @@ class TestGerritChangeSource(changesource.ChangeSourceMixin,
                 'url': "http://buildbot.net",
                 'subject': "fix 1234"
             },
-            'patchSet': {'revision': "abcdef", 'number': "12"}
+            'patchSet': {'revision': "abcdef", 'number': "12", 'ref': 'refs/changes/21/4321/1'}
         }))
         self.assertEqual(len(self.master.data.updates.changesAdded), 2)
 
