@@ -15,10 +15,13 @@ certifi==2020.12.5
 cffi==1.14.5
 characteristic==14.3.0
 chardet==4.0.0
+charset-normalizer==2.0.4
 click==7.1.2
+click-default-group==1.2.2
 constantly==15.1.0
 cryptography==3.4.6
 cssselect2==0.4.1
+dataclasses==0.8
 decorator==4.4.2
 defusedxml==0.6.0
 docker==4.4.4
@@ -52,7 +55,7 @@ parameterized==0.8.1
 pbr==5.5.1
 pep8==1.7.1
 Pillow==8.1.0
-pkg-resources==0.0.0
+pkg_resources==0.0.0
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
 pycodestyle==2.0.0
