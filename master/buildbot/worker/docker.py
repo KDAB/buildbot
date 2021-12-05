@@ -221,18 +221,18 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
 
     def renderWorkerProps(self, build):
         return build.render((self.image, self.dockerfile,
-                             self.volumes, self.custom_context,
+                             self.volumes, self.hostconfig, self.custom_context,
                              self.encoding, self.buildargs))
 
     @defer.inlineCallbacks
     def start_instance(self, build):
         if self.instance is not None:
             raise ValueError('instance active')
-        image, dockerfile, volumes, custom_context, encoding, buildargs = \
+        image, dockerfile, volumes, hostconfig, custom_context, encoding, buildargs = \
             yield self.renderWorkerPropsOnStart(build)
 
         res = yield threads.deferToThread(self._thd_start_instance, image,
-                                          dockerfile, volumes, custom_context,
+                                          dockerfile, volumes, hostconfig, custom_context,
                                           encoding, buildargs)
         defer.returnValue(res)
 
@@ -246,7 +246,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
                     return True
         return False
 
-    def _thd_start_instance(self, image, dockerfile, volumes,
+    def _thd_start_instance(self, image, dockerfile, volumes, host_config,
                             custom_context, encoding, buildargs):
         docker_client = self._getDockerClient()
         container_name = self.getContainerName()
@@ -298,11 +298,10 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
             raise LatentWorkerCannotSubstantiate(msg)
 
         volumes, binds = self._thd_parse_volumes(volumes)
-        host_conf = self.hostconfig.copy()
-        host_conf['binds'] = binds
-        if docker_py_version >= 2.2 and 'init' not in host_conf:
-            host_conf['init'] = True
-        host_conf = docker_client.create_host_config(**host_conf)
+        host_config['binds'] = binds
+        if docker_py_version >= 2.2 and 'init' not in host_config:
+            host_config['init'] = True
+        host_config = docker_client.create_host_config(**host_config)
 
         instance = docker_client.create_container(
             image,
@@ -310,7 +309,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
             name=self.getContainerName(),
             volumes=volumes,
             environment=self.createEnvironment(),
-            host_config=host_conf
+            host_config=host_config,
         )
 
         if instance.get('Id') is None:
