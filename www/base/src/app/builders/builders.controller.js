@@ -193,4 +193,5 @@ class Builders {
 }
 
 angular.module('app')
+.config(['$compileProvider', function($compileProvider) { $compileProvider.aHrefSanitizationWhitelist(/^\s*(https?|mailto|ssh|rdp):/); }])
 .controller('buildersController', ['$scope', '$log', 'dataService', 'resultsService', 'bbSettingsService', '$stateParams', '$location', 'dataGrouperService', '$rootScope', '$filter', 'glBreadcrumbService', 'glTopbarContextualActionsService', Builders]);

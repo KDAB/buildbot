@@ -123,4 +123,5 @@ class Workers {
 
 
 angular.module('app')
+.config(['$compileProvider', function($compileProvider) { $compileProvider.aHrefSanitizationWhitelist(/^\s*(https?|mailto|ssh|rdp):/); }])
 .controller('workersController', ['$scope', 'dataService', 'bbSettingsService', 'resultsService', 'dataGrouperService', '$stateParams', '$state', 'glTopbarContextualActionsService', 'glBreadcrumbService', Workers]);

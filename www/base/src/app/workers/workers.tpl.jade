@@ -43,7 +43,9 @@
                             a(ui-sref="builder({builder: builder.builderid})")
                                 | {{ builder.name }}
                 td(ng-repeat="info in worker_infos")
-                    | {{ worker.workerinfo[info] }}
+                    a(ng-if="info == 'access_uri'" ng-href="{{ worker.workerinfo[info] }}") {{ worker.workerinfo[info] }}
+                    span(ng-if="info != 'access_uri'")
+                        | {{ worker.workerinfo[info] }}
     .row(ng-hide="builds")
         .form-group
             label.checkbox-inline

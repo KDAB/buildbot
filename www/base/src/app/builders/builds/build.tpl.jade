@@ -31,7 +31,9 @@
                   td.text-center {{worker.name}}
                 tr(ng-repeat="(name, value) in worker.workerinfo")
                   td.text-left {{ name }}
-                  td.text-right {{ value }}
+                  td.text-right
+                    a(ng-if="name == 'access_uri'" ng-href="{{ value }}") {{ value }}
+                    span(ng-if="name != 'access_uri'") {{ value }}
           uib-tab(heading="Responsible Users")
             ul.list-group
                 li.list-group-item(ng-repeat="(author, email) in responsibles")
