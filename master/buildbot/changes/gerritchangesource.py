@@ -328,12 +328,12 @@ class GerritChangeSource(GerritChangeSourceBase):
         @defer.inlineCallbacks
         def outLineReceived(self, line):
             if self.change_source.debug:
-                log.msg(b"gerrit: " + line)
+                log.msg(b"{} stdout: {}".format(self.name.encode('utf-8'), line))
             yield self.change_source.lineReceived(line)
 
         def errLineReceived(self, line):
             if self.change_source.debug:
-                log.msg(b"gerrit stderr: " + line)
+                log.msg(b"{} stderr: {}".format(self.name.encode('utf-8'), line))
 
         def processEnded(self, status):
             super().processEnded(status)
@@ -351,9 +351,9 @@ class GerritChangeSource(GerritChangeSourceBase):
            self.STREAM_GOOD_CONNECTION_TIME:
             # bad startup; start the stream process again after a timeout,
             # and then increase the timeout
-            log.msg(
-                "'gerrit stream-events' failed; restarting after %ds"
-                % round(self.streamProcessTimeout))
+            log.msg(("{}: stream-events failed; restarting after {}s"
+                    ).format(self.name, round(self.streamProcessTimeout)))
+
             self.master.reactor.callLater(
                 self.streamProcessTimeout, self.startStreamProcess)
             self.streamProcessTimeout *= self.STREAM_BACKOFF_EXPONENT
@@ -365,7 +365,7 @@ class GerritChangeSource(GerritChangeSourceBase):
 
             # make sure we log the reconnection, so that it might be detected
             # and network connectivity fixed
-            log.msg("gerrit stream-events lost connection. Reconnecting...")
+            log.msg("{}: stream-events lost connection. Reconnecting...".format(self.name))
             self.startStreamProcess()
             self.streamProcessTimeout = self.STREAM_BACKOFF_MIN
 
@@ -389,7 +389,7 @@ class GerritChangeSource(GerritChangeSourceBase):
 
     def startStreamProcess(self):
         if self.debug:
-            log.msg("starting 'gerrit stream-events'")
+            log.msg("{}: starting 'gerrit stream-events'".format(self.name))
 
         cmd = self._buildGerritCommand("stream-events")
         self.lastStreamProcessStart = util.now()
@@ -401,8 +401,8 @@ class GerritChangeSource(GerritChangeSourceBase):
                                        "--files", "--patch-sets")
 
         if self.debug:
-            log.msg("querying gerrit for changed files in change {}/{}: {}".format(change, patchset,
-                                                                                   cmd))
+            log.msg("{}: querying for changed files in change {}/{}: {}".format(self.name, change,
+                                                                                patchset, cmd))
 
         out = yield utils.getProcessOutput(cmd[0], cmd[1:], env=None)
         out = out.splitlines()[0]
@@ -488,7 +488,8 @@ class GerritEventLogPoller(GerritChangeSourceBase):
         last_event_formatted = last_event.strftime("%Y-%m-%d %H:%M:%S")
 
         if self.debug:
-            log.msg("Polling gerrit: {}".format(last_event_formatted).encode("utf-8"))
+            log.msg("{}: Polling gerrit: {}".format(self.name,
+                                                    last_event_formatted).encode("utf-8"))
 
         res = yield self._http.get("/plugins/events-log/events/",
                                    params=dict(t1=last_event_formatted))
