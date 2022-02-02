@@ -328,12 +328,14 @@ class GerritChangeSource(GerritChangeSourceBase):
         @defer.inlineCallbacks
         def outLineReceived(self, line):
             if self.change_source.debug:
-                log.msg(b"{} stdout: {}".format(self.name.encode('utf-8'), line))
+                log.msg("{} stdout: {}".format(self.change_source.name,
+                                               line.decode('utf-8', errors='replace')))
             yield self.change_source.lineReceived(line)
 
         def errLineReceived(self, line):
             if self.change_source.debug:
-                log.msg(b"{} stderr: {}".format(self.name.encode('utf-8'), line))
+                log.msg("{} stderr: {}".format(self.change_source.name,
+                                               line.decode('utf-8', errors='replace')))
 
         def processEnded(self, status):
             super().processEnded(status)
