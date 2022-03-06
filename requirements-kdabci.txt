@@ -1,7 +1,7 @@
 # TODO: this is the output of pip freeze, most of the packages are dependencies and should be
 # removed.
 alabaster==0.7.12
-astroid==1.4.9
+astroid==2.9.3
 attrs==20.3.0
 Automat==20.2.0
 Babel==2.9.0
@@ -24,7 +24,7 @@ decorator==4.4.2
 defusedxml==0.6.0
 docker==4.4.4
 docutils==0.16
-flake8==2.6.2
+flake8==4.0.1
 funcparserlib==0.3.6
 future==0.18.2
 hyperlink==21.0.0
@@ -59,7 +59,7 @@ pyenchant==3.2.0
 Pygments==2.8.0
 PyHamcrest==2.0.2
 PyJWT==2.0.1
-pylint==1.6.5
+pylint==2.12.2
 pyOpenSSL==20.0.1
 pyparsing==2.4.7
 pypugjs==5.9.9
