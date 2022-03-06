@@ -161,18 +161,6 @@ class GerritChangeSourceBase(base.ChangeSource, PullRequestMixin):
 
     @defer.inlineCallbacks
     def addChange(self, event_type, chdict):
-        stampdict = {
-            "branch": chdict["branch"],
-            "revision": chdict["revision"],
-            "patch_author": chdict["author"],
-            "patch_comment": chdict["comments"],
-            "repository": chdict["repository"],
-            "project": chdict["project"],
-            "codebase": '',
-        }
-
-        #_, found_existing = yield(
-        #     self.master.db.sourcestamps.findOrCreateId(**stampdict))
         found_existing = False
 
         if found_existing and event_type in ("patchset-created", "ref-updated"):
