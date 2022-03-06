@@ -396,7 +396,8 @@ class TestGerritChangeSource(MasterRunProcessMixin, changesource.ChangeSourceMix
         self.assertEqual(len(self.master.data.updates.changesAdded), 0)
 
     @defer.inlineCallbacks
-    def test_duplicate_events_ignored(self):
+    def test_duplicate_events_not_ignored(self):
+        # Duplicate event ignoring logic is currently turned off
         s = yield self.newChangeSource('somehost', 'someuser')
         yield s.lineReceived(json.dumps(self.patchset_created_event))
         self.assertEqual(len(self.master.data.updates.changesAdded), 1)
@@ -405,35 +406,7 @@ class TestGerritChangeSource(MasterRunProcessMixin, changesource.ChangeSourceMix
         patchset_created_event['change']['project'] = {'name': 'test'}
 
         yield s.lineReceived(json.dumps(patchset_created_event))
-        self.assertEqual(len(self.master.data.updates.changesAdded), 1)
-        c = self.master.data.updates.changesAdded[0]
-        self.assertEqual(c, {
-            'files': ['unknown'],
-            'comments': 'Gerrit: commit(s) pushed.',
-            'author': 'tester <tester@example.com>',
-            'committer': None,
-            'revision': '56785678',
-            'when_timestamp': None,
-            'branch': 'master',
-            'category': 'ref-updated',
-            'revlink': '',
-            'properties': {
-                'event.type': 'ref-updated',
-                'event.submitter.name': 'tester',
-                'event.submitter.email':
-                    'tester@example.com',
-                    'event.submitter.username': 'tester',
-                    'event.refUpdate.oldRev': '12341234',
-                    'event.refUpdate.newRev': '56785678',
-                    'event.refUpdate.refName': 'refs/heads/master',
-                    'event.refUpdate.project': 'test',
-                    'event.source': 'GerritChangeSource'
-                },
-            'repository': 'ssh://someuser@somehost:29418/test',
-            'codebase': None,
-            'project': 'test',
-            'src': None
-        })
+        self.assertEqual(len(self.master.data.updates.changesAdded), 2)
 
     @defer.inlineCallbacks
     def test_duplicate_non_source_events_not_ignored(self):

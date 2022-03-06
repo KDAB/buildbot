@@ -59,23 +59,6 @@ class our_install_data(install_data):
         self.outfiles.append(fn)
 
 
-class our_install_data(install_data):
-
-    def finalize_options(self):
-        self.set_undefined_options('install',
-                                   ('install_lib', 'install_dir'),
-                                   )
-        install_data.finalize_options(self)
-
-    def run(self):
-        install_data.run(self)
-        # ensure there's a buildbot_worker/VERSION file
-        fn = os.path.join(self.install_dir, 'buildbot_worker', 'VERSION')
-        with open(fn, 'w') as f:
-            f.write(version)
-        self.outfiles.append(fn)
-
-
 class our_sdist(sdist):
 
     def make_release_tree(self, base_dir, files):
