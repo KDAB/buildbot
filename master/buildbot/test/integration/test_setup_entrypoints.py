@@ -101,6 +101,10 @@ class TestSetupPyEntryPoints(unittest.TestCase):
 
         known_not_exported = {
             'buildbot.util._notifier.Notifier',
+            'buildbot.util.backoff.ExponentialBackoffEngineAsync',
+            'buildbot.util.backoff.ExponentialBackoffEngineSync',
+            'buildbot.util.backoff.BackoffTimeoutExceededError',
+            'buildbot.util.backoff.ExponentialBackoffEngine',
             'buildbot.util.bbcollections.KeyedSets',
             'buildbot.util.codebase.AbsoluteSourceStampsMixin',
             'buildbot.util.config.ConfiguredMixin',
@@ -131,8 +135,12 @@ class TestSetupPyEntryPoints(unittest.TestCase):
             'buildbot.util.protocol.LineBuffer',
             'buildbot.util.protocol.LineProcessProtocol',
             'buildbot.util.pullrequest.PullRequestMixin',
+            'buildbot.util.queue.ConnectableThreadQueue',
+            'buildbot.util.queue.UndoableQueue',
             'buildbot.util.raml.RamlLoader',
             'buildbot.util.raml.RamlSpec',
+            'buildbot.util.runprocess.RunProcessPP',
+            'buildbot.util.runprocess.RunProcess',
             'buildbot.util.sautils.InsertFromSelect',
             'buildbot.util.service.AsyncMultiService',
             'buildbot.util.service.AsyncService',

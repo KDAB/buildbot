@@ -61,6 +61,7 @@ Baz
 bb
 bbcollections
 bbproto
+bbworker
 bdist
 behaviour
 Bitbucket
@@ -279,6 +280,7 @@ docstrings
 doesn
 dom
 downloadFile
+dpkg
 dropdown
 dumpMailsToLog
 durations
@@ -384,6 +386,7 @@ htpasswd
 http
 https
 Hyperlinks
+IConfigurator
 ie
 img
 implementers
@@ -457,6 +460,7 @@ kwargs
 latin
 ldap
 lexically
+lexicographically
 libaprutil
 libvirt
 Libvirt
@@ -583,6 +587,7 @@ os
 OSes
 Ostinato
 osx
+othermirror
 overloadable
 param
 parameterizes
@@ -658,7 +663,7 @@ pypugjs
 pysqlite
 pythonic
 Pythonic
-Pywin
+pywin
 qcow
 qmail
 queried
@@ -891,9 +896,13 @@ unorthodoxy
 Unregister
 unsubscribe
 unsubscribes
+unsubscription
 untracked
 untrusted
 unversioned
+unpause
+unpaused
+unpausing
 UpCloud
 uploadDirectory
 uploader

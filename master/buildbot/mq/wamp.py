@@ -109,4 +109,3 @@ class QueueRef(base.QueueRef):
                 pass
             except Exception as e:
                 log.err(e, 'When unsubscribing MQ connection ' + str(unreg))
-                pass
