@@ -164,7 +164,7 @@ setup_args = {
         "buildbot.clients",
         "buildbot.data",
         "buildbot.db",
-        "buildbot.db.migrate.versions",
+        "buildbot.db.migrations.versions",
         "buildbot.db.types",
         "buildbot.machine",
         "buildbot.monkeypatches",
@@ -203,10 +203,10 @@ setup_args = {
     ]),
     'data_files': [
         include("buildbot/reporters/templates", "*.txt"),
-        ("buildbot/db/migrate", [
-            "buildbot/db/migrate/migrate.cfg",
+        ("buildbot/db/migrations", [
+            "buildbot/db/migrations/alembic.ini",
         ]),
-        include("buildbot/db/migrate/versions", "*.py"),
+        include("buildbot/db/migrations/versions", "*.py"),
         ("buildbot/scripts", [
             "buildbot/scripts/sample.cfg",
             "buildbot/scripts/buildbot_tac.tmpl",
@@ -250,7 +250,10 @@ setup_args = {
         ('buildbot.secrets', [
             ('buildbot.secrets.providers.file', ['SecretInAFile']),
             ('buildbot.secrets.providers.passwordstore', ['SecretInPass']),
-            ('buildbot.secrets.providers.vault', ['HashiCorpVaultSecretProvider'])
+            ('buildbot.secrets.providers.vault', ['HashiCorpVaultSecretProvider']),
+            ('buildbot.secrets.providers.vault_hvac', [
+                'HashiCorpVaultKvSecretProvider', 'VaultAuthenticatorToken',
+                'VaultAuthenticatorApprole'])
         ]),
         ('buildbot.worker', [
             ('buildbot.worker.base', ['Worker']),
@@ -442,8 +445,6 @@ setup_args = {
     ]), {
         'console_scripts': [
             'buildbot=buildbot.scripts.runner:run',
-            # this will also be shipped on non windows :-(
-            'buildbot_windows_service=buildbot.scripts.windows_service:HandleCommandLine',
         ]}
     )
 }
@@ -453,6 +454,9 @@ setup_args = {
 # see http://buildbot.net/trac/ticket/907
 if sys.platform == "win32":
     setup_args['zip_safe'] = False
+    setup_args['entry_points']['console_scripts'].append(
+        'buildbot_windows_service=buildbot.scripts.windows_service:HandleCommandLine'
+    )
 
 py_36 = sys.version_info[0] > 3 or (
     sys.version_info[0] == 3 and sys.version_info[1] >= 6)
@@ -490,14 +494,18 @@ setup_args['install_requires'] = [
     'Jinja2 >= 2.1',
     # required for tests, but Twisted requires this anyway
     'zope.interface >= 4.1.1',
-    'sqlalchemy >= 1.2.0, < 1.5',
-    'sqlalchemy-migrate>=0.13',
+    'sqlalchemy >= 1.3.0, < 1.5',
+    'alembic >= 1.6.0',
     'python-dateutil>=1.5',
     'txaio ' + txaio_ver,
     'autobahn ' + autobahn_ver,
     'PyJWT',
     'pyyaml'
 ]
+
+# buildbot_windows_service needs pywin32
+if sys.platform == "win32":
+    setup_args['install_requires'].append('pywin32')
 
 # Unit test dependencies.
 test_deps = [
@@ -529,7 +537,7 @@ setup_args['extras_require'] = {
         # spellcheck introduced in version 1.4.0
         'pylint<1.7.0',
         'pyenchant',
-        'flake8~=2.6.0',
+        'flake8~=3.9.2',
     ] + test_deps,
     'bundle': [
         "buildbot-www=={0}".format(bundle_version),
@@ -551,7 +559,6 @@ setup_args['extras_require'] = {
         'docutils>=0.16.0',
         'sphinx>=3.2.0',
         'sphinx-rtd-theme>=0.5',
-        'sphinxcontrib-blockdiag',
         'sphinxcontrib-spelling',
         'sphinxcontrib-websupport',
         'pyenchant',

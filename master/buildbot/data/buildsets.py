@@ -114,7 +114,7 @@ class Buildset(base.ResourceType):
     name = "buildset"
     plural = "buildsets"
     endpoints = [BuildsetEndpoint, BuildsetsEndpoint]
-    keyFields = ['bsid']
+    keyField = 'bsid'
     eventPathPatterns = """
         /buildsets/:bsid
     """
@@ -131,7 +131,8 @@ class Buildset(base.ResourceType):
             of=sourcestampsapi.SourceStamp.entityType)
         parent_buildid = types.NoneOk(types.Integer())
         parent_relationship = types.NoneOk(types.String())
-    entityType = EntityType(name)
+    entityType = EntityType(name, 'Buildset')
+    subresources = ["Property"]
 
     @base.updateMethod
     @defer.inlineCallbacks

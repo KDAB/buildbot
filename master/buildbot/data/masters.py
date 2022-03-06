@@ -87,13 +87,15 @@ class Master(base.ResourceType):
     eventPathPatterns = """
         /masters/:masterid
     """
+    keyField = "masterid"
+    subresources = ["Builder"]
 
     class EntityType(types.Entity):
         masterid = types.Integer()
         name = types.String()
         active = types.Boolean()
         last_active = types.DateTime()
-    entityType = EntityType(name)
+    entityType = EntityType(name, 'Master')
 
     @base.updateMethod
     @defer.inlineCallbacks

@@ -51,6 +51,7 @@ apimaster
 app
 appdata
 applicative
+approle
 apps
 araujo
 arg
@@ -85,6 +86,7 @@ attrs
 attributeerror
 aug
 auth
+authenticator
 authz
 autocommit
 autoconf
@@ -377,6 +379,7 @@ de
 debian
 debounce
 debounced
+debouncer
 debouncing
 decoderc
 deepcopy
@@ -409,6 +412,7 @@ dirs
 dirwatcher
 disownserviceparent
 distutils
+distros
 dn
 dnotify
 doclobber
@@ -617,6 +621,7 @@ gotchange
 gotperspective
 gotrootobject
 gpo
+gql
 gracefulshutdown
 graphql
 gravatar
@@ -652,6 +657,7 @@ html
 http
 httpclientservice
 https
+hvac
 ibuildrequestcontrol
 ibuildrequeststatus
 ibuildsetstatus
@@ -1138,6 +1144,7 @@ refactor
 refcount
 refetch
 regex
+regen
 regexes
 regexp
 regexps
@@ -1224,6 +1231,7 @@ rstrip
 rtd
 rtype
 rtypes
+ruamel
 runcommand
 runinteraction
 runprocess
@@ -1395,6 +1403,7 @@ suboption
 suboptions
 subprocess
 subprocesses
+subprotocol
 subquery
 substring
 subunit
@@ -1481,6 +1490,7 @@ trialargs
 trialmode
 triemstra
 triggerable
+ttl
 tue
 tues
 tuesday
@@ -1663,6 +1673,7 @@ xhtml
 xml
 xxab
 xxx
+yaml
 yieldmetricsvalue
 za
 zadka

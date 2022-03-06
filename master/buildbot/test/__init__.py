@@ -72,13 +72,6 @@ warnings.filterwarnings('ignore', "1300 Invalid utf8 character string")
 # twisted.compat.execfile is using 'U' https://twistedmatrix.com/trac/ticket/9023
 warnings.filterwarnings('ignore', "'U' mode is deprecated", DeprecationWarning)
 
-# Does not happen on master branch as of 2021-05-23
-warnings.filterwarnings('ignore', ".*Obsolete alias for str builtin type.*", DeprecationWarning)
-
-# sqlalchemy.migrate is calling inspect.getargspec()
-# https://bugs.launchpad.net/sqlalchemy-migrate/+bug/1662472
-warnings.filterwarnings('ignore', r"inspect.getargspec\(\) is deprecated")
-
 # twisted.python.filepath and trial are using bytes file paths when
 # the "native" file path (Unicode) should be used on Windows.
 warnings.filterwarnings('ignore',
@@ -113,16 +106,14 @@ warnings.filterwarnings('ignore', r".*Use 'list\(elem\)' or iteration over elem 
 if sys.version_info[0] >= 3 and "pg8000" in os.getenv("BUILDBOT_TEST_DB_URL", ""):
     warnings.filterwarnings('ignore', ".*unclosed .*socket", ResourceWarning)
 
+# ignore ResourceWarnings when connecting to a HashiCorp vault via hvac in integration tests
+warnings.filterwarnings('ignore', r".*unclosed .*socket.*raddr=.*, 8200[^\d]", ResourceWarning)
+
 # Python 3.5-3.8 shows this warning
 warnings.filterwarnings('ignore', ".*the imp module is deprecated in favour of importlib*")
 
-# sqlalchemy-migrate uses deprecated api from sqlalchemy https://review.openstack.org/#/c/648072/
-warnings.filterwarnings('ignore', ".*Engine.contextual_connect.*", DeprecationWarning)
-
-warnings.filterwarnings('ignore', r'.*The Table.exists\(\) method is deprecated.*',
-                        DeprecationWarning)
-warnings.filterwarnings('ignore', '.*is already present in table.*',
-                        DeprecationWarning)
+# Python 3.3-3.7 show this warning and in invoked from autobahn
+warnings.filterwarnings('ignore', ".*time.clock has been deprecated in Python 3.3.*")
 
 # ignore an attrs API warning for APIs used in dependencies
 warnings.filterwarnings('ignore', ".*The usage of `cmp` is deprecated and will be removed "

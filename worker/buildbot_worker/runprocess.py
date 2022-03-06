@@ -162,7 +162,14 @@ class LogFileWatcher(object):
             if self.follow:
                 self.f.seek(s[2], 0)
             self.started = True
+
+        # Mac OS X and Linux differ in behaviour when reading from a file that has previously
+        # reached EOF. On Linux, any new data that has been appended to the file will be returned.
+        # On Mac OS X, the empty string will always be returned. Seeking to the current position
+        # in the file resets the EOF flag on Mac OS X and will allow future reads to work as
+        # intended.
         self.f.seek(self.f.tell(), 0)
+
         while True:
             data = self.f.read(10000)
             if not data:
@@ -692,7 +699,6 @@ class RunProcess(object):
         """
         Send all the content in our buffers.
         """
-        msg = {}
         msg_size = 0
         lastlog = None
         logdata = []
@@ -711,12 +717,10 @@ class RunProcess(object):
             if lastlog is None:
                 lastlog = logname
             elif logname != lastlog:
-                self._sendMessage(msg)
-                msg = {}
+                self._sendMessage({lastlog: logdata})
                 msg_size = 0
-            lastlog = logname
-
-            logdata = msg.setdefault(logname, [])
+                lastlog = logname
+                logdata = []
 
             # Chunkify the log data to make sure we're not sending more than
             # CHUNK_LIMIT at a time
@@ -729,13 +733,12 @@ class RunProcess(object):
                     # We've gone beyond the chunk limit, so send out our
                     # message.  At worst this results in a message slightly
                     # larger than (2*CHUNK_LIMIT)-1
-                    self._sendMessage(msg)
-                    msg = {}
-                    logdata = msg.setdefault(logname, [])
+                    self._sendMessage({logname: logdata})
+                    logdata = []
                     msg_size = 0
         self.buflen = 0
         if logdata:
-            self._sendMessage(msg)
+            self._sendMessage({logname: logdata})
         if self.sendBuffersTimer:
             if self.sendBuffersTimer.active():
                 self.sendBuffersTimer.cancel()

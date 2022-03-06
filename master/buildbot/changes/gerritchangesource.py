@@ -184,7 +184,7 @@ class GerritChangeSourceBase(base.ChangeSource, PullRequestMixin):
                     "gerrit: duplicate change event {} by {}"
                     .format(eventstr, self.__class__.__name__))
                 log.msg(message.encode("utf-8"))
-            defer.returnValue(None)
+            return
 
         if self.debug:
             eventstr = "{} -- {}:{}".format(
@@ -215,12 +215,12 @@ class GerritChangeSourceBase(base.ChangeSource, PullRequestMixin):
         if "change" not in event:
             if self.debug:
                 log.msg("unsupported event {}".format(event["type"]))
-            return defer.returnValue(None)
+            return None
 
         if "patchSet" not in event:
             if self.debug:
                 log.msg("unsupported event {}".format(event["type"]))
-            return defer.returnValue(None)
+            return None
 
         event = _canonicalize_event(event)
         event_change = event["change"]
@@ -259,7 +259,7 @@ class GerritChangeSourceBase(base.ChangeSource, PullRequestMixin):
         # As a result it may appear that the change was not related to a Gerrit change and cause
         # reporters to not submit reviews for example.
         if 'patchset-created' in self.handled_events and ref['refName'].startswith('refs/changes/'):
-            return
+            return None
 
         return self.addChange(event['type'], dict(
             author=author,

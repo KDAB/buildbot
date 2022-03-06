@@ -180,12 +180,14 @@ class BuildRequest(base.ResourceType):
     name = "buildrequest"
     plural = "buildrequests"
     endpoints = [BuildRequestEndpoint, BuildRequestsEndpoint]
-    keyFields = ['buildsetid', 'builderid', 'buildrequestid']
+    keyField = 'buildrequestid'
     eventPathPatterns = """
         /buildsets/:buildsetid/builders/:builderid/buildrequests/:buildrequestid
         /buildrequests/:buildrequestid
         /builders/:builderid/buildrequests/:buildrequestid
     """
+
+    subresources = ["Build"]
 
     class EntityType(types.Entity):
         buildrequestid = types.Integer()
@@ -201,7 +203,7 @@ class BuildRequest(base.ResourceType):
         complete_at = types.NoneOk(types.DateTime())
         waited_for = types.Boolean()
         properties = types.NoneOk(types.SourcedProperties())
-    entityType = EntityType(name)
+    entityType = EntityType(name, 'Buildrequest')
 
     @defer.inlineCallbacks
     def generateEvent(self, brids, event):
