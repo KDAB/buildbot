@@ -1297,7 +1297,6 @@ class TestGitPoller(TestGitPollerBase):
         self.patch(os, 'environ', {'ENVVAR': 'TRUE'})
         self.add_run_process_expect_env({'ENVVAR': 'TRUE'})
 
-
         self.expect_commands(
             ExpectMasterShell(['git', '--version'])
             .stdout(b'git version 1.7.5\n'),

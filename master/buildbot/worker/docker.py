@@ -16,8 +16,8 @@
 
 import hashlib
 import json
-import socket
 import ntpath
+import socket
 from io import BytesIO
 
 from twisted.internet import defer
@@ -198,11 +198,11 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
         volume_list = []
         for volume_string in (volumes or []):
             try:
-                # based on https://github.com/docker/docker-py/pull/1888/commits/209ae2423d3fc1f41ed8dc617963d560d9d9e4e1 
+                # based on https://github.com/docker/docker-py/pull/1888/commits/209ae2423d3fc1f41ed8dc617963d560d9d9e4e1  # noqa pylint:disable=line-too-long
                 # attempt to split windows drive from front
                 drive, rest = ntpath.splitdrive(volume_string)
                 bits = rest.split(":", 1)
-                if len(bits) == 1 or bits[1]  in ('ro','rw'):
+                if len(bits) == 1 or bits[1] in ('ro', 'rw'):
                     volume = drive + bits[0]
                 else:
                     volume = bits[1]

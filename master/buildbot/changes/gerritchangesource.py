@@ -164,7 +164,7 @@ class GerritChangeSourceBase(base.ChangeSource, PullRequestMixin):
         found_existing = False
 
         if found_existing and event_type in ("patchset-created", "ref-updated"):
-            if self.debug or True:
+            if True:  # pylint: disable=using-constant-test
                 eventstr = (f'{self.gitBaseURL}/{chdict["project"]} -- '
                             f'{chdict["branch"]}:{chdict["revision"]}')
                 message = (

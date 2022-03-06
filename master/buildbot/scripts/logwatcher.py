@@ -84,7 +84,7 @@ class LineOnlyLongLineReceiver(protocol.Protocol):
 
 class LogWatcher(LineOnlyLongLineReceiver):
     POLL_INTERVAL = 0.1
-    TIMEOUT_DELAY = 2*60  # in seconds
+    TIMEOUT_DELAY = 2 * 60  # in seconds
     delimiter = unicode2bytes(os.linesep)
 
     def __init__(self, logfile, timeout=None, _reactor=reactor):
