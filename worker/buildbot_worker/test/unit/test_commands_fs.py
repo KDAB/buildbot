@@ -358,9 +358,8 @@ class TestListDir(CommandTestMixin, unittest.TestCase):
         self.assertIn({'rc': 0},
                       self.get_updates(),
                       self.builder.show())
-        self.assertTrue(any([
-            'files' in upd and sorted(upd['files']) == ['file1', 'file2']
-            for upd in self.get_updates()]),
+        self.assertTrue(any('files' in upd and sorted(upd['files']) == ['file1', 'file2']
+            for upd in self.get_updates()),
             self.builder.show())
 
 
@@ -395,8 +394,6 @@ class TestRemoveFile(CommandTestMixin, unittest.TestCase):
         workdir = os.path.join(self.basedir, 'workdir')
         self.file2_path = os.path.join(workdir, 'file2')
 
-        def fail(src, dest):
-            raise RuntimeError("oh noes")
         self.make_command(fs.RemoveFile, dict(
             path=self.file2_path
         ), True)

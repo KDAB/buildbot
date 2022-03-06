@@ -29,7 +29,7 @@ class LBF(unittest.TestCase):
         self.lbf = lineboundaries.LineBoundaryFinder(self._callback)
 
     def _callback(self, wholeLines):
-        self.assertEqual(wholeLines[-1], '\n', 'got %r' % (wholeLines))
+        self.assertEqual(wholeLines[-1], '\n', f'got {repr(wholeLines)}')
         self.callbacks.append(wholeLines)
         d = defer.Deferred()
         reactor.callLater(0, d.callback, None)
@@ -117,7 +117,7 @@ class LBF(unittest.TestCase):
             yield self.lbf.append(b)
             yield self.lbf.flush()
             res = ''.join(self.callbacks)
-            log.msg('feeding %r, %r gives %r' % (a, b, res))
+            log.msg(f'feeding {repr(a)}, {repr(b)} gives {repr(res)}')
             self.assertEqual(res, 'a\nb\nc\nd\n\ne\n')
             self.callbacks = []
 
@@ -137,7 +137,7 @@ class LBF(unittest.TestCase):
     @defer.inlineCallbacks
     def test_long_lines(self):
         """long lines are split"""
-        for i in range(4):
+        for _ in range(4):
             yield self.lbf.append('12' * 1000)
         # a split at 4096 + the remaining chars
         self.assertCallbacks(['12' * 2048 + '\n' + '12' * 952 + '\n'])

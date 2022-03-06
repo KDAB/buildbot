@@ -150,6 +150,8 @@ setup_args = {
     'entry_points': {
         'console_scripts': [
             'buildbot-worker=buildbot_worker.scripts.runner:run',
+            # this will also be shipped on non windows :-(
+            'buildbot_worker_windows_service=buildbot_worker.scripts.windows_service:HandleCommandLine',  # noqa pylint: disable=line-too-long
         ]}
 }
 
@@ -158,17 +160,22 @@ setup_args = {
 # see http://buildbot.net/trac/ticket/907
 if sys.platform == "win32":
     setup_args['zip_safe'] = False
-    setup_args['entry_points']['console_scripts'].append(
-        'buildbot_worker_windows_service=buildbot_worker.scripts.windows_service:HandleCommandLine',  # noqa pylint: disable=line-too-long
-    )
 
 twisted_ver = ">= 17.9.0"
+autobahn_ver = ">= 0.16.0"
 
 if setuptools is not None:
     setup_args['install_requires'] = [
         'twisted ' + twisted_ver,
         'future',
     ]
+
+    if sys.version_info.major >= 3:
+        # Message pack is only supported on Python 3
+        setup_args['install_requires'] += [
+            'autobahn ' + autobahn_ver,
+            'msgpack >= 0.6.0',
+        ]
 
     # buildbot_worker_windows_service needs pywin32
     if sys.platform == "win32":

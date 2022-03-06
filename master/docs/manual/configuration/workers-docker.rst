@@ -153,7 +153,7 @@ To do this, enter the following lines in a Python prompt where docker-py is inst
 
     >>> import docker
     >>> docker_socket = 'tcp://localhost:2375'
-    >>> client = docker.client.Client(base_url=docker_socket)
+    >>> client = docker.client.APIClient(base_url=docker_socket)
     >>> worker_image = 'my_project_worker'
     >>> container = client.create_container(worker_image)
     >>> client.start(container['Id'])
@@ -242,7 +242,12 @@ In addition to the arguments available for any :ref:`Latent-Workers`, :class:`Do
 
 ``alwaysPull``
     (optional, defaults to false)
-    Always pulls image if autopull is set to true.
+    Always pulls (update) image if autopull is set to true.
+    Also affects the base image specified by `FROM ....` if using a dockerfile, autopull is not needed then.
+
+``target``
+    (renderable string, optional)
+    Sets target build stage for multi-stage builds when using a dockerfile.
 
 ``custom_context``
     (renderable boolean, optional)
@@ -259,18 +264,6 @@ In addition to the arguments available for any :ref:`Latent-Workers`, :class:`Do
 ``hostname``
     (renderable string, optional)
     This will set container's hostname.
-
-Setting up Volumes
-..................
-
-The ``volume`` parameter allows to share directory between containers, or between a container and the host system.
-Refer to Docker documentation for more information about Volumes.
-
-The format of that variable has to be an array of string.
-Each string specify a volume in the following format: :samp:`{volumename}:{bindname}`.
-The volume name has to be appended with ``:ro`` if the volume should be mounted *read-only*.
-
-.. note:: This is the same format as when specifying volumes on the command line for docker's own ``-v`` option.
 
 Marathon latent worker
 ======================

@@ -27,7 +27,7 @@ from buildbot.process.results import SUCCESS
 from buildbot.schedulers.forcesched import ForceScheduler
 from buildbot.test import fakedb
 from buildbot.test.fake import fakemaster
-from buildbot.test.util.misc import TestReactorMixin
+from buildbot.test.reactor import TestReactorMixin
 from buildbot.util import toJson
 
 try:
@@ -65,7 +65,7 @@ class GraphQL(unittest.TestCase, TestReactorMixin):
 
     @defer.inlineCallbacks
     def setUp(self):
-        self.setUpTestReactor(use_asyncio=True)
+        self.setup_test_reactor(use_asyncio=True)
 
         master = fakemaster.make_master(self)
         master.db = fakedb.FakeDBConnector(self)
@@ -231,7 +231,7 @@ class GraphQL(unittest.TestCase, TestReactorMixin):
         regen = False
         need_save = False
         fn = os.path.join(os.path.dirname(__file__), "test_graphql_queries.yaml")
-        with open(fn) as f:
+        with open(fn, encoding='utf-8') as f:
             data = self.load_yaml(f)
         focussed_data = [test for test in data if test.get('focus')]
         if not focussed_data:
@@ -253,7 +253,7 @@ class GraphQL(unittest.TestCase, TestReactorMixin):
                 self.assertEqual(
                     result_data, expected, f"for {query}")
         if need_save:
-            with open(fn, 'w') as f:
+            with open(fn, 'w', encoding='utf-8') as f:
                 self.save_yaml(data, f)
 
     @defer.inlineCallbacks

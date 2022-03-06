@@ -50,8 +50,12 @@ class Client:
     def wait(self, id):
         return 0
 
-    def build(self, fileobj, tag):
+    def build(self, fileobj, tag, pull, target):
         if fileobj.read() == b'BUG':
+            pass
+        elif pull != bool(pull):
+            pass
+        elif target != "":
             pass
         else:
             logs = []

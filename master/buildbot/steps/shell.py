@@ -67,7 +67,7 @@ class TreeSize(buildstep.ShellMixin, buildstep.BuildStep):
         if m:
             kib = int(m.group(1))
             self.setProperty("tree-size-KiB", kib, "treesize")
-            self.descriptionDone = "treesize {} KiB".format(kib)
+            self.descriptionDone = f"treesize {kib} KiB"
         else:
             self.descriptionDone = "treesize unknown"
 
@@ -93,7 +93,7 @@ class SetPropertyFromCommand(buildstep.ShellMixin, buildstep.BuildStep):
         self.includeStdout = includeStdout
         self.includeStderr = includeStderr
 
-        if not ((property is not None) ^ (extract_fn is not None)):
+        if not (property is not None) ^ (extract_fn is not None):
             config.error(
                 "Exactly one of property and extract_fn must be set")
 
@@ -135,14 +135,14 @@ class SetPropertyFromCommand(buildstep.ShellMixin, buildstep.BuildStep):
                 self.setProperty(k, v, "SetPropertyFromCommand Step")
             property_changes = new_props
 
-        props_set = ["{}: {}".format(k, repr(v))
+        props_set = [f"{k}: {repr(v)}"
                      for k, v in sorted(property_changes.items())]
         yield self.addCompleteLog('property changes', "\n".join(props_set))
 
         if len(property_changes) > 1:
-            self.descriptionDone = '{} properties set'.format(len(property_changes))
+            self.descriptionDone = f'{len(property_changes)} properties set'
         elif len(property_changes) == 1:
-            self.descriptionDone = 'property \'{}\' set'.format(list(property_changes)[0])
+            self.descriptionDone = f'property \'{list(property_changes)[0]}\' set'
         if cmd.didFail():
             return FAILURE
         return SUCCESS
@@ -344,7 +344,7 @@ class WarningCountingShellCommand(buildstep.ShellMixin, CompositeStepMixin, buil
         # add the line to the collection of lines with warnings
         self.loggedWarnings = []
         while True:
-            stream, line = yield
+            _, line = yield
             if directoryEnterRe:
                 match = directoryEnterRe.search(line)
                 if match:
@@ -368,7 +368,7 @@ class WarningCountingShellCommand(buildstep.ShellMixin, CompositeStepMixin, buil
             if file is not None and file != "" and self.directoryStack:
                 currentDirectory = '/'.join(self.directoryStack)
                 if currentDirectory is not None and currentDirectory != "":
-                    file = "{}/{}".format(currentDirectory, file)
+                    file = f"{currentDirectory}/{file}"
 
             # Skip adding the warning if any suppression matches.
             for fileRe, warnRe, start, end in self.suppressions:
@@ -398,11 +398,11 @@ class WarningCountingShellCommand(buildstep.ShellMixin, CompositeStepMixin, buil
                 if self.commentEmptyLineRe.match(line):
                     continue
                 match = self.suppressionLineRe.match(line)
-                if (match):
+                if match:
                     file, test, start, end = match.groups()
-                    if (end is not None):
+                    if end is not None:
                         end = int(end)
-                    if (start is not None):
+                    if start is not None:
                         start = int(start)
                         if end is None:
                             end = start
@@ -437,7 +437,7 @@ class WarningCountingShellCommand(buildstep.ShellMixin, CompositeStepMixin, buil
         # If there were any warnings, make the log if lines with warnings
         # available
         if self.warnCount:
-            yield self.addCompleteLog("warnings (%d)" % self.warnCount,
+            yield self.addCompleteLog(f"warnings ({self.warnCount})",
                                       "\n".join(self.loggedWarnings) + "\n")
 
         warnings_stat = self.getStatistic('warnings', 0)
@@ -511,7 +511,7 @@ class Test(WarningCountingShellCommand):
             if description:
                 summary = join_list(description)
                 if self.results != SUCCESS:
-                    summary += ' ({})'.format(Results[self.results])
+                    summary += f' ({Results[self.results]})'
                 return {'step': summary}
 
         return super().getResultSummary()

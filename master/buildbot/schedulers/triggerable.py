@@ -52,7 +52,7 @@ class Triggerable(base.BaseScheduler):
             reason = set_props.getProperty('reason')
 
         if reason is None:
-            reason = "The Triggerable scheduler named '{}' triggered this build".format(self.name)
+            reason = f"The Triggerable scheduler named '{self.name}' triggered this build"
 
         # note that this does not use the buildset subscriptions mechanism, as
         # the duration of interest to the caller is bounded by the lifetime of
@@ -93,7 +93,7 @@ class Triggerable(base.BaseScheduler):
         # and errback any outstanding deferreds
         if self._waiters:
             msg = 'Triggerable scheduler stopped before build was complete'
-            for d, brids in self._waiters.values():
+            for d, _ in self._waiters.values():
                 d.errback(failure.Failure(RuntimeError(msg)))
             self._waiters = {}
 

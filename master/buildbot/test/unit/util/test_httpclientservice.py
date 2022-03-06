@@ -308,7 +308,7 @@ class HTTPClientServiceTestTxRequestE2E(unittest.TestCase):
 
     def httpFactory(self, parent):
         return httpclientservice.HTTPClientService.getService(
-            parent, 'http://127.0.0.1:{}'.format(self.port))
+            parent, f'http://127.0.0.1:{self.port}')
 
     def expect(self, *arg, **kwargs):
         pass
@@ -396,19 +396,19 @@ class HTTPClientServiceTestTxRequestE2E(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_lots(self):
-        for i in range(self.NUM_PARALLEL):
+        for _ in range(self.NUM_PARALLEL):
             self.expect('get', '/', params=dict(a='b'),
                         content_json=dict(a=['b']))
         # use for benchmarking (txrequests: 3ms per request treq: 1ms per
         # request)
-        for i in range(self.NUM_PARALLEL):
+        for _ in range(self.NUM_PARALLEL):
             res = yield self._http.get('/', params=dict(a='b'))
             content = yield res.content()
             self.assertEqual(content, b'{"a": ["b"]}')
 
     @defer.inlineCallbacks
     def test_lots_parallel(self):
-        for i in range(self.NUM_PARALLEL):
+        for _ in range(self.NUM_PARALLEL):
             self.expect('get', '/', params=dict(a='b'),
                         content_json=dict(a=['b']))
 
@@ -439,7 +439,7 @@ class HTTPClientServiceTestFakeE2E(HTTPClientServiceTestTxRequestE2E):
     @defer.inlineCallbacks
     def httpFactory(self, parent):
         service = yield fakehttpclientservice.HTTPClientService.getService(
-            parent, self, 'http://127.0.0.1:{}'.format(self.port))
+            parent, self, f'http://127.0.0.1:{self.port}')
         return service
 
     def expect(self, *arg, **kwargs):

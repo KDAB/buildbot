@@ -48,7 +48,7 @@ class TailProcess(protocol.ProcessProtocol):
         self.lw.dataReceived(data)
 
     def errReceived(self, data):
-        self.lw.print_output("ERR: '{}'".format(data))
+        self.lw.print_output(f"ERR: '{data}'")
 
 
 class LineOnlyLongLineReceiver(protocol.Protocol):
@@ -152,13 +152,14 @@ class LogWatcher(LineOnlyLongLineReceiver):
 
     def create_logfile(self, path):  # pragma: no cover
         if not os.path.exists(path):
-            open(path, 'a').close()
+            with open(path, 'a', encoding='utf-8'):
+                pass
 
     def print_output(self, output):  # pragma: no cover
         print(output)
 
     def lineLengthExceeded(self, line):
-        msg = 'Got an a very long line in the log (length {} bytes), ignoring'.format(len(line))
+        msg = f'Got an a very long line in the log (length {len(line)} bytes), ignoring'
         self.print_output(msg)
 
     def lineReceived(self, line):

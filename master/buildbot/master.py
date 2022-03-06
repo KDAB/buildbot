@@ -26,11 +26,12 @@ from twisted.python import failure
 from twisted.python import log
 
 import buildbot
-import buildbot.pbmanager
 from buildbot import config
 from buildbot import monkeypatches
 from buildbot.buildbot_net_usage_data import sendBuildbotNetUsageData
 from buildbot.changes.manager import ChangeManager
+from buildbot.config.master import FileLoader
+from buildbot.config.master import MasterConfig
 from buildbot.data import connector as dataconnector
 from buildbot.data import graphql
 from buildbot.db import connector as dbconnector
@@ -49,6 +50,8 @@ from buildbot.util import service
 from buildbot.util.eventual import eventually
 from buildbot.wamp import connector as wampconnector
 from buildbot.worker import manager as workermanager
+from buildbot.worker.protocols.manager.msgpack import MsgManager
+from buildbot.worker.protocols.manager.pb import PBManager
 from buildbot.www import service as wwwservice
 
 
@@ -87,7 +90,7 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         if config_loader is None:
             if configFileName is None:
                 configFileName = 'master.cfg'
-            config_loader = config.FileLoader(self.basedir, configFileName)
+            config_loader = FileLoader(self.basedir, configFileName)
         self.config_loader = config_loader
         self.configFileName = configFileName
 
@@ -102,7 +105,7 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         self.configured_db_url = None
 
         # configuration / reconfiguration handling
-        self.config = config.MasterConfig()
+        self.config = MasterConfig()
         self.config_version = 0  # increased by one on each reconfig
         self.reconfig_active = False
         self.reconfig_requested = False
@@ -125,7 +128,7 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
             self.hostname = socket.getfqdn()
 
         # public attributes
-        self.name = ("{}:{}".format(self.hostname, os.path.abspath(self.basedir or '.')))
+        self.name = (f"{self.hostname}:{os.path.abspath(self.basedir or '.')}")
         if isinstance(self.name, bytes):
             self.name = self.name.decode('ascii', 'replace')
         self.masterid = None
@@ -141,8 +144,11 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         self.caches = cache.CacheManager()
         yield self.caches.setServiceParent(self)
 
-        self.pbmanager = buildbot.pbmanager.PBManager()
+        self.pbmanager = PBManager()
         yield self.pbmanager.setServiceParent(self)
+
+        self.msgmanager = MsgManager()
+        yield self.msgmanager.setServiceParent(self)
 
         self.workers = workermanager.WorkerManager(self)
         yield self.workers.setServiceParent(self)
@@ -219,7 +225,7 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
             yield self._services_d
             self._services_d = None
 
-        log.msg("Starting BuildMaster -- buildbot.version: {}".format(buildbot.version))
+        log.msg(f"Starting BuildMaster -- buildbot.version: {buildbot.version}")
 
         # Set umask
         if self.umask is not None:
@@ -372,8 +378,8 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         # notify every 10 seconds that the reconfig is still going on, the duration of reconfigs is
         # longer on larger installations and may take a while.
         self.reconfig_notifier = task.LoopingCall(
-            lambda: log.msg("reconfig is ongoing for {:.3f} s".format(self.reactor.seconds() -
-                                                                      self.reconfig_active)))
+            lambda: log.msg("reconfig is ongoing for "
+                            f"{self.reactor.seconds() - self.reconfig_active:.3f} s"))
         self.reconfig_notifier.start(10, now=False)
 
         timer = metrics.Timer("BuildMaster.reconfig")
@@ -430,12 +436,12 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         else:
             msg = "configuration update complete"
 
-        log.msg("{} (took {:.3f} seconds)".format(msg, self.reactor.seconds() - time_started))
+        log.msg(f"{msg} (took {(self.reactor.seconds() - time_started):.3f} seconds)")
 
     def reconfigServiceWithBuildbotConfig(self, new_config):
         if self.configured_db_url is None:
             self.configured_db_url = new_config.db['db_url']
-        elif (self.configured_db_url != new_config.db['db_url']):
+        elif self.configured_db_url != new_config.db['db_url']:
             config.error(
                 "Cannot change c['db']['db_url'] after the master has started",
             )

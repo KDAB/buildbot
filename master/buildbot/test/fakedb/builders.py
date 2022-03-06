@@ -97,7 +97,7 @@ class FakeBuildersComponent(FakeDBComponent):
     def removeBuilderMaster(self, builderid=None, masterid=None):
         for id, tup in self.builder_masters.items():
             if tup == (builderid, masterid):
-                del self.builder_masters[id]
+                del self.builder_masters[id]  # noqa pylint: disable=unnecessary-dict-index-lookup
                 break
         return defer.succeed(None)
 
@@ -125,7 +125,7 @@ class FakeBuildersComponent(FakeDBComponent):
 
     def addTestBuilder(self, builderid, name=None):
         if name is None:
-            name = "SomeBuilder-%d" % builderid
+            name = f"SomeBuilder-{builderid}"
         self.db.insertTestData([
             Builder(id=builderid, name=name),
         ])

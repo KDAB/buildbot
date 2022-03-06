@@ -144,11 +144,11 @@ class Trigger(BuildStep):
         # this allow to quickly find schedulers instance by name
         schedulers = self.master.scheduler_manager.namedServices
         if name not in schedulers:
-            raise ValueError("unknown triggered scheduler: %r" % (name,))
+            raise ValueError(f"unknown triggered scheduler: {repr(name)}")
         sch = schedulers[name]
         if not ITriggerableScheduler.providedBy(sch):
             raise ValueError(
-                "triggered scheduler is not ITriggerableScheduler: %r" % (name,))
+                f"triggered scheduler is not ITriggerableScheduler: {repr(name)}")
         return sch
 
     # This customization endpoint allows users to dynamically select which
@@ -182,9 +182,9 @@ class Trigger(BuildStep):
         # overrule revision in sourcestamps with got revision
         if self.updateSourceStamp:
             got = self.getAllGotRevisions()
-            for codebase in ss_for_trigger:
+            for codebase, ss in ss_for_trigger.items():
                 if codebase in got:
-                    ss_for_trigger[codebase]['revision'] = got[codebase]
+                    ss['revision'] = got[codebase]
 
         trigger_values = [ss_for_trigger[k] for k in sorted(ss_for_trigger.keys())]
         return trigger_values
@@ -235,8 +235,8 @@ class Trigger(BuildStep):
                             builderNames[builderid] = builderDict["name"]
                         num = build['number']
                         url = getURLForBuild(self.master, builderid, num)
-                        yield self.addURL("{}: {} #{}".format(statusToString(build["results"]),
-                                                              builderNames[builderid], num),
+                        yield self.addURL(f'{statusToString(build["results"])}: '
+                                          f'{builderNames[builderid]} #{num}',
                                           url)
 
     @defer.inlineCallbacks
@@ -303,7 +303,7 @@ class Trigger(BuildStep):
             # the deferred lists, just let the db writes be serial.
             brids = {}
             try:
-                bsid, brids = yield idsDeferred
+                _, brids = yield idsDeferred
             except Exception as e:
                 yield self.addLogWithException(e)
                 results = EXCEPTION
@@ -314,7 +314,7 @@ class Trigger(BuildStep):
                 # put the url to the brids, so that we can have the status from
                 # the beginning
                 url = getURLForBuildrequest(self.master, brid)
-                yield self.addURL("{} #{}".format(sch.name, brid), url)
+                yield self.addURL(f"{sch.name} #{brid}", url)
                 # No yield since we let this happen as the builds complete
                 self._add_results(brid)
 
@@ -356,6 +356,6 @@ class Trigger(BuildStep):
             for status in ALL_RESULTS:
                 count = self._result_list.count(status)
                 if count:
-                    summary = summary + ", {} {}".format(self._result_list.count(status),
-                                                     statusToString(status, count))
-        return {'step': 'triggered {}{}'.format(', '.join(self.triggeredNames), summary)}
+                    summary = summary + (f", {self._result_list.count(status)} "
+                        f"{statusToString(status, count)}")
+        return {'step': f"triggered {', '.join(self.triggeredNames)}{summary}"}

@@ -67,7 +67,7 @@ def patch_mysqlclient_warnings():
 
     def patched_init(self, *args):
         if isinstance(args[0], int):
-            super().__init__("{} {}".format(args[0], args[1]))
+            super().__init__(f"{args[0]} {args[1]}")
         else:
             super().__init__(*args)
     Warning.__init__ = patched_init
@@ -81,10 +81,10 @@ def patch_decorators():
 
 @onlyOnce
 def patch_config_for_unit_tests():
-    from buildbot import config
+    from buildbot.config.master import set_is_in_unit_tests
     # by default, buildbot.config warns about not configured buildbotNetUsageData.
     # its important for users to not leak information, but unneeded and painful for tests
-    config._in_unit_tests = True
+    set_is_in_unit_tests(True)
 
 
 @onlyOnce

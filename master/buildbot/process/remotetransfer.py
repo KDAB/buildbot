@@ -13,6 +13,9 @@
 #
 # Copyright Buildbot Team Members
 
+"""
+module for regrouping all FileWriterImpl and FileReaderImpl away from steps
+"""
 
 import os
 import tarfile
@@ -22,11 +25,6 @@ from io import BytesIO
 from buildbot.util import bytes2unicode
 from buildbot.util import unicode2bytes
 from buildbot.worker.protocols import base
-
-
-"""
-module for regrouping all FileWriterImpl and FileReaderImpl away from steps
-"""
 
 
 class FileWriter(base.FileWriterImpl):
@@ -127,9 +125,8 @@ class DirectoryWriter(FileWriter):
             mode = 'r'
 
         # Unpack archive and clean up after self
-        archive = tarfile.open(name=self.tarname, mode=mode)
-        archive.extractall(path=self.destroot)
-        archive.close()
+        with tarfile.open(name=self.tarname, mode=mode) as archive:
+            archive.extractall(path=self.destroot)
         os.remove(self.tarname)
 
 

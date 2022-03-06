@@ -19,9 +19,9 @@ from twisted.internet import defer
 from twisted.trial import unittest
 
 from buildbot.changes import mail
+from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.util import changesource
 from buildbot.test.util import dirs
-from buildbot.test.util.misc import TestReactorMixin
 
 
 class TestMaildirSource(changesource.ChangeSourceMixin, dirs.DirsMixin,
@@ -30,7 +30,7 @@ class TestMaildirSource(changesource.ChangeSourceMixin, dirs.DirsMixin,
 
     @defer.inlineCallbacks
     def setUp(self):
-        self.setUpTestReactor()
+        self.setup_test_reactor()
         self.maildir = os.path.abspath("maildir")
 
         yield self.setUpChangeSource()
@@ -46,7 +46,7 @@ class TestMaildirSource(changesource.ChangeSourceMixin, dirs.DirsMixin,
 
         fake_message = "Subject: test\n\nthis is a test"
         mailfile = os.path.join(newdir, "newmsg")
-        with open(mailfile, "w") as f:
+        with open(mailfile, "w", encoding='utf-8') as f:
             f.write(fake_message)
 
     def assertMailProcessed(self):

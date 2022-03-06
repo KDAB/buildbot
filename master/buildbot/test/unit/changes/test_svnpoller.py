@@ -22,10 +22,10 @@ from twisted.trial import unittest
 
 from buildbot.changes import svnpoller
 from buildbot.process.properties import Interpolate
+from buildbot.test.reactor import TestReactorMixin
+from buildbot.test.runprocess import ExpectMasterShell
+from buildbot.test.runprocess import MasterRunProcessMixin
 from buildbot.test.util import changesource
-from buildbot.test.util.misc import TestReactorMixin
-from buildbot.test.util.runprocess import ExpectMaster
-from buildbot.test.util.runprocess import MasterRunProcessMixin
 
 # this is the output of "svn info --xml
 # svn+ssh://svn.twistedmatrix.com/svn/Twisted/trunk"
@@ -248,7 +248,7 @@ def split_file(path):
         return dict(branch="branch", path="/".join(pieces[1:]))
     if pieces[0] == "trunk":
         return dict(path="/".join(pieces[1:]))
-    raise RuntimeError("there shouldn't be any files like %r" % path)
+    raise RuntimeError(f"there shouldn't be any files like {repr(path)}")
 
 
 class TestSVNPoller(MasterRunProcessMixin,
@@ -257,7 +257,7 @@ class TestSVNPoller(MasterRunProcessMixin,
                     unittest.TestCase):
 
     def setUp(self):
-        self.setUpTestReactor()
+        self.setup_test_reactor()
         self.setup_master_run_process()
         return self.setUpChangeSource()
 
@@ -293,7 +293,7 @@ class TestSVNPoller(MasterRunProcessMixin,
     def do_test_get_prefix(self, base, output, expected):
         s = yield self.attachSVNPoller(base)
         self.expect_commands(
-            ExpectMaster(['svn', 'info', '--xml', '--non-interactive', base])
+            ExpectMasterShell(['svn', 'info', '--xml', '--non-interactive', base])
             .stdout(output)
         )
         prefix = yield s.get_prefix()
@@ -412,7 +412,7 @@ class TestSVNPoller(MasterRunProcessMixin,
                 '--username=dustin']
         if password is not None:
             args.append('--password=' + password)
-        return ExpectMaster(args)
+        return ExpectMasterShell(args)
 
     def makeLogExpect(self, password='bbrocks'):
         args = ['svn', 'log', '--xml', '--verbose', '--non-interactive',
@@ -420,7 +420,7 @@ class TestSVNPoller(MasterRunProcessMixin,
         if password is not None:
             args.append('--password=' + password)
         args.extend(['--limit=100', sample_base])
-        return ExpectMaster(args)
+        return ExpectMasterShell(args)
 
     @defer.inlineCallbacks
     def test_create_changes_overridden_project(self):
@@ -622,20 +622,20 @@ class TestSVNPoller(MasterRunProcessMixin,
     @defer.inlineCallbacks
     def test_cachepath_full(self):
         cachepath = os.path.abspath('revcache')
-        with open(cachepath, "w") as f:
+        with open(cachepath, "w", encoding='utf-8') as f:
             f.write('33')
         s = yield self.attachSVNPoller(sample_base, cachepath=cachepath)
         self.assertEqual(s.last_change, 33)
 
         s.last_change = 44
         s.finished_ok(None)
-        with open(cachepath) as f:
+        with open(cachepath, encoding='utf-8') as f:
             self.assertEqual(f.read().strip(), '44')
 
     @defer.inlineCallbacks
     def test_cachepath_bogus(self):
         cachepath = os.path.abspath('revcache')
-        with open(cachepath, "w") as f:
+        with open(cachepath, "w", encoding='utf-8') as f:
             f.write('nine')
         s = yield self.attachSVNPoller(sample_base, cachepath=cachepath)
         self.assertEqual(s.last_change, None)

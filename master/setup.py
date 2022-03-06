@@ -41,12 +41,12 @@ def include(d, e):
     'd' -- A directory
     'e' -- A glob pattern"""
 
-    return (d, [f for f in glob.glob('{}/{}'.format(d, e)) if os.path.isfile(f)])
+    return (d, [f for f in glob.glob(f'{d}/{e}') if os.path.isfile(f)])
 
 
 def include_statics(d):
     r = []
-    for root, ds, fs in os.walk(d):
+    for root, _, fs in os.walk(d):
         r.append((root, [os.path.join(root, f) for f in fs]))
     return r
 
@@ -68,7 +68,8 @@ class install_data_twisted(install_data):
         super().run()
         # ensure there's a buildbot/VERSION file
         fn = os.path.join(self.install_dir, 'buildbot', 'VERSION')
-        open(fn, 'w').write(version)
+        with open(fn, 'w') as f:
+            f.write(version)
         self.outfiles.append(fn)
 
 
@@ -79,7 +80,8 @@ class our_sdist(sdist):
 
         # ensure there's a buildbot/VERSION file
         fn = os.path.join(base_dir, 'buildbot', 'VERSION')
-        open(fn, 'w').write(version)
+        with open(fn, 'w') as f:
+            f.write(version)
 
         # ensure that NEWS has a copy of the latest release notes, with the
         # proper version substituted
@@ -100,11 +102,11 @@ def define_plugin_entry(name, module_name):
         entry, name = name
     else:
         entry = name
-    return '{} = {}:{}'.format(entry, module_name, name)
+    return f'{entry} = {module_name}:{name}'
 
 
 def concat_dicts(*dicts):
-    result = dict()
+    result = {}
     for d in dicts:
         result.update(d)
     return result
@@ -114,7 +116,7 @@ def define_plugin_entries(groups):
     """
     helper to all groups for plugins
     """
-    result = dict()
+    result = {}
 
     for group, modules in groups:
         tempo = []
@@ -160,8 +162,10 @@ setup_args = {
         "buildbot.configurators",
         "buildbot.worker",
         "buildbot.worker.protocols",
+        "buildbot.worker.protocols.manager",
         "buildbot.changes",
         "buildbot.clients",
+        "buildbot.config",
         "buildbot.data",
         "buildbot.db",
         "buildbot.db.migrations.versions",
@@ -190,11 +194,11 @@ setup_args = {
         "buildbot.www",
         "buildbot.www.hooks",
         "buildbot.www.authz",
-    ] + ([] if BUILDING_WHEEL else [  # skip tests for wheels (save 50% of the archive)
         "buildbot.test",
         "buildbot.test.util",
         "buildbot.test.fake",
         "buildbot.test.fakedb",
+    ] + ([] if BUILDING_WHEEL else [  # skip tests for wheels (save 50% of the archive)
         "buildbot.test.fuzz",
         "buildbot.test.integration",
         "buildbot.test.integration.interop",
@@ -368,7 +372,7 @@ setup_args = {
                 ('svn.split_file_branches', 'split_file_branches'),
                 ('svn.split_file_alwaystrunk', 'split_file_alwaystrunk')]),
             ('buildbot.configurators.janitor', ['JanitorConfigurator']),
-            ('buildbot.config', ['BuilderConfig']),
+            ('buildbot.config.builder', ['BuilderConfig']),
             ('buildbot.locks', [
                 'MasterLock',
                 'WorkerLock',
@@ -445,6 +449,8 @@ setup_args = {
     ]), {
         'console_scripts': [
             'buildbot=buildbot.scripts.runner:run',
+            # this will also be shipped on non windows :-(
+            'buildbot_windows_service=buildbot.scripts.windows_service:HandleCommandLine',
         ]}
     )
 }
@@ -454,9 +460,6 @@ setup_args = {
 # see http://buildbot.net/trac/ticket/907
 if sys.platform == "win32":
     setup_args['zip_safe'] = False
-    setup_args['entry_points']['console_scripts'].append(
-        'buildbot_windows_service=buildbot.scripts.windows_service:HandleCommandLine'
-    )
 
 py_36 = sys.version_info[0] > 3 or (
     sys.version_info[0] == 3 and sys.version_info[1] >= 6)
@@ -492,6 +495,7 @@ setup_args['install_requires'] = [
     'setuptools >= 8.0',
     'Twisted ' + twisted_ver,
     'Jinja2 >= 2.1',
+    'msgpack >= 0.6.0',
     # required for tests, but Twisted requires this anyway
     'zope.interface >= 4.1.1',
     'sqlalchemy >= 1.3.0, < 1.5',
@@ -540,11 +544,11 @@ setup_args['extras_require'] = {
         'flake8~=3.9.2',
     ] + test_deps,
     'bundle': [
-        "buildbot-www=={0}".format(bundle_version),
-        "buildbot-worker=={0}".format(bundle_version),
-        "buildbot-waterfall-view=={0}".format(bundle_version),
-        "buildbot-console-view=={0}".format(bundle_version),
-        "buildbot-grid-view=={0}".format(bundle_version),
+        f"buildbot-www=={bundle_version}",
+        f"buildbot-worker=={bundle_version}",
+        f"buildbot-waterfall-view=={bundle_version}",
+        f"buildbot-console-view=={bundle_version}",
+        f"buildbot-grid-view=={bundle_version}",
     ],
     'tls': [
         'Twisted[tls] ' + twisted_ver,

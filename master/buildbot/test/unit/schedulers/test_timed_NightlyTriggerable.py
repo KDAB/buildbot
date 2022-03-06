@@ -21,8 +21,8 @@ from twisted.trial import unittest
 from buildbot.process import properties
 from buildbot.schedulers import timed
 from buildbot.test import fakedb
+from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.util import scheduler
-from buildbot.test.util.misc import TestReactorMixin
 
 
 class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin,
@@ -49,7 +49,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin,
         return sched
 
     def setUp(self):
-        self.setUpTestReactor()
+        self.setup_test_reactor()
         self.setUpScheduler()
 
     def tearDown(self):
@@ -254,7 +254,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin,
 
         sched.activate()
 
-        (idsDeferred, d) = sched.trigger(False, [
+        _, d = sched.trigger(False, [
             dict(codebase='cb', revision='myrev', branch='br', project='p',
                  repository='r'),
         ], set_props=None)
@@ -278,7 +278,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin,
 
         sched.activate()
 
-        (idsDeferre, d) = sched.trigger(False, [
+        _, d = sched.trigger(False, [
             dict(codebase='cb', revision='myrev', branch='br', project='p',
                  repository='r'),
         ], set_props=None)

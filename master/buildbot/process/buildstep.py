@@ -31,6 +31,8 @@ from zope.interface import implementer
 from buildbot import config
 from buildbot import interfaces
 from buildbot import util
+from buildbot.config.checks import check_param_length
+from buildbot.db.model import Model
 from buildbot.interfaces import IRenderable
 from buildbot.interfaces import WorkerSetupError
 from buildbot.process import log as plog
@@ -139,8 +141,8 @@ class _BuildStepFactory(util.ComparableMixin):
         try:
             return self.factory(*self.args, **self.kwargs)
         except Exception:
-            log.msg("error while creating step, factory={}, args={}, kwargs={}".format(self.factory,
-                    self.args, self.kwargs))
+            log.msg(f"error while creating step, factory={self.factory}, args={self.args}, "
+                    f"kwargs={self.kwargs}")
             raise
 
 
@@ -240,13 +242,16 @@ class BuildStep(results.ResultComputingConfigMixin,
                 setattr(self, p, kwargs.pop(p))
 
         if kwargs:
-            config.error("{}.__init__ got unexpected keyword argument(s) {}".format(self.__class__,
-                                                                                    list(kwargs)))
+            config.error(f"{self.__class__}.__init__ got unexpected keyword argument(s) "
+                         f"{list(kwargs)}")
         self._pendingLogObservers = []
 
         if not isinstance(self.name, str) and not IRenderable.providedBy(self.name):
-            config.error("BuildStep name must be a string or a renderable object: "
-                         "%r" % (self.name,))
+            config.error(f"BuildStep name must be a string or a renderable object: "
+                         f"{repr(self.name)}")
+
+        check_param_length(self.name, f'Step {self.__class__.__name__} name',
+                           Model.steps.c.name.type.length)
 
         if isinstance(self.description, str):
             self.description = [self.description]
@@ -268,8 +273,8 @@ class BuildStep(results.ResultComputingConfigMixin,
             self.updateBuildSummaryPolicy = ALL_RESULTS
         if not isinstance(self.updateBuildSummaryPolicy, list):
             config.error("BuildStep updateBuildSummaryPolicy must be "
-                         "a list of result ids or boolean but it is %r" %
-                         (self.updateBuildSummaryPolicy,))
+                         "a list of result ids or boolean but it is "
+                         f"{repr(self.updateBuildSummaryPolicy)}")
         self._acquiringLocks = []
         self.stopped = False
         self.master = None
@@ -290,8 +295,8 @@ class BuildStep(results.ResultComputingConfigMixin,
         args = [repr(x) for x in self._factory.args]
         args.extend([str(k) + "=" + repr(v)
                      for k, v in self._factory.kwargs.items()])
-        return "{}({})".format(
-            self.__class__.__name__, ", ".join(args))
+        return f'{self.__class__.__name__}({", ".join(args)})'
+
     __repr__ = __str__
 
     def setBuild(self, build):
@@ -365,7 +370,7 @@ class BuildStep(results.ResultComputingConfigMixin,
             stepsumm = 'finished'
 
         if self.results != SUCCESS:
-            stepsumm += ' ({})'.format(Results[self.results])
+            stepsumm += f' ({Results[self.results]})'
 
         return {'step': stepsumm}
 
@@ -397,8 +402,7 @@ class BuildStep(results.ResultComputingConfigMixin,
 
         stepResult = summary.get('step', 'finished')
         if not isinstance(stepResult, str):
-            raise TypeError("step result string must be unicode (got %r)"
-                            % (stepResult,))
+            raise TypeError(f"step result string must be unicode (got {repr(stepResult)})")
         if self.stepid is not None:
             stepResult = self.build.properties.cleanupTextFromSecrets(
                 stepResult)
@@ -438,10 +442,10 @@ class BuildStep(results.ResultComputingConfigMixin,
                        la)
                       for l, la in self.locks]
 
-        for l, la in self.locks:
+        for l, _ in self.locks:
             if l in self.build.locks:
-                log.msg(("Hey, lock {} is claimed by both a Step ({}) and the"
-                         " parent Build ({})").format(l, self, self.build))
+                log.msg(f"Hey, lock {l} is claimed by both a Step ({self}) and the"
+                        f" parent Build ({self.build})")
                 raise RuntimeError("lock claimed by both Step and Build")
 
         try:
@@ -586,7 +590,7 @@ class BuildStep(results.ResultComputingConfigMixin,
             return defer.succeed(None)
         if self.stopped:
             return defer.succeed(None)
-        log.msg("acquireLocks(step {}, locks {})".format(self, self.locks))
+        log.msg(f"acquireLocks(step {self}, locks {self.locks})")
         for lock, access in self.locks:
             for waited_lock, _, _ in self._acquiringLocks:
                 if lock is waited_lock:
@@ -594,7 +598,7 @@ class BuildStep(results.ResultComputingConfigMixin,
 
             if not lock.isAvailable(self, access):
                 self._waitingForLocks = True
-                log.msg("step {} waiting for lock {}".format(self, lock))
+                log.msg(f"step {self} waiting for lock {lock}")
                 d = lock.waitUntilMaybeAvailable(self, access)
                 self._acquiringLocks.append((lock, access, d))
                 d.addCallback(self.acquireLocks)
@@ -647,7 +651,7 @@ class BuildStep(results.ResultComputingConfigMixin,
         yield self._maybe_interrupt_cmd(reason)
 
     def releaseLocks(self):
-        log.msg("releaseLocks({}): {}".format(self, self.locks))
+        log.msg(f"releaseLocks({self}): {self.locks}")
         for lock, access in self.locks:
             if lock.isOwner(self, access):
                 lock.release(self, access)
@@ -670,7 +674,7 @@ class BuildStep(results.ResultComputingConfigMixin,
 
     def checkWorkerHasCommand(self, command):
         if not self.workerVersion(command):
-            message = "worker is too old, does not know about {}".format(command)
+            message = f"worker is too old, does not know about {command}"
             raise WorkerSetupError(message)
 
     def getWorkerName(self):
@@ -856,7 +860,7 @@ class ShellMixin:
             prohibitArgs = []
 
         def bad(arg):
-            config.error("invalid {} argument {}".format(self.__class__.__name__, arg))
+            config.error(f"invalid {self.__class__.__name__} argument {arg}")
         for arg in self._shellMixinArgs:
             if arg not in constructorArgs:
                 continue
@@ -932,7 +936,7 @@ class ShellMixin:
         # set up logging
         if stdio is not None:
             cmd.useLog(stdio, False)
-        for logname, remotefilename in self.logfiles.items():
+        for logname in self.logfiles:
             if self.lazylogfiles:
                 # it's OK if this does, or does not, return a Deferred
                 def callback(cmd_arg, local_logname=logname):
@@ -952,7 +956,7 @@ class ShellMixin:
         summary = util.command_to_string(self.command)
         if summary:
             if self.results != SUCCESS:
-                summary += ' ({})'.format(Results[self.results])
+                summary += f' ({Results[self.results]})'
             return {'step': summary}
         return super().getResultSummary()
 

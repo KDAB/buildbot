@@ -13,6 +13,8 @@
 #
 # Copyright Buildbot Team Members
 
+import copy
+
 from twisted.internet import defer
 from twisted.python import failure
 from twisted.python import log
@@ -24,6 +26,7 @@ from buildbot.changes import changes
 from buildbot.process.properties import Properties
 from buildbot.util.service import ClusteredBuildbotService
 from buildbot.util.state import StateMixin
+from buildbot.warnings import warn_deprecated
 
 
 @implementer(interfaces.IScheduler)
@@ -34,9 +37,10 @@ class BaseScheduler(ClusteredBuildbotService, StateMixin):
     compare_attrs = ClusteredBuildbotService.compare_attrs + \
         ('builderNames', 'properties', 'codebases')
 
-    def __init__(self, name, builderNames, properties=None,
-                 codebases=DEFAULT_CODEBASES):
+    def __init__(self, name, builderNames, properties=None, codebases=None):
         super().__init__(name=name)
+        if codebases is None:
+            codebases = self.DEFAULT_CODEBASES.copy()
 
         ok = True
         if interfaces.IRenderable.providedBy(builderNames):
@@ -81,8 +85,8 @@ class BaseScheduler(ClusteredBuildbotService, StateMixin):
                 else:
                     unk = set(attrs) - known_keys
                     if unk:
-                        config.error("Unknown codebase keys {} for codebase {}".format(
-                            ', '.join(unk), codebase))
+                        config.error(f"Unknown codebase keys {', '.join(unk)} "
+                                     f"for codebase {codebase}")
 
         self.codebases = codebases
 
@@ -194,8 +198,36 @@ class BaseScheduler(ClusteredBuildbotService, StateMixin):
         change = yield changes.Change.fromChdict(self.master, chdict)
 
         # filter it
-        if change_filter and not change_filter.filter_change(change):
-            return
+        if change_filter:
+            # There has been a change in how Gerrit handles branches in Buildbot 3.5 - ref-updated
+            # events will now emit proper branch instead of refs/heads/<branch>. Below we detect
+            # whether this breaks change filters.
+            change_filter_may_be_broken = \
+                change.category == 'ref-updated' and not change.branch.startswith('refs/')
+
+            if change_filter_may_be_broken:
+                old_change = copy.deepcopy(change)
+                old_change.branch = f'refs/heads/{old_change.branch}'
+
+                old_filter_result = change_filter.filter_change(old_change)
+                new_filter_result = change_filter.filter_change(change)
+
+                if old_filter_result != new_filter_result and \
+                        'refs/heads/' in repr(change_filter.checks['branch']):
+
+                    warn_deprecated('3.5.0',
+                                    'Change filters must not expect ref-updated events from '
+                                    'Gerrit to include refs/heads prefix for the branch attr.')
+
+                    if not old_filter_result:
+                        return
+                else:
+                    if not new_filter_result:
+                        return
+            else:
+                if not change_filter.filter_change(change):
+                    return
+
         if change.codebase not in self.codebases:
             log.msg(format='change contains codebase %(codebase)s that is '
                     'not processed by scheduler %(name)s',
@@ -208,7 +240,7 @@ class BaseScheduler(ClusteredBuildbotService, StateMixin):
                 if not important and onlyImportant:
                     return
             except Exception:
-                log.err(failure.Failure(), 'in fileIsImportant check for {}'.format(change))
+                log.err(failure.Failure(), f'in fileIsImportant check for {change}')
                 return
         else:
             important = True
@@ -383,7 +415,7 @@ class BaseScheduler(ClusteredBuildbotService, StateMixin):
         # but that would merely only optimize the single builder case, while
         # probably the multiple builder case will be severely impacted by the
         # several db requests needed.
-        builderids = list()
+        builderids = []
         for bldr in (yield self.master.data.get(('builders', ))):
             if bldr['name'] in builderNames:
                 builderids.append(bldr['builderid'])

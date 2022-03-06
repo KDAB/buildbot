@@ -76,8 +76,7 @@ class FailingBuildsetCanceller(BuildbotService):
     @classmethod
     def check_filters(cls, filters):
         if not isinstance(filters, list):
-            config.error('{}: The filters argument must be a list of tuples'.format(
-                cls.__name__))
+            config.error(f'{cls.__name__}: The filters argument must be a list of tuples')
 
         for filter in filters:
             if not isinstance(filter, tuple) or \
@@ -88,15 +87,14 @@ class FailingBuildsetCanceller(BuildbotService):
                               'as the second and SourceStampFilter as the third'
                               ).format(cls.__name__))
 
-            builders, builders_to_cancel, ss_filter = filter
+            builders, builders_to_cancel, _ = filter
 
             try:
                 extract_filter_values(builders, 'builders')
                 if builders_to_cancel is not None:
                     extract_filter_values(builders_to_cancel, 'builders_to_cancel')
             except Exception as e:
-                config.error('{}: When processing filter builders: {}'.format(
-                    cls.__name__, str(e)))
+                config.error(f'{cls.__name__}: When processing filter builders: {str(e)}')
 
     @classmethod
     def filter_tuples_to_filter_set_object(cls, filters):

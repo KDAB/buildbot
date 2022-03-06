@@ -24,10 +24,10 @@ from twisted.python import log
 
 from buildbot.db import connector
 from buildbot.test.fake import fakemaster
+from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.util import db
 from buildbot.test.util import dirs
 from buildbot.test.util import querylog
-from buildbot.test.util.misc import TestReactorMixin
 from buildbot.util import sautils
 
 # test_upgrade vs. migration tests
@@ -41,7 +41,7 @@ class MigrateTestMixin(TestReactorMixin, db.RealDatabaseMixin, dirs.DirsMixin):
 
     @defer.inlineCallbacks
     def setUpMigrateTest(self):
-        self.setUpTestReactor()
+        self.setup_test_reactor()
         self.basedir = os.path.abspath("basedir")
         self.setUpDirs('basedir')
 
@@ -95,10 +95,10 @@ class MigrateTestMixin(TestReactorMixin, db.RealDatabaseMixin, dirs.DirsMixin):
                 return
             dbs = [r[0] for r in engine.execute("show tables")]
             for tbl in dbs:
-                r = engine.execute("show create table {}".format(tbl))
+                r = engine.execute(f"show create table {tbl}")
                 create_table = r.fetchone()[1]
                 self.assertIn('DEFAULT CHARSET=utf8', create_table,
-                              "table {} does not have the utf8 charset".format(tbl))
+                              f"table {tbl} does not have the utf8 charset")
         yield self.db.pool.do(check_table_charsets_thd)
 
         def verify_thd(engine):
