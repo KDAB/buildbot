@@ -19,10 +19,10 @@ from parameterized import parameterized
 
 from twisted.trial import unittest
 
+from buildbot.util.ssfilter import SourceStampFilter
 from buildbot.util.ssfilter import extract_filter_values
 from buildbot.util.ssfilter import extract_filter_values_branch
 from buildbot.util.ssfilter import extract_filter_values_regex
-from buildbot.util.ssfilter import SourceStampFilter
 
 
 class TestSourceStampFilter(unittest.TestCase):

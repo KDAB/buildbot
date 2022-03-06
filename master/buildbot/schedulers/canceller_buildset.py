@@ -19,8 +19,8 @@ from buildbot import config
 from buildbot.data import resultspec
 from buildbot.process.results import FAILURE
 from buildbot.util.service import BuildbotService
-from buildbot.util.ssfilter import extract_filter_values
 from buildbot.util.ssfilter import SourceStampFilter
+from buildbot.util.ssfilter import extract_filter_values
 
 
 class _FailingSingleBuilderConfig:

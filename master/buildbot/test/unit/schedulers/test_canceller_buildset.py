@@ -19,10 +19,10 @@ from twisted.trial import unittest
 from buildbot.process.results import FAILURE
 from buildbot.process.results import SUCCESS
 from buildbot.schedulers.canceller_buildset import FailingBuildsetCanceller
-from buildbot.util.ssfilter import SourceStampFilter
 from buildbot.test import fakedb
 from buildbot.test.fake import fakemaster
 from buildbot.test.util.misc import TestReactorMixin
+from buildbot.util.ssfilter import SourceStampFilter
 
 
 class TestOldBuildCanceller(TestReactorMixin, unittest.TestCase):

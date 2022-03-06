@@ -21,11 +21,11 @@ from twisted.trial import unittest
 from buildbot.schedulers.canceller import OldBuildCanceller
 from buildbot.schedulers.canceller import _OldBuildFilterSet
 from buildbot.schedulers.canceller import _OldBuildTracker
-from buildbot.util.ssfilter import SourceStampFilter
 from buildbot.test import fakedb
 from buildbot.test.fake import fakemaster
 from buildbot.test.util.config import ConfigErrorsMixin
 from buildbot.test.util.misc import TestReactorMixin
+from buildbot.util.ssfilter import SourceStampFilter
 
 
 class TestFilterSet(unittest.TestCase):
