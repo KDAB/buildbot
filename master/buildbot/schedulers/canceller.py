@@ -126,6 +126,13 @@ class _OldBuildTracker:
                 del self.tracked_by_ss[ss_tuple]
 
     def on_change(self, change):
+        # Ignore some event types that do not represent change of source code state and thus do
+        # not need to cancel builds.
+        if 'properties' in change:
+            if 'event.type' in change['properties']:
+                if change['properties']['event.type'][0] == 'comment-added':
+                    return
+
         ss_tuple = (change['project'], change['codebase'], change['repository'], change['branch'])
 
         canc_dict = self.tracked_by_ss.pop(ss_tuple, None)
