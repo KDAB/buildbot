@@ -273,9 +273,10 @@ class WarningCountingShellCommand(buildstep.ShellMixin, CompositeStepMixin, buil
         self.warnCount = 0
         self.loggedWarnings = []
 
-        self.addLogObserver(
-            'stdio',
-            logobserver.LineConsumerLogObserver(self.warningLogConsumer))
+        if self.warningPattern is not None:
+            self.addLogObserver(
+                'stdio',
+                logobserver.LineConsumerLogObserver(self.warningLogConsumer))
 
     def addSuppression(self, suppressionList):
         """
