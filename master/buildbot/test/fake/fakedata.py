@@ -318,8 +318,11 @@ class FakeUpdates(service.AsyncService):
     def addStep(self, buildid, name):
         validation.verifyType(self.testcase, 'buildid', buildid,
                               validation.IntValidator())
+        # FIXME: currently we add steps to the database without enforcing their names,
+        # thus the effective API is that step name can be any string. We should first
+        # fix the API and only then verify correct usage in tests.
         validation.verifyType(self.testcase, 'name', name,
-                              validation.IdentifierValidator(50))
+                              validation.StringValidator())
         return defer.succeed((10, 1, name))
 
     def addStepURL(self, stepid, name, url):

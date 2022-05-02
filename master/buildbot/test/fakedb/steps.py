@@ -102,8 +102,11 @@ class FakeStepsComponent(FakeDBComponent):
     def addStep(self, buildid, name, state_string):
         validation.verifyType(self.t, 'state_string', state_string,
                               validation.StringValidator())
+        # FIXME: currently we add steps to the database without enforcing their names,
+        # thus the effective API is that step name can be any string. We should first
+        # fix the API and only then verify correct usage in tests.
         validation.verifyType(self.t, 'name', name,
-                              validation.IdentifierValidator(50))
+                              validation.StringValidator())
         # get a unique name and number
         build_steps = [r for r in self.steps.values()
                        if r['buildid'] == buildid]
