@@ -305,7 +305,7 @@ class Git(Source, GitStepMixin):
         return self.workdir
 
     @defer.inlineCallbacks
-    def _fetch(self, _):
+    def _fetch(self, _, abandonOnFailure=True):
         fetch_required = True
 
         # If the revision already exists in the repo, we don't need to fetch.
@@ -327,15 +327,16 @@ class Git(Source, GitStepMixin):
                 else:
                     log.msg("Git versions < 1.7.2 don't support progress")
 
-            yield self._dovccmd(command)
+            res = yield self._dovccmd(command, abandonOnFailure=abandonOnFailure)
+            if res != RC_SUCCESS:
+                return res
 
         if self.revision:
             rev = self.revision
         else:
             rev = 'FETCH_HEAD'
         command = ['checkout', '-f', rev]
-        abandonOnFailure = not self.retryFetch and not self.clobberOnFailure
-        res = yield self._dovccmd(command, abandonOnFailure)
+        res = yield self._dovccmd(command, abandonOnFailure=abandonOnFailure)
 
         # Rename the branch if needed.
         if res == RC_SUCCESS and self.branch != 'HEAD':
@@ -350,7 +351,10 @@ class Git(Source, GitStepMixin):
         Handles fallbacks for failure of fetch,
         wrapper for self._fetch
         """
-        res = yield self._fetch(None)
+
+        abandonOnFailure = not self.retryFetch and not self.clobberOnFailure
+
+        res = yield self._fetch(None, abandonOnFailure=abandonOnFailure)
         if res == RC_SUCCESS:
             return res
         elif self.retryFetch:
@@ -696,7 +700,7 @@ class GitCommit(buildstep.BuildStep, GitStepMixin, CompositeStepMixin):
 
     def __init__(self, workdir=None, paths=None, messages=None, env=None,
                  timeout=20 * 60, logEnviron=True, emptyCommits='disallow',
-                 config=None, **kwargs):
+                 config=None, no_verify=False, **kwargs):
 
         self.workdir = workdir
         self.messages = messages
@@ -706,6 +710,7 @@ class GitCommit(buildstep.BuildStep, GitStepMixin, CompositeStepMixin):
         self.logEnviron = logEnviron
         self.config = config
         self.emptyCommits = emptyCommits
+        self.no_verify = no_verify
         # The repourl, sshPrivateKey and sshHostKey attributes are required by
         # GitStepMixin, but aren't needed by git add and commit operations
         self.repourl = " "
@@ -780,6 +785,9 @@ class GitCommit(buildstep.BuildStep, GitStepMixin, CompositeStepMixin):
 
         if self.emptyCommits == 'create-empty-commit':
             cmd.extend(['--allow-empty'])
+
+        if self.no_verify:
+            cmd.extend(['--no-verify'])
 
         ret = yield self._dovccmd(cmd)
         return ret

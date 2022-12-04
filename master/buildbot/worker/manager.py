@@ -59,10 +59,10 @@ class WorkerRegistration:
             if reg is not None:
                 self.pbReg = reg
 
-        if 'msgpack_experimental_v1' in global_config.protocols:
+        if 'msgpack_experimental_v7' in global_config.protocols:
             self.msgpack_reg = yield self.master.workers.msgpack.updateRegistration(
                 worker_config.workername, worker_config.password,
-                global_config.protocols['msgpack_experimental_v1']['port'])
+                global_config.protocols['msgpack_experimental_v7']['port'])
 
     def getPBPort(self):
         return self.pbReg.getPort()

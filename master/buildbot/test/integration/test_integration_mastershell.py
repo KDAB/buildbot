@@ -89,7 +89,7 @@ class ShellMaster(RunMasterBase):
     @defer.inlineCallbacks
     def test_interrupt(self):
         yield self.setupConfig(self.config_for_master_command(name='sleep', command=[
-            sys.executable, '-c', "import time\nwhile True: pass"
+            sys.executable, '-c', "while True: pass"
         ]))
 
         d = self.doForceBuild(wantSteps=True, useChange=self.get_change(), wantLogs=True)
@@ -108,4 +108,7 @@ class ShellMaster(RunMasterBase):
 
         build = yield d
         self.assertEqual(build['buildid'], 1)
-        self.assertEqual(build['steps'][1]['state_string'], 'killed (9) (exception)')
+        if sys.platform == 'win32':
+            self.assertEqual(build['steps'][1]['state_string'], 'failed (1) (exception)')
+        else:
+            self.assertEqual(build['steps'][1]['state_string'], 'killed (9) (exception)')

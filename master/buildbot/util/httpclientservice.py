@@ -17,6 +17,7 @@ import json as jsonmodule
 import textwrap
 
 from twisted.internet import defer
+from twisted.logger import Logger
 from twisted.web.client import Agent
 from twisted.web.client import HTTPConnectionPool
 from zope.interface import implementer
@@ -26,7 +27,6 @@ from buildbot.interfaces import IHttpResponse
 from buildbot.util import service
 from buildbot.util import toJson
 from buildbot.util import unicode2bytes
-from buildbot.util.logger import Logger
 
 try:
     import txrequests
@@ -35,8 +35,6 @@ except ImportError:
 
 try:
     import treq
-    implementer(IHttpResponse)(treq.response._Response)
-
 except ImportError:
     treq = None
 
@@ -62,6 +60,27 @@ class TxRequestsResponseWrapper:
     @property
     def url(self):
         return self._res.url
+
+
+@implementer(IHttpResponse)
+class TreqResponseWrapper:
+
+    def __init__(self, res):
+        self._res = res
+
+    def content(self):
+        return self._res.content()
+
+    def json(self):
+        return self._res.json()
+
+    @property
+    def code(self):
+        return self._res.code
+
+    @property
+    def url(self):
+        return self._res.request.absoluteURI.decode()
 
 
 class HTTPClientService(service.SharedService):
@@ -147,8 +166,11 @@ class HTTPClientService(service.SharedService):
         yield super().stopService()
 
     def _prepareRequest(self, ep, kwargs):
-        assert ep == "" or ep.startswith("/"), "ep should start with /: " + ep
-        url = self._base_url + ep
+        if ep.startswith('http://') or ep.startswith('https://'):
+            url = ep
+        else:
+            assert ep == "" or ep.startswith("/"), "ep should start with /: " + ep
+            url = self._base_url + ep
         if self._auth is not None and 'auth' not in kwargs:
             kwargs['auth'] = self._auth
         headers = kwargs.get('headers', {})
@@ -199,7 +221,7 @@ class HTTPClientService(service.SharedService):
         kwargs['agent'] = self._agent
 
         res = yield getattr(treq, method)(url, **kwargs)
-        return IHttpResponse(res)
+        return IHttpResponse(TreqResponseWrapper(res))
 
     # lets be nice to the auto completers, and don't generate that code
     def get(self, ep, **kwargs):

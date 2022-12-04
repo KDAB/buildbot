@@ -1,0 +1,261 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`RawData component object with array of objects 1`] = `
+<dl
+  className="dl-horizontal"
+>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      array
+    </dt>
+    <dd>
+      <i
+        className="fa fa-chevron-circle-right rotate clickable"
+        onClick={[Function]}
+      />
+      <span>
+        [{"str":"string"},{"int":123},{"float":123.4},{"boolean":true}]
+      </span>
+    </dd>
+  </div>
+</dl>
+`;
+
+exports[`RawData component object with array of objects expanded 1`] = `
+<dl
+  className="dl-horizontal"
+>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      array
+    </dt>
+    <dd>
+      <i
+        className="fa fa-chevron-circle-right rotate clickable fa-rotate-90"
+        onClick={[Function]}
+      />
+      <ul>
+        <li>
+          <dl
+            className="dl-horizontal"
+          >
+            <div
+              className="bb-raw-data-key-value"
+            >
+              <dt>
+                str
+              </dt>
+              <dd>
+                string
+                 
+              </dd>
+            </div>
+          </dl>
+        </li>
+        <li>
+          <dl
+            className="dl-horizontal"
+          >
+            <div
+              className="bb-raw-data-key-value"
+            >
+              <dt>
+                int
+              </dt>
+              <dd>
+                123
+                 
+              </dd>
+            </div>
+          </dl>
+        </li>
+        <li>
+          <dl
+            className="dl-horizontal"
+          >
+            <div
+              className="bb-raw-data-key-value"
+            >
+              <dt>
+                float
+              </dt>
+              <dd>
+                123.4
+                 
+              </dd>
+            </div>
+          </dl>
+        </li>
+        <li>
+          <dl
+            className="dl-horizontal"
+          >
+            <div
+              className="bb-raw-data-key-value"
+            >
+              <dt>
+                boolean
+              </dt>
+              <dd>
+                true
+                 
+              </dd>
+            </div>
+          </dl>
+        </li>
+      </ul>
+    </dd>
+  </div>
+</dl>
+`;
+
+exports[`RawData component observable object 1`] = `
+<dl
+  className="dl-horizontal"
+>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      str
+    </dt>
+    <dd>
+      string
+       
+    </dd>
+  </div>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      int
+    </dt>
+    <dd>
+      123
+       
+    </dd>
+  </div>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      float
+    </dt>
+    <dd>
+      123.4
+       
+    </dd>
+  </div>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      boolean
+    </dt>
+    <dd>
+      true
+       
+    </dd>
+  </div>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      array
+    </dt>
+    <dd>
+      321,string,true
+       
+    </dd>
+  </div>
+</dl>
+`;
+
+exports[`RawData component observable object with array of objects 1`] = `
+<dl
+  className="dl-horizontal"
+>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      array
+    </dt>
+    <dd>
+      <i
+        className="fa fa-chevron-circle-right rotate clickable"
+        onClick={[Function]}
+      />
+      <span>
+        [{"str":"string"},{"int":123},{"float":123.4},{"boolean":true}]
+      </span>
+    </dd>
+  </div>
+</dl>
+`;
+
+exports[`RawData component simple object 1`] = `
+<dl
+  className="dl-horizontal"
+>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      str
+    </dt>
+    <dd>
+      string
+       
+    </dd>
+  </div>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      int
+    </dt>
+    <dd>
+      123
+       
+    </dd>
+  </div>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      float
+    </dt>
+    <dd>
+      123.4
+       
+    </dd>
+  </div>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      boolean
+    </dt>
+    <dd>
+      true
+       
+    </dd>
+  </div>
+  <div
+    className="bb-raw-data-key-value"
+  >
+    <dt>
+      array
+    </dt>
+    <dd>
+      321,string,true
+       
+    </dd>
+  </div>
+</dl>
+`;

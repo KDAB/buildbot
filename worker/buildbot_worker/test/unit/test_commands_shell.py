@@ -16,6 +16,8 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
+import os
+
 from twisted.internet import defer
 from twisted.trial import unittest
 
@@ -34,22 +36,23 @@ class TestWorkerShellCommand(CommandTestMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_simple(self):
-        self.make_command(shell.WorkerShellCommand, dict(
-            command=['echo', 'hello'],
-            workdir='workdir',
-        ))
+        workdir = os.path.join(self.basedir, 'workdir')
+        self.make_command(shell.WorkerShellCommand, {'command': ['echo', 'hello'],
+                                                     'workdir': workdir})
 
         self.patch_runprocess(
             Expect(['echo', 'hello'], self.basedir_workdir)
-            + {'hdr': 'headers'} + {'stdout': 'hello\n'} + {'rc': 0}
-            + 0,
+            .update('header', 'headers')
+            .update('stdout', 'hello\n')
+            .update('rc', 0)
+            .exit(0)
         )
 
         yield self.run_command()
 
         # note that WorkerShellCommand does not add any extra updates of it own
         self.assertUpdates(
-            [{'hdr': 'headers'}, {'stdout': 'hello\n'}, {'rc': 0}],
-            self.builder.show())
+            [('header', 'headers'), ('stdout', 'hello\n'), ('rc', 0)],
+            self.protocol_command.show())
 
     # TODO: test all functionality that WorkerShellCommand adds atop RunProcess

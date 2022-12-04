@@ -60,7 +60,7 @@ PRETTY_NAME="Test 1.0 Generic"
 VERSION_ID="1"
 """
             )
-        self.real_bot = base.BotBase(self.basedir, False)
+        self.real_bot = pb.BotPbLike(self.basedir, False)
         self.real_bot.setOsReleaseFile("{}/test-release-file".format(self.basedir))
         self.real_bot.startService()
 
@@ -107,7 +107,8 @@ VERSION_ID="1"
             environ=os.environ, system=os.name, basedir=self.basedir,
             worker_commands=self.real_bot.remote_getCommands(),
             version=self.real_bot.remote_getVersion(),
-            numcpus=multiprocessing.cpu_count()))
+            numcpus=multiprocessing.cpu_count(),
+            delete_leftover_dirs=False))
 
     @defer.inlineCallbacks
     def test_getWorkerInfo_nodir(self):
@@ -116,77 +117,8 @@ VERSION_ID="1"
         info = {k: v for k, v in info.items() if not k.startswith("os_")}
 
         self.assertEqual(set(info.keys()), set(
-            ['environ', 'system', 'numcpus', 'basedir', 'worker_commands', 'version']))
-
-    @defer.inlineCallbacks
-    def test_setBuilderList_empty(self):
-        builders = yield self.bot.callRemote("setBuilderList", [])
-
-        self.assertEqual(builders, {})
-
-    @defer.inlineCallbacks
-    def test_setBuilderList_single(self):
-        builders = yield self.bot.callRemote("setBuilderList", [('mybld', 'myblddir')])
-
-        self.assertEqual(list(builders), ['mybld'])
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'myblddir')))
-        # note that we test the WorkerForBuilder instance below
-
-    @defer.inlineCallbacks
-    def test_setBuilderList_updates(self):
-
-        workerforbuilders = {}
-
-        builders = yield self.bot.callRemote("setBuilderList", [
-            ('mybld', 'myblddir')])
-
-        self.assertEqual(list(builders), ['mybld'])
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'myblddir')))
-        workerforbuilders['my'] = builders['mybld']
-
-        builders = yield self.bot.callRemote("setBuilderList", [
-            ('mybld', 'myblddir'), ('yourbld', 'yourblddir')])
-
-        self.assertEqual(
-            sorted(builders.keys()), sorted(['mybld', 'yourbld']))
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'myblddir')))
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'yourblddir')))
-        # 'my' should still be the same WorkerForBuilder object
-        self.assertEqual(
-            id(workerforbuilders['my']), id(builders['mybld']))
-        workerforbuilders['your'] = builders['yourbld']
-        self.assertTrue(repr(workerforbuilders['your']).startswith(
-                         "<WorkerForBuilder 'yourbld' at "))
-
-        builders = yield self.bot.callRemote("setBuilderList", [
-            ('yourbld', 'yourblddir2')])  # note new builddir
-
-        self.assertEqual(sorted(builders.keys()), sorted(['yourbld']))
-        # note that build dirs are not deleted..
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'myblddir')))
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'yourblddir')))
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'yourblddir2')))
-        # 'your' should still be the same WorkerForBuilder object
-        self.assertEqual(
-            id(workerforbuilders['your']), id(builders['yourbld']))
-
-        builders = yield self.bot.callRemote("setBuilderList", [
-                ('theirbld', 'theirblddir')])
-
-        self.assertEqual(sorted(builders.keys()), sorted(['theirbld']))
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'myblddir')))
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'yourblddir')))
-        self.assertTrue(
-            os.path.exists(os.path.join(self.basedir, 'theirblddir')))
+            ['environ', 'system', 'numcpus', 'basedir', 'worker_commands', 'version',
+             'delete_leftover_dirs']))
 
     def test_shutdown(self):
         d1 = defer.Deferred()
@@ -219,7 +151,7 @@ class FakeStep(object):
         self.finished_d.callback(None)
 
 
-class FakeBot(base.BotBase):
+class FakeBot(pb.BotPbLike):
     WorkerForBuilder = pb.WorkerForBuilderPbLike
 
 
@@ -274,24 +206,22 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
 
         # patch runprocess to handle the 'echo', below
         self.patch_runprocess(
-            Expect(['echo', 'hello'], os.path.join(
-                self.basedir, 'wfb', 'workdir')) +
-            {'hdr': 'headers'} +
-            {'stdout': 'hello\n'} +
-            {'rc': 0} +
-            0,
+            Expect(['echo', 'hello'], os.path.join(self.basedir, 'wfb', 'workdir'))
+            .update('header', 'headers')
+            .update('stdout', 'hello\n')
+            .update('rc', 0)
+            .exit(0)
         )
 
         yield self.wfb.callRemote("startCommand", FakeRemote(st),
                                   "13", "shell", dict(command=['echo', 'hello'],
                                                       workdir='workdir'))
         yield st.wait_for_finish()
-
         self.assertEqual(st.actions, [
-            ['update', [[{'hdr': 'headers'}, 0]]],
             ['update', [[{'stdout': 'hello\n'}, 0]]],
             ['update', [[{'rc': 0}, 0]]],
             ['update', [[{'elapsed': 1}, 0]]],
+            ['update', [[{'header': 'headers\n'}, 0]]],
             ['complete', None],
         ])
 
@@ -303,10 +233,9 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
         # patch runprocess to pretend to sleep (it will really just hang forever,
         # except that we interrupt it)
         self.patch_runprocess(
-            Expect(['sleep', '10'], os.path.join(
-                self.basedir, 'wfb', 'workdir')) +
-            {'hdr': 'headers'} +
-            {'wait': True}
+            Expect(['sleep', '10'], os.path.join(self.basedir, 'wfb', 'workdir'))
+            .update('header', 'headers')
+            .update('wait', True)
         )
 
         yield self.wfb.callRemote("startCommand", FakeRemote(st),
@@ -324,9 +253,8 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
         yield st.wait_for_finish()
 
         self.assertEqual(st.actions, [
-            ['update', [[{'hdr': 'headers'}, 0]]],
-            ['update', [[{'hdr': 'killing'}, 0]]],
             ['update', [[{'rc': -1}, 0]]],
+            ['update', [[{'header': 'headerskilling\n'}, 0]]],
             ['complete', None],
         ])
 
@@ -337,9 +265,8 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
 
         # patch runprocess to generate a failure
         self.patch_runprocess(
-            Expect(['sleep', '10'], os.path.join(
-                self.basedir, 'wfb', 'workdir')) +
-            failure.Failure(Exception("Oops"))
+            Expect(['sleep', '10'], os.path.join(self.basedir, 'wfb', 'workdir'))
+            .exception(failure.Failure(Exception("Oops")))
         )
         # patch the log.err, otherwise trial will think something *actually*
         # failed
@@ -363,7 +290,7 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
             return self.wfb.callRemote("startCommand", FakeRemote(st),
                                        "13", "shell", {})
 
-        yield self.assertFailure(do_start(), ValueError)
+        yield self.assertFailure(do_start(), KeyError)
 
     @defer.inlineCallbacks
     def test_startCommand_invalid_command(self):

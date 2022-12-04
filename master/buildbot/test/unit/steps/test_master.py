@@ -104,14 +104,16 @@ class TestMasterShellCommand(TestBuildStepMixin, TestReactorMixin,
         self.setup_step(master.MasterShellCommand(command='true',
                                                   env={'HELLO': ['${WORLD}', '${LIST}']}))
 
-        if runtime.platformType == 'win32':
+        if sys.platform == 'win32':
             exp_argv = [r'C:\WINDOWS\system32\cmd.exe', '/c', 'true']
+            exp_env = 'hello;world'
         else:
             exp_argv = ['/bin/sh', '-c', 'true']
+            exp_env = 'hello:world'
 
         self.expect_commands(
             ExpectMasterShell(exp_argv)
-            .env({'HELLO': 'hello:world'})
+            .env({'HELLO': exp_env})
             .exit(0))
 
         self.expect_outcome(result=SUCCESS)

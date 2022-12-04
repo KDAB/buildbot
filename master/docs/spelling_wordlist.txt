@@ -45,6 +45,7 @@ authz
 autoconf
 autodetected
 automake
+Automat
 autopull
 autoreconf
 backend
@@ -306,6 +307,7 @@ errbacks
 errorCb
 et
 eventPathPatterns
+executables
 explorable
 extensibility
 facto
@@ -693,6 +695,7 @@ Refactoring
 refactorings
 refspec
 regex
+regexes
 regexp
 regexps
 registerAdapter
@@ -818,6 +821,7 @@ Subqueries
 subquery
 subshell
 substrings
+substring
 subunit
 successCb
 sucessful

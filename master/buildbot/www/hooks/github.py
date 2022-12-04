@@ -120,13 +120,7 @@ class GitHubEventHandler(PullRequestMixin):
                            digestmod=sha1)
 
             def _cmp(a, b):
-                try:
-                    # try the more secure compare_digest() first
-                    from hmac import compare_digest
-                    return compare_digest(a, b)
-                except ImportError:  # pragma: no cover
-                    # and fallback to the insecure simple comparison otherwise
-                    return a == b
+                return hmac.compare_digest(a, b)
 
             if not _cmp(bytes2unicode(mac.hexdigest()), hexdigest):
                 raise ValueError('Hash mismatch')
@@ -145,6 +139,9 @@ class GitHubEventHandler(PullRequestMixin):
         return payload
 
     def handle_ping(self, _, __):
+        return [], 'git'
+
+    def handle_workflow_run(self, _, __):
         return [], 'git'
 
     def handle_push(self, payload, event):

@@ -82,7 +82,8 @@ def _describe_cmd_difference(exp_command, exp_args, got_command, got_args):
     text = ""
     missing_in_exp, missing_in_cmd, diff = _dict_diff(exp_args, got_args)
     if missing_in_exp:
-        text += f'Keys in command missing from expectation: {missing_in_exp!r}\n'
+        missing_dict = {key: got_args[key] for key in missing_in_exp}
+        text += f'Keys in command missing from expectation: {missing_dict!r}\n'
     if missing_in_cmd:
         text += f'Keys in expectation missing from command: {missing_in_cmd!r}\n'
     if diff:
@@ -181,11 +182,11 @@ class Expect:
         Implement the given behavior.  Returns a Deferred.
         """
         if behavior == 'rc':
-            yield command.remoteUpdate({'rc': args[0]})
+            yield command.remoteUpdate('rc', args[0], False)
         elif behavior == 'err':
             raise args[0]
         elif behavior == 'update':
-            yield command.remoteUpdate({args[0]: args[1]})
+            yield command.remoteUpdate(args[0], args[1], False)
         elif behavior == 'log':
             name, streams = args
             for stream in streams:
@@ -194,11 +195,11 @@ class Expect:
 
             if name == command.stdioLogName:
                 if 'header' in streams:
-                    command.addHeader(streams['header'])
+                    command.remote_update([({"header": streams['header']}, 0)])
                 if 'stdout' in streams:
-                    command.addStdout(streams['stdout'])
+                    command.remote_update([({"stdout": streams['stdout']}, 0)])
                 if 'stderr' in streams:
-                    command.addStderr(streams['stderr'])
+                    command.remote_update([({"stderr": streams['stderr']}, 0)])
             else:
                 if 'header' in streams or 'stderr' in streams:
                     raise Exception('Non stdio streams only support stdout')

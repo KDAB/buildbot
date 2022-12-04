@@ -14,7 +14,7 @@
 # Copyright Buildbot Team Members
 
 
-version = "1.10.6"
+__version__ = "1.10.6"
 
 
 class Client:
@@ -114,6 +114,10 @@ class Client:
 
     def remove_container(self, id, **kwargs):
         del self._containers[id]
+
+    def close(self):
+        # dummy close, no connection to cleanup
+        pass
 
 
 class APIClient(Client):

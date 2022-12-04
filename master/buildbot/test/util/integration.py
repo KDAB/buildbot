@@ -202,7 +202,7 @@ class RunMasterBase(unittest.TestCase):
                 proto = {"pb": {"port": "tcp:0:interface=127.0.0.1"}}
                 workerclass = worker.Worker
             if self.proto == 'msgpack':
-                proto = {"msgpack_experimental_v1": {"port": 0}}
+                proto = {"msgpack_experimental_v7": {"port": 0}}
                 workerclass = worker.Worker
             elif self.proto == 'null':
                 proto = {"null": {}}
@@ -226,11 +226,13 @@ class RunMasterBase(unittest.TestCase):
                 protocol = 'pb'
                 dispatcher = list(m.pbmanager.dispatchers.values())[0]
             else:
-                protocol = 'msgpack_experimental_v1'
+                protocol = 'msgpack_experimental_v7'
                 dispatcher = list(m.msgmanager.dispatchers.values())[0]
 
-                if sandboxed_worker_path is not None and worker_python_version == '2.7':
-                    raise SkipTest('MessagePack protocol is not supported on python 2.7 worker')
+                unsupported_python_versions = ['2.7', '3.4', '3.5']
+                if sandboxed_worker_path is not None and \
+                        worker_python_version in unsupported_python_versions:
+                    raise SkipTest('MessagePack protocol requires worker python >= 3.6')
 
                 # We currently don't handle connection closing cleanly.
                 dispatcher.serverFactory.setProtocolOptions(closeHandshakeTimeout=0)

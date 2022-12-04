@@ -45,7 +45,7 @@ class P4(Source):
 
     name = 'p4'
 
-    renderables = ['mode', 'p4base', 'p4client', 'p4viewspec', 'p4branch', 'p4passwd']
+    renderables = ['mode', 'p4base', 'p4client', 'p4viewspec', 'p4branch', 'p4passwd', 'p4port']
     possible_modes = ('incremental', 'full')
 
     def __init__(self, mode='incremental',
@@ -396,5 +396,5 @@ class P4(Source):
     def computeSourceRevision(self, changes):
         if not changes or None in [c.revision for c in changes]:
             return None
-        lastChange = max([int(c.revision) for c in changes])
+        lastChange = max(int(c.revision) for c in changes)
         return lastChange

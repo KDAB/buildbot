@@ -34,10 +34,10 @@ class TransferCommand(Command):
 
         # don't use self.sendStatus here, since we may no longer be running
         # if we have been interrupted
-        upd = {'rc': self.rc}
+        updates = [('rc', self.rc)]
         if self.stderr:
-            upd['stderr'] = self.stderr
-        self.builder.sendUpdate(upd)
+            updates.append(('stderr', self.stderr))
+        self.protocol_command.send_update(updates)
         return res
 
     def interrupt(self):
@@ -57,8 +57,7 @@ class WorkerFileUploadCommand(TransferCommand):
     Upload a file from worker to build master
     Arguments:
 
-        - ['workdir']:   base directory to use
-        - ['workersrc']:  name of the worker-side file to read from
+        - ['path']:      path to read from
         - ['writer']:    RemoteReference to a buildbot_worker.protocols.base.FileWriterProxy object
         - ['maxsize']:   max size (in bytes) of file to write
         - ['blocksize']: max size for each data block
@@ -66,11 +65,10 @@ class WorkerFileUploadCommand(TransferCommand):
     """
     debug = False
 
-    requiredArgs = ['workdir', 'workersrc', 'writer', 'blocksize']
+    requiredArgs = ['path', 'writer', 'blocksize']
 
     def setup(self, args):
-        self.workdir = args['workdir']
-        self.filename = args['workersrc']
+        self.path = args['path']
         self.writer = args['writer']
         self.remaining = args['maxsize']
         self.blocksize = args['blocksize']
@@ -83,10 +81,6 @@ class WorkerFileUploadCommand(TransferCommand):
         if self.debug:
             log.msg('WorkerFileUploadCommand started')
 
-        # Open file
-        self.path = os.path.join(self.builder.basedir,
-                                 self.workdir,
-                                 os.path.expanduser(self.filename))
         access_time = None
         modified_time = None
         try:
@@ -104,7 +98,7 @@ class WorkerFileUploadCommand(TransferCommand):
             if self.debug:
                 log.msg("Cannot open file '{0}' for upload".format(self.path))
 
-        self.sendStatus({'header': "sending {0}\n".format(self.path)})
+        self.sendStatus([('header', "sending {0}\n".format(self.path))])
 
         d = defer.Deferred()
         self._reactor.callLater(0, self._loop, d)
@@ -114,11 +108,12 @@ class WorkerFileUploadCommand(TransferCommand):
             if self.fp:
                 self.fp.close()
             self.fp = None
-            yield self.builder.protocol_update_upload_file_close(self.writer)
+            yield self.protocol_command.protocol_update_upload_file_close(self.writer)
 
             if self.keepstamp:
-                yield self.builder.protocol_update_upload_file_utime(self.writer, access_time,
-                                                                     modified_time)
+                yield self.protocol_command.protocol_update_upload_file_utime(self.writer,
+                                                                              access_time,
+                                                                              modified_time)
 
         def _close_err(f):
             self.rc = 1
@@ -126,7 +121,7 @@ class WorkerFileUploadCommand(TransferCommand):
                 self.fp.close()
             self.fp = None
             # call remote's close(), but keep the existing failure
-            d1 = self.builder.protocol_update_upload_file_close(self.writer)
+            d1 = self.protocol_command.protocol_update_upload_file_close(self.writer)
 
             def eb(f2):
                 log.msg("ignoring error from remote close():")
@@ -189,16 +184,15 @@ class WorkerFileUploadCommand(TransferCommand):
         return d
 
     def do_protocol_write(self, data):
-        return self.builder.protocol_update_upload_file_write(self.writer, data)
+        return self.protocol_command.protocol_update_upload_file_write(self.writer, data)
 
 
 class WorkerDirectoryUploadCommand(WorkerFileUploadCommand):
     debug = False
-    requiredArgs = ['workdir', 'workersrc', 'writer', 'blocksize']
+    requiredArgs = ['path', 'writer', 'blocksize']
 
     def setup(self, args):
-        self.workdir = args['workdir']
-        self.dirname = args['workersrc']
+        self.path = args['path']
         self.writer = args['writer']
         self.remaining = args['maxsize']
         self.blocksize = args['blocksize']
@@ -210,14 +204,11 @@ class WorkerDirectoryUploadCommand(WorkerFileUploadCommand):
         if self.debug:
             log.msg('WorkerDirectoryUploadCommand started')
 
-        self.path = os.path.join(self.builder.basedir,
-                                 self.workdir,
-                                 os.path.expanduser(self.dirname))
         if self.debug:
             log.msg("path: {0!r}".format(self.path))
 
         # Create temporary archive
-        fd, self.tarname = tempfile.mkstemp()
+        fd, self.tarname = tempfile.mkstemp(prefix='buildbot-transfer-')
         self.fp = os.fdopen(fd, "rb+")
 
         if self.compress == 'bz2':
@@ -236,13 +227,13 @@ class WorkerDirectoryUploadCommand(WorkerFileUploadCommand):
         # Transfer it
         self.fp.seek(0)
 
-        self.sendStatus({'header': "sending {0}\n".format(self.path)})
+        self.sendStatus([('header', "sending {0}\n".format(self.path))])
 
         d = defer.Deferred()
         self._reactor.callLater(0, self._loop, d)
 
         def unpack(res):
-            d1 = self.builder.protocol_update_upload_directory(self.writer)
+            d1 = self.protocol_command.protocol_update_upload_directory(self.writer)
 
             def unpack_err(f):
                 self.rc = 1
@@ -261,7 +252,7 @@ class WorkerDirectoryUploadCommand(WorkerFileUploadCommand):
         return TransferCommand.finished(self, res)
 
     def do_protocol_write(self, data):
-        return self.builder.protocol_update_upload_directory_write(self.writer, data)
+        return self.protocol_command.protocol_update_upload_directory_write(self.writer, data)
 
 
 class WorkerFileDownloadCommand(TransferCommand):
@@ -270,19 +261,17 @@ class WorkerFileDownloadCommand(TransferCommand):
     Download a file from master to worker
     Arguments:
 
-        - ['workdir']:   base directory to use
-        - ['workerdest']: name of the worker-side file to be created
+        - ['path']: path of the worker-side file to be created
         - ['reader']:    RemoteReference to a buildbot_worker.protocols.base.FileReaderProxy object
         - ['maxsize']:   max size (in bytes) of file to write
         - ['blocksize']: max size for each data block
         - ['mode']:      access mode for the new file
     """
     debug = False
-    requiredArgs = ['workdir', 'workerdest', 'reader', 'blocksize']
+    requiredArgs = ['path', 'reader', 'blocksize']
 
     def setup(self, args):
-        self.workdir = args['workdir']
-        self.filename = args['workerdest']
+        self.path = args['path']
         self.reader = args['reader']
         self.bytes_remaining = args['maxsize']
         self.blocksize = args['blocksize']
@@ -294,11 +283,6 @@ class WorkerFileDownloadCommand(TransferCommand):
     def start(self):
         if self.debug:
             log.msg('WorkerFileDownloadCommand starting')
-
-        # Open file
-        self.path = os.path.join(self.builder.basedir,
-                                 self.workdir,
-                                 os.path.expanduser(self.filename))
 
         dirname = os.path.dirname(self.path)
         if not os.path.exists(dirname):
@@ -332,7 +316,7 @@ class WorkerFileDownloadCommand(TransferCommand):
 
         def _close(res):
             # close the file, but pass through any errors from _loop
-            d1 = self.builder.protocol_update_read_file_close(self.reader)
+            d1 = self.protocol_command.protocol_update_read_file_close(self.reader)
             d1.addErrback(log.err, 'while trying to close reader')
             d1.addCallback(lambda ignored: res)
             return d1
@@ -373,7 +357,7 @@ class WorkerFileDownloadCommand(TransferCommand):
                 self.rc = 1
             return True
         else:
-            d = self.builder.protocol_update_read_file(self.reader, length)
+            d = self.protocol_command.protocol_update_read_file(self.reader, length)
             d.addCallback(self._writeData)
             return d
 
