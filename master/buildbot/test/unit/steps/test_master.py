@@ -15,6 +15,7 @@
 
 import os
 import pprint
+import sys
 
 from twisted.internet import defer
 from twisted.python import runtime
