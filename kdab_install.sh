@@ -37,6 +37,7 @@ pip install \
 
 pip install \
     -e www/base \
+    -e www/react-base \
     -e www/console_view \
     -e www/grid_view \
     -e www/waterfall_view \
