@@ -1,8 +1,10 @@
 # TODO: this is the output of pip freeze, most of the packages are dependencies and should be
 # removed.
 alabaster==0.7.12
+alembic==1.9.0
 astroid==2.9.3
 attrs==20.3.0
+autobahn==22.12.1
 Automat==20.2.0
 Babel==2.9.0
 blockdiag==2.0.1
@@ -27,6 +29,7 @@ docutils==0.16
 flake8==4.0.1
 funcparserlib==0.3.6
 future==0.18.2
+greenlet==2.0.1
 hyperlink==21.0.0
 idna==2.10
 imagesize==1.2.0
@@ -40,8 +43,10 @@ klein==20.6.0
 lazy-object-proxy==1.5.2
 ldap3==2.9
 lz4==3.1.3
+Mako==1.2.4
 Markdown==3.3.4
 MarkupSafe==1.1.1
+mccabe==0.6.1
 mock==4.0.3
 more-itertools==8.7.0
 moto==2.0.1
@@ -52,10 +57,14 @@ parameterized==0.8.1
 pbr==5.5.1
 pep8==1.7.1
 Pillow==8.1.0
+platformdirs==2.6.0
+psutil==5.9.4
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
+pycodestyle==2.8.0
 pycparser==2.20
 pyenchant==3.2.0
+pyflakes==2.4.0
 Pygments==2.8.0
 PyHamcrest==2.0.2
 PyJWT==2.0.1
@@ -74,6 +83,7 @@ service-identity==18.1.0
 setuptools-trial==0.6.0
 six==1.15.0
 snowballstemmer==2.1.0
+SQLAlchemy==1.4.45
 sqlparse==0.4.1
 Tempita==0.5.2
 tinycss2==1.1.0
@@ -81,8 +91,10 @@ toml==0.10.2
 towncrier==19.2.0
 treq==21.1.0
 Tubes==0.2.0
-Twisted==20.3.0
+Twisted==21.2.0
+txaio==22.2.1
 txrequests==0.9.6
+typing-extensions==4.4.0
 urllib3==1.26.3
 webcolors==1.11.1
 webencodings==0.5.1
