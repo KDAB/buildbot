@@ -16,10 +16,10 @@
 */
 
 import {action, makeObservable, observable} from "mobx";
+import {FaMinus, FaPlus} from "react-icons/fa";
 import {Link} from "react-router-dom";
-import DataCollection from "../../data/DataCollection";
-import {Change} from "../../data/classes/Change";
-import ChangeDetails from "../ChangeDetails/ChangeDetails";
+import {Change, DataCollection} from "buildbot-data-js";
+import {ChangeDetails} from "buildbot-ui";
 import {observer, useLocalObservable} from "mobx-react";
 import {resizeArray} from "../../util/Array";
 
@@ -47,7 +47,7 @@ type ChangesTableProps = {
   changes: DataCollection<Change>
 }
 
-const ChangesTable = observer(({changes}: ChangesTableProps) => {
+export const ChangesTable = observer(({changes}: ChangesTableProps) => {
   const tableState = useLocalObservable(() => new ChangesTableState());
   tableState.resizeTable(changes.array.length, false);
 
@@ -72,11 +72,11 @@ const ChangesTable = observer(({changes}: ChangesTableProps) => {
             <div className="form-group">
               <div onClick={() => tableState.setShowDetailsAll(false)} title="Collapse all"
                    className="btn btn-default">
-                <i className="fa fa-minus"></i>
+                <FaMinus/>
               </div>
               <div onClick={() => tableState.setShowDetailsAll(true)} title="Expand all"
                    className="btn btn-default">
-                <i className="fa fa-plus"></i>
+                <FaPlus/>
               </div>
             </div>
           </div>
@@ -88,5 +88,3 @@ const ChangesTable = observer(({changes}: ChangesTableProps) => {
     </div>
   );
 });
-
-export default ChangesTable;

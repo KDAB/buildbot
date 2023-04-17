@@ -18,31 +18,24 @@
 import './BuildersView.scss';
 import {observer} from "mobx-react";
 import {useContext, useState} from "react";
-import {useDataAccessor, useDataApiDynamicQuery, useDataApiQuery} from "../../data/ReactUtils";
-import {Builder} from "../../data/classes/Builder";
-import {Worker} from "../../data/classes/Worker";
-import {globalMenuSettings} from "../../plugins/GlobalMenuSettings";
-import {globalRoutes} from "../../plugins/GlobalRoutes";
-import {Link, URLSearchParamsInit, useSearchParams} from "react-router-dom";
-import {Master} from "../../data/classes/Master";
-import {Build} from "../../data/classes/Build";
+import {FaCogs} from "react-icons/fa";
+import {buildbotGetSettings, buildbotSetupPlugin} from "buildbot-plugin-support";
+import {
+  Build,
+  Builder,
+  DataCollection,
+  Master,
+  Worker,
+  useDataAccessor,
+  useDataApiDynamicQuery,
+  useDataApiQuery
+} from "buildbot-data-js";
+import {Link} from "react-router-dom";
+import {BuildLinkWithSummaryTooltip, WorkerBadge, TagFilterManager, useTagFilterManager} from "buildbot-ui";
 import {computed} from "mobx";
-import DataCollection from "../../data/DataCollection";
 import {useTopbarItems} from "../../stores/TopbarStore";
 import {StoresContext} from "../../contexts/Stores";
-import BuildLinkWithSummaryTooltip
-  from "../../components/BuildLinkWithSummaryTooltip/BuildLinkWithSummaryTooltip";
-import {globalSettings} from "../../plugins/GlobalSettings";
-import BadgeRound from "../../components/BadgeRound/BadgeRound";
-import {Badge, OverlayTrigger, Popover, Table} from "react-bootstrap";
-
-const connected2class = (worker: Worker) => {
-  if (worker.connected_to.length > 0) {
-    return "worker_CONNECTED";
-  } else {
-    return "worker_DISCONNECTED";
-  }
-};
+import {Table} from "react-bootstrap";
 
 const hasActiveMaster = (builder: Builder, masters: DataCollection<Master>) => {
   if ((builder.masterids == null)) {
@@ -61,110 +54,28 @@ const hasActiveMaster = (builder: Builder, masters: DataCollection<Master>) => {
   return active;
 };
 
-const isBuilderFiltered = (builder: Builder, tags: string[], masters: DataCollection<Master>,
-                           showOldBuilders: boolean) => {
+const isBuilderFiltered = (builder: Builder, filterManager: TagFilterManager,
+                           masters: DataCollection<Master>, showOldBuilders: boolean) => {
   if (!showOldBuilders && !hasActiveMaster(builder, masters)) {
     return false;
   }
-
-  const pluses = tags.filter(tag => tag.indexOf("+") === 0);
-  const minuses = tags.filter(tag => tag.indexOf("-") === 0);
-
-  // First enforce that we have no tag marked '-'
-  for (const tag of minuses) {
-    if (builder.tags.indexOf(tag.slice(1)) >= 0) {
-      return false;
-    }
-  }
-
-  // if only minuses or no filter
-  if (tags.length === minuses.length) {
-    return true;
-  }
-
-  // Then enforce that we have all the tags marked '+'
-  for (const tag of pluses) {
-    if (builder.tags.indexOf(tag.slice(1)) < 0) {
-      return false;
-    }
-  }
-
-  // Then enforce that we have at least one of the tag (marked '+' or not)
-  for (let tag of tags) {
-    if (tag.indexOf("+") === 0) {
-      tag = tag.slice(1);
-    }
-    if (builder.tags.indexOf(tag) >= 0) {
-      return true;
-    }
-  }
-  return false;
+  return filterManager.shouldShowByTags(builder.tags);
 };
 
-const isTagFiltered = (tags: string[], tag: string) => {
-  return (
-    (tags.length === 0) ||
-    (tags.indexOf(tag) >= 0) ||
-    (tags.indexOf(`+${tag}`) >= 0) ||
-    (tags.indexOf(`-${tag}`) >= 0)
-  );
-}
-
-const setTags = (tags: string[], searchParams: URLSearchParams,
-                 setSearchParams: (nextInit: URLSearchParamsInit) => void) => {
-  const newParams = new URLSearchParams([...searchParams.entries()]);
-  newParams.delete("tags");
-  for (const tag of tags) {
-    newParams.append("tags", tag);
-  }
-  setSearchParams(newParams);
-}
-
-const toggleTag = (tags: string[], tag: string, searchParams: URLSearchParams,
-                   setSearchParams: (nextInit: URLSearchParamsInit) => void) => {
-  if (tag.indexOf('+') === 0) {
-    tag = tag.slice(1);
-  }
-  if (tag.indexOf('-') === 0) {
-    tag = tag.slice(1);
-  }
-
-  const i = tags.indexOf(tag);
-  const iplus = tags.indexOf(`+${tag}`);
-  const iminus = tags.indexOf(`-${tag}`);
-
-  const newTags = [...tags];
-  if ((i < 0) && (iplus < 0) && (iminus < 0)) {
-    newTags.push(`+${tag}`);
-  } else if (iplus >= 0) {
-    newTags.splice(iplus, 1);
-    newTags.push(`-${tag}`);
-  } else if (iminus >= 0) {
-    newTags.splice(iminus, 1);
-    newTags.push(tag);
-  } else {
-    newTags.splice(i, 1);
-  }
-
-  setTags(newTags, searchParams, setSearchParams);
-};
-
-const BuildersView = observer(() => {
+export const BuildersView = observer(() => {
   const stores = useContext(StoresContext);
   const accessor = useDataAccessor([]);
 
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const tags = searchParams.getAll("tags");
+  const filterManager = useTagFilterManager("tags");
   const [builderNameFilter, setBuilderNameFilter] = useState("");
 
   useTopbarItems(stores.topbar, [
     {caption: "Builders", route: "/builders"}
   ]);
 
-  const showOldBuilders = globalSettings.getBooleanSetting("Builders.show_old_builders");
-  const showWorkerName = globalSettings.getBooleanSetting("Builders.show_workers_name");
-  const buildFetchLimit = globalSettings.getIntegerSetting("Builders.buildFetchLimit");
+  const showOldBuilders = buildbotGetSettings().getBooleanSetting("Builders.show_old_builders");
+  const showWorkerName = buildbotGetSettings().getBooleanSetting("Builders.show_workers_name");
+  const buildFetchLimit = buildbotGetSettings().getIntegerSetting("Builders.buildFetchLimit");
   const perBuilderBuildFetchLimit = 15;
 
   // as there is usually lots of builders, its better to get the overall
@@ -174,7 +85,7 @@ const BuildersView = observer(() => {
   const workers = useDataApiQuery(() => Worker.getAll(accessor));
 
   const filteredBuilders = builders.array.filter(builder => {
-    return isBuilderFiltered(builder, tags, masters, showOldBuilders) &&
+    return isBuilderFiltered(builder, filterManager, masters, showOldBuilders) &&
       (builderNameFilter === null || builder.name.indexOf(builderNameFilter) >= 0)
   }).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -222,56 +133,6 @@ const BuildersView = observer(() => {
     return byBuilderId;
   }).get();
 
-  const tagHelpPopover = (
-    <Popover id="bb-build-view-tag-help-popover"
-             style={{display: "block", minWidth: "600px", left:"-300px", top: "30px"}}>
-      <Popover.Title as="h5">Tags filtering</Popover.Title>
-      <Popover.Content>
-        <p><b>
-          <pre>+{"{tag}"}</pre></b>all tags with '+' must be present in the builder tags</p>
-        <p><b>
-          <pre>-{"{tag}"}</pre></b>no tags with '-' must be present in the builder tags</p>
-        <p><b>
-          <pre>{"{tag}"}</pre></b>at least one of the filtered tag should be present</p>
-        <p>url bar is updated with you filter configuration, so you can bookmark your filters!</p>
-      </Popover.Content>
-    </Popover>
-  );
-
-  const tagHelpElement = (
-    <OverlayTrigger trigger="click" placement="bottom" overlay={tagHelpPopover} rootClose={true}>
-      <i style={{position: "relative"}} className="fa fa-question-circle clickable"></i>
-    </OverlayTrigger>
-  );
-
-  const enabledTagsElements: JSX.Element[] = [];
-  if (tags.length === 0) {
-    enabledTagsElements.push((
-      <span>Tags</span>
-    ));
-  }
-  if (tags.length < 5) {
-    for (const tag of tags) {
-      enabledTagsElements.push((
-        <>
-          <Badge variant="success"
-                 onClick={() => toggleTag(tags, tag, searchParams, setSearchParams)}>{tag}</Badge>
-          &nbsp;
-        </>
-      ));
-    }
-  } else {
-    enabledTagsElements.push((
-      <Badge variant="success">{tags.length} tags</Badge>
-    ));
-  }
-  if (tags.length > 0) {
-    enabledTagsElements.push((
-      <Badge variant="danger" onClick={() => setTags([], searchParams, setSearchParams)}
-             className="clickable">x</Badge>
-    ));
-  }
-
   const builderRowElements = filteredBuilders.map(builder => {
 
     let buildElements: JSX.Element[] = [];
@@ -284,46 +145,13 @@ const BuildersView = observer(() => {
       buildElements = builds.map(build => (<BuildLinkWithSummaryTooltip build={build}/>));
     }
 
-    const tagElements = builder.tags.map(tag => {
-      return (
-        <span>
-          <span onClick={() => toggleTag(tags, tag, searchParams, setSearchParams)}
-                className={"bb-builder-tag clickable " +
-                  (isTagFiltered(tags, tag) ? 'bb-builder-tag-filtered': '')}>
-              {tag}
-            </span>
-          &nbsp;
-          </span>
-      );
-    });
-
     let workerElements: JSX.Element[] = [];
     if (builder.id in workersByFilteredBuilder) {
       let workers = [...workersByFilteredBuilder[builder.id]];
       workers.sort((a, b) => a.name.localeCompare(b.name));
-      workerElements = workers.map(worker => {
-
-        const shownWorkerName = () => (
-          <BadgeRound title={worker.name} className={connected2class(worker)}>
-            {worker.name}
-          </BadgeRound>
-        );
-
-        const hoverWorkerName = () => (
-          <BadgeRound title={worker.name} className={connected2class(worker)}>
-            <div className="badge-inactive">{worker.workerid}</div>
-            <div className="badge-active">{worker.name}</div>
-          </BadgeRound>
-        );
-
-        return (
-          <span>
-            <Link to={`/workers/${worker.id}`}>
-              {showWorkerName ? shownWorkerName() : hoverWorkerName()}
-             </Link>
-          </span>
-        );
-      })
+      workerElements = workers.map(worker => (
+        <WorkerBadge key={worker.name} worker={worker} showWorkerName={showWorkerName}/>
+      ));
     }
 
     return (
@@ -334,7 +162,7 @@ const BuildersView = observer(() => {
           {buildElements}
         </td>
         <td style={{width: "20%"}}>
-          {tagElements}
+          {filterManager.getElementsForTags(builder.tags)}
         </td>
         <td style={{width: "20%"}}>
           {workerElements}
@@ -357,8 +185,8 @@ const BuildersView = observer(() => {
             <th>Builder Name</th>
             <th>Builds</th>
             <th>
-              {tagHelpElement}
-              {enabledTagsElements}
+              {filterManager.getFiltersHelpElement()}
+              {filterManager.getEnabledFiltersElements()}
             </th>
             <th style={{width: "20%px"}}>Workers</th>
           </tr>
@@ -371,8 +199,9 @@ const BuildersView = observer(() => {
             <input type="checkbox" name="Show old builders"
                    checked={showOldBuilders}
                    onChange={event => {
-                     globalSettings.setSetting("Builders.show_old_builders", event.target.checked);
-                     globalSettings.save();
+                     buildbotGetSettings().setSetting("Builders.show_old_builders",
+                       event.target.checked);
+                     buildbotGetSettings().save();
                    }}/>
             {' '}Show old builders
           </label>
@@ -382,34 +211,34 @@ const BuildersView = observer(() => {
   );
 });
 
-globalMenuSettings.addGroup({
-  name: 'builds',
-  parentName: null,
-  caption: 'Builds',
-  icon: 'cogs',
-  order: 10,
-  route: null,
-});
+buildbotSetupPlugin((reg) => {
+  reg.registerMenuGroup({
+    name: 'builds',
+    parentName: null,
+    caption: 'Builds',
+    icon: <FaCogs/>,
+    order: 10,
+    route: null,
+  });
 
-globalMenuSettings.addGroup({
-  name: 'builders',
-  parentName: 'builds',
-  caption: 'Builders',
-  icon: null,
-  order: null,
-  route: '/builders',
-});
+  reg.registerMenuGroup({
+    name: 'builders',
+    parentName: 'builds',
+    caption: 'Builders',
+    order: null,
+    route: '/builders',
+  });
 
-globalRoutes.addRoute({
-  route: "builders",
-  group: "builders",
-  element: () => <BuildersView/>,
-});
+  reg.registerRoute({
+    route: "builders",
+    group: "builders",
+    element: () => <BuildersView/>,
+  });
 
-globalSettings.addGroup({
-  name: 'Builders',
-  caption: 'Builders page related settings',
-  items: [{
+  reg.registerSettingGroup({
+    name: 'Builders',
+    caption: 'Builders page related settings',
+    items: [{
       type: 'boolean',
       name: 'show_old_builders',
       caption: 'Show old builders',
@@ -431,5 +260,4 @@ globalSettings.addGroup({
       defaultValue: 100
     }
   ]});
-
-export default BuildersView;
+});

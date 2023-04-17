@@ -16,7 +16,8 @@
 */
 
 import {action, makeObservable, observable} from "mobx";
-import {Config} from "../contexts/Config";
+import {Config} from "buildbot-ui";
+import {ISettings, registerBuildbotSettingsSingleton} from "buildbot-plugin-support";
 
 export type SettingValue = string | number | boolean;
 export type SettingType = "string" | "integer" | "float" | "boolean";
@@ -53,7 +54,7 @@ export type SettingGroups = {[name: string]: SettingGroup};
 type StoredSettingGroup = {[name: string]: SettingValue};
 type StoredSettingGroups = {[name: string]: StoredSettingGroup};
 
-export class GlobalSettings {
+export class GlobalSettings implements ISettings {
   @observable groups: SettingGroups = {};
 
   constructor() {
@@ -273,3 +274,5 @@ export class GlobalSettings {
 };
 
 export const globalSettings = new GlobalSettings();
+
+registerBuildbotSettingsSingleton(globalSettings);

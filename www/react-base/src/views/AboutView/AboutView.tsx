@@ -18,18 +18,18 @@
 import "./AboutView.scss";
 import {observer} from "mobx-react";
 import {Card} from "react-bootstrap";
-import {DataClientContext} from "../../data/ReactUtils";
-import {useContext, useState} from "react";
-import {ConfigContext} from "../../contexts/Config";
-import {globalMenuSettings} from "../../plugins/GlobalMenuSettings";
-import {Link} from "react-router-dom";
-import {globalRoutes} from "../../plugins/GlobalRoutes";
+import {FaInfoCircle} from "react-icons/fa";
+import {buildbotSetupPlugin} from "buildbot-plugin-support";
 import {
+  DataClientContext,
   EndpointDescription,
   EndpointFieldSpec,
   useApplicationSpec
-} from "../../data/ApplicationSpec";
-import RawData from "../../components/RawData/RawData";
+} from "buildbot-data-js";
+import {ConfigContext} from "buildbot-ui";
+import {useContext, useState} from "react";
+import {Link} from "react-router-dom";
+import {RawData} from "../../components/RawData/RawData";
 
 type EndpointListItemProps = {
   spec: EndpointDescription;
@@ -76,7 +76,7 @@ const EndpointListItem = ({spec}: EndpointListItemProps) => {
   )
 }
 
-const AboutView = observer(() => {
+export const AboutView = observer(() => {
   const config = useContext(ConfigContext);
 
   const dataClient = useContext(DataClientContext);
@@ -122,19 +122,19 @@ const AboutView = observer(() => {
   )
 });
 
-globalMenuSettings.addGroup({
-  name: 'about',
-  caption: 'About',
-  icon: 'info-circle',
-  order: 99,
-  route: '/about',
-  parentName: null,
-});
+buildbotSetupPlugin((reg) => {
+  reg.registerMenuGroup({
+    name: 'about',
+    caption: 'About',
+    icon: <FaInfoCircle/>,
+    order: 99,
+    route: '/about',
+    parentName: null,
+  });
 
-globalRoutes.addRoute({
-  route: "/about",
-  group: null,
-  element: () => <AboutView/>,
+  reg.registerRoute({
+    route: "/about",
+    group: null,
+    element: () => <AboutView/>,
+  });
 });
-
-export default AboutView;

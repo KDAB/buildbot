@@ -16,28 +16,29 @@
 */
 
 import {observer} from "mobx-react";
+import {FaSpinner, FaStop} from "react-icons/fa";
+import {buildbotSetupPlugin} from "buildbot-plugin-support";
 import {
+  Build,
+  Builder,
+  Buildrequest,
+  Buildset,
   useDataAccessor,
   useDataApiQuery,
   useDataApiSinglePropertiesQuery
-} from "../../data/ReactUtils";
-import {Builder} from "../../data/classes/Builder";
-import {globalRoutes} from "../../plugins/GlobalRoutes";
+} from "buildbot-data-js";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
-import {Buildrequest} from "../../data/classes/Buildrequest";
 import {Tab, Tabs} from "react-bootstrap";
-import RawData from "../../components/RawData/RawData";
+import {RawData} from "../../components/RawData/RawData";
 import {TopbarAction} from "../../components/TopbarActions/TopbarActions";
 import {useContext, useState} from "react";
 import {StoresContext} from "../../contexts/Stores";
 import {useTopbarActions} from "../../stores/TopbarActionsStore";
 import {useTopbarItems} from "../../stores/TopbarStore";
-import AlertNotification from "../../components/AlertNotification/AlertNotification";
-import {Build} from "../../data/classes/Build";
-import BuildSummary from "../../components/BuildSummary/BuildSummary";
-import PropertiesTable from "../../components/PropertiesTable/PropertiesTable";
-import {Buildset} from "../../data/classes/Buildset";
-import TableHeading from "../../components/TableHeading/TableHeading";
+import {AlertNotification} from "../../components/AlertNotification/AlertNotification";
+import {BuildSummary} from "../../components/BuildSummary/BuildSummary";
+import {PropertiesTable} from "../../components/PropertiesTable/PropertiesTable";
+import {TableHeading} from "../../components/TableHeading/TableHeading";
 
 const buildTopbarActions = (builder: Builder | null,
                             buildRequest: Buildrequest | null,
@@ -52,13 +53,13 @@ const buildTopbarActions = (builder: Builder | null,
   if (isCancelling) {
     actions.push({
       caption: "Cancelling...",
-      icon: "spinner fa-spin",
+      icon: <FaSpinner/>,
       action: cancelBuildRequest
     });
   } else {
     actions.push({
       caption: "Cancel",
-      icon: "stop",
+      icon: <FaStop/>,
       action: cancelBuildRequest
     });
   }
@@ -66,7 +67,7 @@ const buildTopbarActions = (builder: Builder | null,
   return actions;
 }
 
-const BuildRequestView = observer(() => {
+export const BuildRequestView = observer(() => {
   const buildRequestId = Number.parseInt(useParams<"buildrequestid">().buildrequestid ?? "");
   const [searchParams] = useSearchParams();
   const redirectToBuild = searchParams.get("redirect_to_build") === "true";
@@ -168,10 +169,10 @@ const BuildRequestView = observer(() => {
   );
 });
 
-globalRoutes.addRoute({
-  route: "buildrequests/:buildrequestid",
-  group: "builds",
-  element: () => <BuildRequestView/>,
+buildbotSetupPlugin((reg) => {
+  reg.registerRoute({
+    route: "buildrequests/:buildrequestid",
+    group: "builds",
+    element: () => <BuildRequestView/>,
+  });
 });
-
-export default BuildRequestView;

@@ -18,17 +18,14 @@
 import './LogPreview.scss';
 import {Card} from "react-bootstrap";
 import {Link} from "react-router-dom";
-import {Log} from "../../data/classes/Log";
-import {globalSettings} from "../../plugins/GlobalSettings";
 import {useEffect, useRef, useState} from 'react';
-import ArrowExpander from "../ArrowExpander/ArrowExpander";
 import {ansi2html, generateStyleElement} from "../../util/AnsiEscapeCodes";
 import {action, makeObservable, observable} from 'mobx';
-import {useLocalObservable} from "mobx-react";
-import {useDataAccessor} from "../../data/ReactUtils";
-import {CancellablePromise} from "../../util/CancellablePromise";
-import {useStateWithDefaultIfNotSet} from "../../util/React";
-import LogDownloadButton from "../LogDownloadButton/LogDownloadButton";
+import {observer, useLocalObservable} from "mobx-react";
+import {buildbotGetSettings, buildbotSetupPlugin} from "buildbot-plugin-support";
+import {ArrowExpander, useStateWithDefaultIfNotSet} from "buildbot-ui";
+import {CancellablePromise, Log, useDataAccessor} from "buildbot-data-js";
+import {LogDownloadButton} from "../LogDownloadButton/LogDownloadButton";
 
 type RenderedLogLine = {
   content: JSX.Element[];
@@ -72,12 +69,12 @@ export type LogPreviewProps = {
   initialFullDisplay: boolean;
 }
 
-const LogPreview = ({builderid, buildnumber, stepnumber, log,
-                     initialFullDisplay}: LogPreviewProps) => {
+export const LogPreview = observer(({builderid, buildnumber, stepnumber, log,
+                                     initialFullDisplay}: LogPreviewProps) => {
   const previewState = useLocalObservable(() => new LogPreviewState());
 
-  const initialLoadLines = globalSettings.getIntegerSetting('LogPreview.loadlines');
-  const maximumLoadLines = globalSettings.getIntegerSetting('LogPreview.maxlines');
+  const initialLoadLines = buildbotGetSettings().getIntegerSetting('LogPreview.loadlines');
+  const maximumLoadLines = buildbotGetSettings().getIntegerSetting('LogPreview.maxlines');
 
   const [fullDisplay, setFullDisplay] = useStateWithDefaultIfNotSet(() => initialFullDisplay);
 
@@ -196,7 +193,7 @@ const LogPreview = ({builderid, buildnumber, stepnumber, log,
             {log.name}
           </div>
           <div className="flex-grow-1">
-            <div className="pull-right">
+            <div className="bb-log-preview-download">
               <Link to={`/builders/${builderid}/builds/${buildnumber}/steps/${stepnumber}/logs/${log.slug}`}>
                 view all {log.num_lines} line{log.num_lines > 1 ? 's' : ''}&nbsp;
               </Link>
@@ -208,14 +205,13 @@ const LogPreview = ({builderid, buildnumber, stepnumber, log,
       {fullDisplay ? <div>{renderLogContent()}</div> : <></>}
     </Card>
   );
-}
+});
 
-export default LogPreview;
-
-globalSettings.addGroup({
-  name: 'LogPreview',
-  caption: 'LogPreview related settings',
-  items: [{
+buildbotSetupPlugin((reg) => {
+  reg.registerSettingGroup({
+    name: 'LogPreview',
+    caption: 'LogPreview related settings',
+    items: [{
       type: 'integer',
       name: 'loadlines',
       caption: 'Initial number of lines to load',
@@ -231,4 +227,6 @@ globalSettings.addGroup({
       caption: 'Expand logs with these names (use ; as separator)',
       defaultValue: 'summary'
     }
-  ]});
+    ]
+  });
+})

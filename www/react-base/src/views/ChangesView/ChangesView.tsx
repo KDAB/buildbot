@@ -16,18 +16,15 @@
 */
 
 import {observer} from "mobx-react";
-import {useDataAccessor, useDataApiQuery} from "../../data/ReactUtils";
-import {globalMenuSettings} from "../../plugins/GlobalMenuSettings";
-import {globalRoutes} from "../../plugins/GlobalRoutes";
-import {globalSettings} from "../../plugins/GlobalSettings";
-import {Change} from "../../data/classes/Change";
-import ChangesTable from "../../components/ChangesTable/ChangesTable";
+import {buildbotGetSettings, buildbotSetupPlugin} from "buildbot-plugin-support";
+import {Change, useDataAccessor, useDataApiQuery} from "buildbot-data-js";
+import {ChangesTable} from "../../components/ChangesTable/ChangesTable";
 
 
-const ChangesView = observer(() => {
+export const ChangesView = observer(() => {
   const accessor = useDataAccessor([]);
 
-  const changesFetchLimit = globalSettings.getIntegerSetting("Changes.changesFetchLimit");
+  const changesFetchLimit = buildbotGetSettings().getIntegerSetting("Changes.changesFetchLimit");
   const changesQuery = useDataApiQuery(
     () => Change.getAll(accessor, {query: {limit: changesFetchLimit, order: '-changeid'}}));
 
@@ -38,29 +35,29 @@ const ChangesView = observer(() => {
   );
 });
 
-globalMenuSettings.addGroup({
-  name: 'changes',
-  parentName: 'builds',
-  caption: 'Last Changes',
-  icon: null,
-  order: null,
-  route: '/changes',
+buildbotSetupPlugin((reg) => {
+  reg.registerMenuGroup({
+    name: 'changes',
+    parentName: 'builds',
+    caption: 'Last Changes',
+    order: null,
+    route: '/changes',
+  });
+
+  reg.registerRoute({
+    route: "changes",
+    group: "builds",
+    element: () => <ChangesView/>,
+  });
+
+  reg.registerSettingGroup({
+    name: 'Changes',
+    caption: 'Changes page related settings',
+    items: [{
+      type: 'integer',
+      name: 'changesFetchLimit',
+      caption: 'Maximum number of changes to fetch',
+      defaultValue: 50
+    }]
+  });
 });
-
-globalRoutes.addRoute({
-  route: "changes",
-  group: "builds",
-  element: () => <ChangesView/>,
-});
-
-globalSettings.addGroup({
-  name: 'Changes',
-  caption: 'Changes page related settings',
-  items: [{
-    type: 'integer',
-    name: 'changesFetchLimit',
-    caption: 'Maximum number of changes to fetch',
-    defaultValue: 50
-  }]});
-
-export default ChangesView;

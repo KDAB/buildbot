@@ -1,4 +1,4 @@
-@import '../../styles/colors.scss';
+@import "../../../../react-ui/dist/colors.scss";
 
 .bb-buildsticker {
   width: 100%;
@@ -10,6 +10,10 @@
     overflow: hidden;
     margin-left: 0;
     margin-right: 0;
+
+    > .bb-badge-status, > .bb-buildsticker-time {
+      float: right;
+    }
   }
 
   &.results_SUCCESS {

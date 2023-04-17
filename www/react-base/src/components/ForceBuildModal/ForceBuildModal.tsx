@@ -16,18 +16,18 @@
 */
 
 import './ForceBuildModal.less';
+import {Button, Modal} from "react-bootstrap";
+import {useContext, useState} from "react";
 import {
+  ControlParams,
   Forcescheduler,
   ForceSchedulerFieldBase,
   ForceSchedulerFieldNested
-} from "../../data/classes/Forcescheduler";
-import {Button, Modal} from "react-bootstrap";
-import {useContext, useState} from "react";
+} from "buildbot-data-js";
+import {ConfigContext} from "buildbot-ui";
 import {observer, useLocalObservable} from "mobx-react";
 import {ForceBuildModalFieldsState} from "./ForceBuildModalFieldsState";
-import FieldNested from "./Fields/FieldNested";
-import {ConfigContext} from "../../contexts/Config";
-import {ControlParams} from "../../data/DataQuery";
+import {FieldNested} from "./Fields/FieldNested";
 
 const visitFields = (fields: ForceSchedulerFieldBase[],
                      callback: (field: ForceSchedulerFieldBase) => void)  => {
@@ -52,7 +52,7 @@ type ForceBuildModalProps = {
   onClose: (buildRequestNumber: string | null) => void;
 }
 
-const ForceBuildModal = observer(({scheduler, builderid, onClose}: ForceBuildModalProps) => {
+export const ForceBuildModal = observer(({scheduler, builderid, onClose}: ForceBuildModalProps) => {
   const config = useContext(ConfigContext);
 
   const fields = flattenFields(scheduler.all_fields);
@@ -114,7 +114,14 @@ const ForceBuildModal = observer(({scheduler, builderid, onClose}: ForceBuildMod
           setError("Invalid response from Buildbot");
           return;
         }
-        onClose(res.result[0]);
+        const buildrequestIds = Object.values<number>(res.result[1])
+        if (typeof buildrequestIds[0] !== "number") {
+          setDisableStartButton(false);
+          setError("Invalid response from Buildbot");
+          return;
+        }
+
+        onClose(buildrequestIds[0].toString());
       } catch (e: any) {
         setDisableStartButton(false);
         setError(null);
@@ -175,5 +182,3 @@ const ForceBuildModal = observer(({scheduler, builderid, onClose}: ForceBuildMod
     </Modal>
   );
 });
-
-export default ForceBuildModal;

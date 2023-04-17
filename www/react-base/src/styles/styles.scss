@@ -1,9 +1,9 @@
-@import "~bootstrap/scss/bootstrap";
-@import "~font-awesome/scss/font-awesome.scss";
+@import "bootstrap/scss/bootstrap";
 @import "animations.scss";
 @import "colors.scss";
 @import "mobile.scss";
 @import "guanlecoja.scss";
+@import "buildbot-ui/dist/style.css";
 
 // Dashboards which use SVG to draw contents such as waterfall may require
 //  setting  body height to 100vh. (100% of viewport height)
@@ -137,11 +137,6 @@ span:hover>.mouse-over-only  {display: inline;}
   min-width: 600px;
   color: #262626;
 }
-
-/* glyphicon to font awesome translation, for angular-bootstrap-multiselect */
-.glyphicon { font-family: 'FontAwesome'; }
-.glyphicon-ok:before { content: $fa-var-check; }
-.glyphicon-remove:before { content: $fa-var-times; }
 
 #root, .modal .modal-dialog {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;

@@ -15,7 +15,7 @@
   Copyright Buildbot Team Members
 */
 
-import {ForceSchedulerFieldBoolean} from "../../../data/classes/Forcescheduler";
+import {ForceSchedulerFieldBoolean} from "buildbot-data-js";
 import {ForceBuildModalFieldsState} from "../ForceBuildModalFieldsState";
 import {observer} from "mobx-react";
 
@@ -24,7 +24,7 @@ type FieldBooleanProps = {
   fieldsState: ForceBuildModalFieldsState;
 }
 
-const FieldBoolean = observer(({field, fieldsState}: FieldBooleanProps) => {
+export const FieldBoolean = observer(({field, fieldsState}: FieldBooleanProps) => {
   const state = fieldsState.fields.get(field.name)!;
 
   return (
@@ -34,12 +34,10 @@ const FieldBoolean = observer(({field, fieldsState}: FieldBooleanProps) => {
           <label>
             <input type="checkbox" checked={state.value === 'true'}
                    onChange={event => fieldsState.setValue(field.name,
-                     event.target.checked ? 'true' : 'false')}/>{field.label}
+                     event.target.checked ? 'true' : 'false')}/> {field.label}
           </label>
         </div>
       </div>
     </div>
   );
 });
-
-export default FieldBoolean;

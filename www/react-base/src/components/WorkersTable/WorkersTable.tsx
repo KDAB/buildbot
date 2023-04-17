@@ -16,31 +16,27 @@
 */
 
 import {Table} from "react-bootstrap";
-import {Builder} from "../../data/classes/Builder";
-import {Master} from "../../data/classes/Master";
-import {Worker} from "../../data/classes/Worker";
-import {Build} from "../../data/classes/Build";
+import {FaPause, FaRegSmile, FaTimes} from "react-icons/fa";
+import {FaStop} from "react-icons/fa";
+import {Build, Builder, DataCollection, Master, Worker} from "buildbot-data-js";
 import {Link} from "react-router-dom";
-import DataCollection from "../../data/DataCollection";
-import BuildLinkWithSummaryTooltip
-  from "../../components/BuildLinkWithSummaryTooltip/BuildLinkWithSummaryTooltip";
+import {BadgeRound, BuildLinkWithSummaryTooltip} from "buildbot-ui";
 import {observer} from "mobx-react";
-import BadgeRound from "../BadgeRound/BadgeRound";
 
 export const getWorkerStatusIcon = (worker: Worker, onClick: () => void) => {
   if (worker.paused) {
     return (
-      <i title="paused" className="fa fa-pause" onClick={onClick}>&nbsp;</i>
+      <FaPause title="paused" onClick={onClick}>&nbsp;</FaPause>
     );
   }
   if (worker.graceful) {
     return (
-      <i title="graceful shutdown" className="fa fa-stop" onClick={onClick}></i>
+      <FaStop title="graceful shutdown" onClick={onClick}/>
     );
   }
   if (worker.connected_to.length > 0) {
     return (
-      <i className="fa fa-smile-o" onClick={onClick}></i>
+      <FaRegSmile onClick={onClick}/>
     );
   }
   return (<></>);
@@ -67,15 +63,15 @@ export type WorkersTableProps = {
   onWorkerIconClick: (worker: Worker) => void;
 };
 
-const WorkersTable = observer(({workers, buildersQuery, mastersQuery,
-                                buildsForWorker, onWorkerIconClick}: WorkersTableProps) => {
+export const WorkersTable = observer(({workers, buildersQuery, mastersQuery,
+                                       buildsForWorker, onWorkerIconClick}: WorkersTableProps) => {
   const workerInfoNamesToDisplay = getWorkerInfoNamesToDisplay(workers);
 
   const renderConnectedMasters = (worker: Worker) => {
     if (worker.connected_to.length === 0) {
       return (
         <div key="disconnected">
-          <i title="disconnected" className="fa fa-times text-danger"></i>
+          <FaTimes title="disconnected" className="text-danger"/>
         </div>
       );
     }
@@ -155,5 +151,3 @@ const WorkersTable = observer(({workers, buildersQuery, mastersQuery,
     </Table>
   );
 });
-
-export default WorkersTable;

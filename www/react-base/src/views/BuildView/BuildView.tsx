@@ -17,43 +17,50 @@
 
 import './BuildView.scss';
 import {observer} from "mobx-react";
-import {globalRoutes} from "../../plugins/GlobalRoutes";
-import {globalSettings} from "../../plugins/GlobalSettings";
-import AlertNotification from "../../components/AlertNotification/AlertNotification";
+import {FaSpinner} from "react-icons/fa";
+import {AlertNotification} from "../../components/AlertNotification/AlertNotification";
 import {useContext, useState} from "react";
 import {useTopbarItems} from "../../stores/TopbarStore";
 import {StoresContext} from "../../contexts/Stores";
 import {Link, useNavigate, useParams} from "react-router-dom";
+import {buildbotSetupPlugin} from "buildbot-plugin-support";
 import {
+  Build,
+  Buildrequest,
+  Buildset,
+  Builder,
+  Change,
+  DataCollection,
+  DataPropertiesCollection,
+  Worker,
+  UNKNOWN,
   findOrNull,
+  getPropertyValueOrDefault,
+  getBuildOrStepResults,
+  parseChangeAuthorNameAndEmail,
+  results2class,
   useDataAccessor,
   useDataApiDynamicQuery,
   useDataApiQuery,
   useDataApiSingleElementQuery
-} from "../../data/ReactUtils";
-import {Builder} from "../../data/classes/Builder";
-import {Build} from "../../data/classes/Build";
-import {Worker} from "../../data/classes/Worker";
+} from "buildbot-data-js";
 import {useTopbarActions} from "../../stores/TopbarActionsStore";
 import {TopbarAction} from "../../components/TopbarActions/TopbarActions";
-import {Buildrequest} from "../../data/classes/Buildrequest";
-import DataCollection from "../../data/DataCollection";
-import {Buildset} from "../../data/classes/Buildset";
-import DataPropertiesCollection from "../../data/DataPropertiesCollection";
 import {computed} from "mobx";
-import {Change} from "../../data/classes/Change";
-import {useFavIcon} from "../../util/FavIcon";
-import {getPropertyValueOrDefault, parseChangeAuthorNameAndEmail} from "../../util/Properties";
-import {getBuildOrStepResults, results2class, UNKNOWN} from "../../util/Results";
-import {dateFormat, durationFromNowFormat, useCurrentTime} from "../../util/Moment";
-import BadgeRound from "../../components/BadgeRound/BadgeRound";
-import RawData from "../../components/RawData/RawData";
-import PropertiesTable from "../../components/PropertiesTable/PropertiesTable";
-import ChangesTable from "../../components/ChangesTable/ChangesTable";
-import BuildSummary from "../../components/BuildSummary/BuildSummary";
-import ChangeUserAvatar from "../../components/ChangeUserAvatar/ChangeUserAvatar";
+import {
+  BadgeRound,
+  ChangeUserAvatar,
+  dateFormat,
+  durationFromNowFormat,
+  useCurrentTime,
+  useFavIcon
+} from "buildbot-ui";
+import {RawData} from "../../components/RawData/RawData";
+import {PropertiesTable} from "../../components/PropertiesTable/PropertiesTable";
+import {ChangesTable} from "../../components/ChangesTable/ChangesTable";
+import {BuildSummary} from "../../components/BuildSummary/BuildSummary";
 import {Tab, Table, Tabs} from "react-bootstrap";
-import TableHeading from "../../components/TableHeading/TableHeading";
+import {TableHeading} from "../../components/TableHeading/TableHeading";
 
 const buildTopbarActions = (build: Build | null, isRebuilding: boolean, isStopping: boolean,
                             doRebuild: () => void, doStop: () => void) => {
@@ -66,7 +73,7 @@ const buildTopbarActions = (build: Build | null, isRebuilding: boolean, isStoppi
     if (isRebuilding) {
       actions.push({
         caption: "Rebuilding...",
-        icon: "spinner fa-spin",
+        icon: <FaSpinner/>,
         action: doRebuild
       });
     } else {
@@ -79,7 +86,7 @@ const buildTopbarActions = (build: Build | null, isRebuilding: boolean, isStoppi
     if (isStopping) {
       actions.push({
         caption: "Stopping...",
-        icon: "spinner fa-spin",
+        icon: <FaSpinner/>,
         action: doStop
       });
     } else {
@@ -334,7 +341,7 @@ const BuildView = observer(() => {
             <tbody>
               <tr>
                 <td className="text-left">name</td>
-                <td className="text-center">{workerName}</td>
+                <td className="text-right">{workerName}</td>
               </tr>
               {renderWorkerInfo()}
             </tbody>
@@ -359,16 +366,17 @@ const BuildView = observer(() => {
   );
 });
 
-globalRoutes.addRoute({
-  route: "builders/:builderid/builds/:buildnumber",
-  group: null,
-  element: () => <BuildView/>,
-});
+buildbotSetupPlugin((reg) => {
+  reg.registerRoute({
+    route: "builders/:builderid/builds/:buildnumber",
+    group: null,
+    element: () => <BuildView/>,
+  });
 
-globalSettings.addGroup({
-  name:'Build',
-  caption: 'Build page related settings',
-  items:[{
+  reg.registerSettingGroup({
+    name:'Build',
+    caption: 'Build page related settings',
+    items:[{
       type: 'integer',
       name: 'trigger_step_page_size',
       caption: 'Number of builds to show per page in trigger step',
@@ -379,4 +387,6 @@ globalSettings.addGroup({
       caption: 'Always show URLs in step',
       defaultValue: true
     }
-  ]});
+    ]
+  });
+});

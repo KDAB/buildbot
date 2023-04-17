@@ -17,7 +17,7 @@
 
 import renderer, {act} from 'react-test-renderer';
 import {MemoryRouter} from "react-router-dom";
-import RawData from './RawData';
+import {RawData} from './RawData';
 import {observable} from "mobx";
 
 function assertRenderSnapshot(data: {[key: string]: any}) {
@@ -36,7 +36,7 @@ function assertRenderSnapshotExpanded(data: {[key: string]: any}) {
     </MemoryRouter>
   );
   act(() =>
-    component.root.findByType("i").props.onClick()
+    component.root.findByType("svg").props.onClick()
   );
   expect(component.toJSON()).toMatchSnapshot();
 }

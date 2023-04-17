@@ -15,14 +15,11 @@
   Copyright Buildbot Team Members
 */
 
-import {Build} from "../../data/classes/Build";
 import renderer from 'react-test-renderer';
-import BuildSticker from "./BuildSticker";
-import {Builder} from "../../data/classes/Builder";
-import {FAILURE, SUCCESS} from "../../util/Results";
+import {Build, Builder, FAILURE, SUCCESS} from "buildbot-data-js";
+import {BuildSticker} from "./BuildSticker";
 import {MemoryRouter} from "react-router-dom";
-import TimeStore from "../../stores/TimeStore";
-import { TimeContext } from "../../contexts/Time";
+import {TimeContext, TimeStore} from "buildbot-ui";
 
 function assertBuildStickerRenderSnapshot(build: Build, builder: Builder) {
   const timeStore = new TimeStore();

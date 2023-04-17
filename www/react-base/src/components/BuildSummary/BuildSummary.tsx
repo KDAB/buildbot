@@ -16,27 +16,38 @@
 */
 
 import './BuildSummary.scss';
-import {observer} from "mobx-react";
-import {results2class, results2text, SUCCESS} from "../../util/Results";
 import {useContext, useState} from "react";
-import {ConfigContext} from "../../contexts/Config";
-import {useDataAccessor, useDataApiDynamicQuery, useDataApiQuery} from "../../data/ReactUtils";
-import {analyzeStepUrls, useStepUrlAnalyzer} from "../../util/StepUrls";
-import {durationFormat, useCurrentTime} from "../../util/Moment";
-import {Log} from "../../data/classes/Log";
-import {globalSettings} from "../../plugins/GlobalSettings";
-import {Step} from "../../data/classes/Step";
-import {Build} from "../../data/classes/Build";
-import {Builder} from "../../data/classes/Builder";
-import {getPropertyValueOrDefault} from "../../util/Properties";
+import {observer} from "mobx-react";
+import {FaExpand} from "react-icons/fa";
+import {buildbotGetSettings} from "buildbot-plugin-support";
+import {
+  ArrowExpander,
+  BadgeRound,
+  BadgeStatus,
+  ConfigContext,
+  analyzeStepUrls,
+  durationFormat,
+  useCurrentTime,
+  useStateWithParentTrackingWithDefaultIfNotSet,
+  useStepUrlAnalyzer
+} from "buildbot-ui";
+import {
+  Build,
+  Builder,
+  DataCollection,
+  Log,
+  Step,
+  getPropertyValueOrDefault,
+  results2class,
+  results2text,
+  SUCCESS,
+  useDataAccessor,
+  useDataApiDynamicQuery,
+  useDataApiQuery,
+} from "buildbot-data-js";
 import {Link} from "react-router-dom";
-import DataCollection from "../../data/DataCollection";
-import LogPreview from "../LogPreview/LogPreview";
-import {useStateWithParentTrackingWithDefaultIfNotSet} from "../../util/React";
-import ArrowExpander from "../ArrowExpander/ArrowExpander";
-import BuildRequestSummary from "../BuildRequestSummary/BuildRequestSummary";
-import BadgeRound from "../BadgeRound/BadgeRound";
-import BadgeStatus from "../BadgeStatus/BadgeStatus";
+import {LogPreview} from "../LogPreview/LogPreview";
+import {BuildRequestSummary} from "../BuildRequestSummary/BuildRequestSummary";
 import {Card} from "react-bootstrap";
 
 enum DetailLevel {
@@ -94,8 +105,8 @@ const BuildSummaryStepLine = observer(({build, step, logs, parentFullDisplay}: B
   const config = useContext(ConfigContext);
   const now = useCurrentTime();
 
-  const logsToExpand = globalSettings.getStringSetting("LogPreview.expand_logs");
-  const showUrls = globalSettings.getBooleanSetting("Build.show_urls");
+  const logsToExpand = buildbotGetSettings().getStringSetting("LogPreview.expand_logs");
+  const showUrls = buildbotGetSettings().getBooleanSetting("Build.show_urls");
 
   const baseUrls = config.buildbotURLs || [config.buildbotURL];
   const stepUrlAnalyzer = useStepUrlAnalyzer(baseUrls);
@@ -109,7 +120,7 @@ const BuildSummaryStepLine = observer(({build, step, logs, parentFullDisplay}: B
     }
 
     return (
-      <span className="pull-right">
+      <span className="bb-build-summary-time">
           {
             step.complete
               ? <span>{durationFormat(step.complete_at! - step.started_at)}</span>
@@ -208,8 +219,8 @@ type BuildSummaryProps = {
   condensed: boolean;
 }
 
-const BuildSummary = observer(({build, parentBuild, parentRelationship,
-                                condensed}: BuildSummaryProps) => {
+export const BuildSummary = observer(({build, parentBuild, parentRelationship,
+                                       condensed}: BuildSummaryProps) => {
   const accessor = useDataAccessor([build.id]);
   const now = useCurrentTime();
 
@@ -271,7 +282,7 @@ const BuildSummary = observer(({build, parentBuild, parentRelationship,
         </div>
         <div onClick={toggleDetails} title="Show steps according to their importance"
              className="btn btn-xs btn-default">
-          <i className="fa fa-expand"></i>
+          <FaExpand/>
           {detailLevelToString(detailLevel)}
         </div>
         { builder !== null
@@ -299,5 +310,3 @@ const BuildSummary = observer(({build, parentBuild, parentRelationship,
     </Card>
   );
 });
-
-export default BuildSummary;

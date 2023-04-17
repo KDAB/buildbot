@@ -41,6 +41,10 @@ class NotifierMaster(RunMasterBase):
 
     @defer.inlineCallbacks
     def create_master_config(self, build_set_summary=False):
+        from buildbot.config import BuilderConfig
+        from buildbot.process.factory import BuildFactory
+        from buildbot.plugins import steps, schedulers, reporters
+
         self.mailDeferred = defer.Deferred()
 
         # patch MailNotifier.sendmail to know when the mail has been sent
@@ -54,7 +58,48 @@ class NotifierMaster(RunMasterBase):
             self.notification.callback(params)
         self.patch(PushoverNotifier, "sendNotification", sendNotification)
 
-        yield self.setupConfig(masterConfig(build_set_summary=build_set_summary))
+        c = {}
+        c['schedulers'] = [
+            schedulers.AnyBranchScheduler(
+                name="sched",
+                builderNames=["testy"])
+        ]
+        f = BuildFactory()
+        f.addStep(steps.ShellCommand(command='echo hello'))
+        c['builders'] = [
+            BuilderConfig(name="testy",
+                          workernames=["local1"],
+                          factory=f)
+        ]
+
+        formatter = MessageFormatter(template='This is a message.')
+        formatter_worker = MessageFormatterMissingWorker(template='No worker.')
+
+        if build_set_summary:
+            generators_mail = [
+                BuildSetStatusGenerator(mode='all'),
+                WorkerMissingGenerator(workers='all'),
+            ]
+            generators_pushover = [
+                BuildSetStatusGenerator(mode='all', message_formatter=formatter),
+                WorkerMissingGenerator(workers=['local1'], message_formatter=formatter_worker),
+            ]
+        else:
+            generators_mail = [
+                BuildStatusGenerator(mode='all'),
+                WorkerMissingGenerator(workers='all'),
+            ]
+            generators_pushover = [
+                BuildStatusGenerator(mode='all', message_formatter=formatter),
+                WorkerMissingGenerator(workers=['local1'], message_formatter=formatter_worker),
+            ]
+
+        c['services'] = [
+            reporters.MailNotifier("bot@foo.com", generators=generators_mail),
+            reporters.PushoverNotifier('1234', 'abcd', generators=generators_pushover)
+        ]
+
+        yield self.setup_master(c)
 
     @defer.inlineCallbacks
     def doTest(self, what):
@@ -82,7 +127,9 @@ class NotifierMaster(RunMasterBase):
         })
 
     def assertEncodedIn(self, text, mail):
-        # python 2.6 default transfer in base64 for utf-8
+        # The default transfer encoding is base64 for utf-8 even when it could be represented
+        # accurately by quoted 7bit encoding. TODO: it is possible to override it,
+        # see https://bugs.python.org/issue12552
         if "base64" not in mail:
             self.assertIn(text, mail)
         else:  # b64encode and remove '=' padding (hence [:-1])
@@ -118,51 +165,3 @@ class NotifierMaster(RunMasterBase):
         params = yield self.notification
         self.assertEqual(params, {'title': "Buildbot Buildbot worker local1 missing",
                                   'message': b"No worker."})
-
-
-# master configuration
-def masterConfig(build_set_summary):
-    c = {}
-    from buildbot.config import BuilderConfig
-    from buildbot.process.factory import BuildFactory
-    from buildbot.plugins import steps, schedulers, reporters
-    c['schedulers'] = [
-        schedulers.AnyBranchScheduler(
-            name="sched",
-            builderNames=["testy"])
-    ]
-    f = BuildFactory()
-    f.addStep(steps.ShellCommand(command='echo hello'))
-    c['builders'] = [
-        BuilderConfig(name="testy",
-                      workernames=["local1"],
-                      factory=f)
-    ]
-
-    formatter = MessageFormatter(template='This is a message.')
-    formatter_worker = MessageFormatterMissingWorker(template='No worker.')
-
-    if build_set_summary:
-        generators_mail = [
-            BuildSetStatusGenerator(mode='all'),
-            WorkerMissingGenerator(workers='all'),
-        ]
-        generators_pushover = [
-            BuildSetStatusGenerator(mode='all', message_formatter=formatter),
-            WorkerMissingGenerator(workers=['local1'], message_formatter=formatter_worker),
-        ]
-    else:
-        generators_mail = [
-            BuildStatusGenerator(mode='all'),
-            WorkerMissingGenerator(workers='all'),
-        ]
-        generators_pushover = [
-            BuildStatusGenerator(mode='all', message_formatter=formatter),
-            WorkerMissingGenerator(workers=['local1'], message_formatter=formatter_worker),
-        ]
-
-    c['services'] = [
-        reporters.MailNotifier("bot@foo.com", generators=generators_mail),
-        reporters.PushoverNotifier('1234', 'abcd', generators=generators_pushover)
-    ]
-    return c

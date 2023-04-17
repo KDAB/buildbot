@@ -82,8 +82,7 @@ def _describe_cmd_difference(exp_command, exp_args, got_command, got_args):
     text = ""
     missing_in_exp, missing_in_cmd, diff = _dict_diff(exp_args, got_args)
     if missing_in_exp:
-        missing_dict = {key: got_args[key] for key in missing_in_exp}
-        text += f'Keys in command missing from expectation: {missing_dict!r}\n'
+        text += f'Keys in command missing from expectation: {missing_in_exp!r}\n'
     if missing_in_cmd:
         text += f'Keys in expectation missing from command: {missing_in_cmd!r}\n'
     if diff:

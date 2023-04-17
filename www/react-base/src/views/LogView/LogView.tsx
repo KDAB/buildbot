@@ -17,15 +17,13 @@
 
 import './LogView.scss';
 import {observer} from "mobx-react";
-import {globalRoutes} from "../../plugins/GlobalRoutes";
 import {useContext} from "react";
 import {useTopbarItems} from "../../stores/TopbarStore";
 import {StoresContext} from "../../contexts/Stores";
 import {useNavigate, useParams} from "react-router-dom";
-import {useDataAccessor, useDataApiQuery} from "../../data/ReactUtils";
-import {Builder} from "../../data/classes/Builder";
-import {Build} from "../../data/classes/Build";
-import LogViewer from "../../components/LogViewer/LogViewer";
+import {buildbotSetupPlugin} from "buildbot-plugin-support";
+import {Builder, Build, useDataAccessor, useDataApiQuery} from "buildbot-data-js";
+import {LogViewer} from "../../components/LogViewer/LogViewer";
 
 const LogView = observer(() => {
   const builderid = Number.parseInt(useParams<"builderid">().builderid ?? "");
@@ -77,8 +75,10 @@ const LogView = observer(() => {
   );
 });
 
-globalRoutes.addRoute({
-  route: "builders/:builderid/builds/:buildnumber/steps/:stepnumber/logs/:logslug",
-  group: null,
-  element: () => <LogView/>,
+buildbotSetupPlugin((reg) => {
+  reg.registerRoute({
+    route: "builders/:builderid/builds/:buildnumber/steps/:stepnumber/logs/:logslug",
+    group: null,
+    element: () => <LogView/>,
+  });
 });

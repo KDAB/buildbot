@@ -17,8 +17,8 @@
 
 import {observer} from "mobx-react";
 import {Card} from "react-bootstrap";
-import {globalMenuSettings} from "../../plugins/GlobalMenuSettings";
-import {globalRoutes} from "../../plugins/GlobalRoutes";
+import {FaSlidersH} from "react-icons/fa";
+import {buildbotSetupPlugin} from "buildbot-plugin-support";
 import {
   GlobalSettings,
   globalSettings,
@@ -47,7 +47,7 @@ const computeMasterCfgSnippet = (settings: GlobalSettings) => {
   return code;
 };
 
-const SettingsView = observer(() => {
+export const SettingsView = observer(() => {
   const masterCfgOverrideSnippet = computeMasterCfgSnippet(globalSettings);
 
   const renderGroupItem = (groupName: string, item: SettingItem) => {
@@ -132,19 +132,19 @@ const SettingsView = observer(() => {
   );
 });
 
-globalMenuSettings.addGroup({
-  name: 'settings',
-  caption: 'Settings',
-  icon: 'sliders',
-  order: 99,
-  route: '/settings',
-  parentName: null,
-});
+buildbotSetupPlugin((reg) => {
+  reg.registerMenuGroup({
+    name: 'settings',
+    caption: 'Settings',
+    icon: <FaSlidersH/>,
+    order: 99,
+    route: '/settings',
+    parentName: null,
+  });
 
-globalRoutes.addRoute({
-  route: "/settings",
-  group: null,
-  element: () => <SettingsView/>,
+  reg.registerRoute({
+    route: "/settings",
+    group: null,
+    element: () => <SettingsView/>,
+  });
 });
-
-export default SettingsView;

@@ -85,14 +85,18 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements-ci.txt', 'requirements-cidb.txt') }}
           restore-keys: ${{ runner.os }}-pip-
 
-      - run: pip install -U pip
+      - run: pip install -U pip wheel
       - run: pip install -r requirements-ci.txt -r requirements-cidb.txt
 
       # run real db tests under coverage to have several merging coverage report
       # https://github.com/codecov/support/wiki/Merging-Reports
       - run: coverage run --rcfile=.coveragerc $(which trial) --reporter=text --rterrors buildbot.test buildbot_worker.test
 
-      - run: codecov
+      - run: |
+          curl -Os https://uploader.codecov.io/v0.4.1/linux/codecov
+          echo "32cb14b5f3aaacd67f4c1ff55d82f037d3cd10c8e7b69c051f27391d2e66e15c  codecov" | sha256sum --check
+          chmod +x ./codecov
+          CODECOV_TOKEN="b80c80d7-689d-46d7-b1aa-59168bb4c9a9" ./codecov
 
   win:
     name: Win / python ${{ matrix.python-version }}
@@ -113,7 +117,7 @@ jobs:
           python -c "import sys; print(sys.exec_prefix)"
           python -c "import sys; print(sys.executable)"
           python -V -V
-          python -m pip install -U pip setuptools
+          python -m pip install -U pip setuptools wheel
           python -m pip install -r requirements-ci.txt
           python -m pip list
           # Check that pywin32 is properly installed

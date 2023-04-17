@@ -1,21 +1,26 @@
+import './globals';
+import './globals2';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import App from './App';
-import reportWebVitals from './reportWebVitals';
-import {DataClientContext} from "./data/ReactUtils";
-import DataClient from "./data/DataClient";
-import RestClient, {getRestUrl} from "./data/RestClient";
-import {getWebSocketUrl, WebSocketClient} from "./data/WebSocketClient";
-import {Config, ConfigContext} from "./contexts/Config";
+import "./plugins/GlobalSetup";
+import "buildbot-plugin-support";
+import {App} from './App';
+import {
+  DataClient,
+  DataClientContext,
+  RestClient,
+  WebSocketClient,
+  getRestUrl,
+  getWebSocketUrl,
+} from "buildbot-data-js";
+import {Config, ConfigContext, TimeContext, TimeStore} from "buildbot-ui";
 import {HashRouter} from "react-router-dom";
-import SidebarStore from "./stores/SidebarStore";
+import {SidebarStore} from "./stores/SidebarStore";
 import { StoresContext } from './contexts/Stores';
-import TopbarStore from "./stores/TopbarStore";
-import TopbarActionsStore from "./stores/TopbarActionsStore";
+import {TopbarStore} from "./stores/TopbarStore";
+import {TopbarActionsStore} from "./stores/TopbarActionsStore";
 import {globalSettings} from "./plugins/GlobalSettings";
-import {TimeContext} from "./contexts/Time";
-import TimeStore from "./stores/TimeStore";
 import moment from "moment";
 import axios from "axios";
 
@@ -40,6 +45,20 @@ const doRender = (buildbotFrontendConfig: Config) => {
   globalSettings.applyBuildbotConfig(buildbotFrontendConfig);
   globalSettings.load();
 
+  for (const pluginKey in buildbotFrontendConfig.plugins) {
+    // TODO: in production this could be added to the document by buildbot backend
+    const pluginScript = document.createElement('script');
+    pluginScript.type = 'text/javascript';
+    pluginScript.src = `/plugins/${pluginKey}.js`;
+    document.head.appendChild(pluginScript);
+
+    const pluginCss = document.createElement('link');
+    pluginCss.rel = 'stylesheet';
+    pluginCss.type = 'text/css';
+    pluginCss.href = `/plugins/${pluginKey}.css`;
+    document.head.appendChild(pluginCss);
+  }
+
   root.render(
     <DataClientContext.Provider value={dataClient}>
       <ConfigContext.Provider value={buildbotFrontendConfig}>
@@ -57,11 +76,6 @@ const doRender = (buildbotFrontendConfig: Config) => {
       </ConfigContext.Provider>
     </DataClientContext.Provider>
   );
-
-  // If you want to start measuring performance in your app, pass a function
-  // to log results (for example: reportWebVitals(console.log))
-  // or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
-  reportWebVitals();
 };
 
 const windowAny: any = window;

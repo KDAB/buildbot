@@ -17,23 +17,27 @@
 
 import {observer} from "mobx-react";
 import {useContext, useState} from "react";
-import {useDataAccessor, useDataApiQuery} from "../../data/ReactUtils";
-import {globalRoutes} from "../../plugins/GlobalRoutes";
-import {Build} from "../../data/classes/Build";
-import {Builder} from "../../data/classes/Builder";
+import {buildbotSetupPlugin} from "buildbot-plugin-support";
+import {
+  Build,
+  Builder,
+  Buildrequest,
+  DataCollection,
+  Forcescheduler,
+  useDataAccessor,
+  useDataApiQuery
+} from "buildbot-data-js";
 import {useTopbarItems} from "../../stores/TopbarStore";
 import {StoresContext} from "../../contexts/Stores";
-import {Buildrequest} from "../../data/classes/Buildrequest";
-import BuildsTable from "../../components/BuildsTable/BuildsTable";
-import BuildRequestsTable from "../../components/BuildrequestsTable/BuildrequestsTable";
-import {Forcescheduler} from "../../data/classes/Forcescheduler";
+import {BuildsTable} from "../../components/BuildsTable/BuildsTable";
+import {BuildRequestsTable} from "../../components/BuildrequestsTable/BuildrequestsTable";
 import {TopbarAction} from "../../components/TopbarActions/TopbarActions";
 import {useTopbarActions} from "../../stores/TopbarActionsStore";
 import {useNavigate, useParams} from "react-router-dom";
-import DataCollection from "../../data/DataCollection";
-import AlertNotification from "../../components/AlertNotification/AlertNotification";
-import ForceBuildModal from "../../components/ForceBuildModal/ForceBuildModal";
-import TableHeading from "../../components/TableHeading/TableHeading";
+import {AlertNotification} from "../../components/AlertNotification/AlertNotification";
+import {ForceBuildModal} from "../../components/ForceBuildModal/ForceBuildModal";
+import {TableHeading} from "../../components/TableHeading/TableHeading";
+import {FaStop, FaSpinner} from "react-icons/fa";
 
 const anyCancellableBuilds = (builds: DataCollection<Build>,
                               buildrequests: DataCollection<Buildrequest>) => {
@@ -63,14 +67,14 @@ const buildTopbarActions = (builds: DataCollection<Build>,
     if (isCancelling) {
       actions.push({
         caption: "Cancelling...",
-        icon: "spinner fa-spin",
+        icon: <FaSpinner/>,
         action: cancelWholeQueue
       });
     } else {
       actions.push({
         caption: "Cancel whole queue",
         variant: "danger",
-        icon: "stop",
+        icon: <FaStop/>,
         action: cancelWholeQueue
       });
     }
@@ -87,7 +91,7 @@ const buildTopbarActions = (builds: DataCollection<Build>,
   return actions;
 }
 
-const BuilderView = observer(() => {
+export const BuilderView = observer(() => {
   const builderid = Number.parseInt(useParams<"builderid">().builderid ?? "");
   const navigate = useNavigate();
 
@@ -192,10 +196,10 @@ const BuilderView = observer(() => {
   // TODO: display more than 100 builds
 });
 
-globalRoutes.addRoute({
-  route: "builders/:builderid",
-  group: null,
-  element: () => <BuilderView/>,
+buildbotSetupPlugin((reg) => {
+  reg.registerRoute({
+    route: "builders/:builderid",
+      group: null,
+      element: () => <BuilderView/>,
+  });
 });
-
-export default BuilderView;

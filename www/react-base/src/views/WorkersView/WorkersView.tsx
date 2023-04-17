@@ -17,17 +17,18 @@
 
 import {observer} from "mobx-react";
 import {useState} from "react";
-import WorkerActionsModal from "../../components/WorkerActionsModal/WorkerActionsModal";
-import {globalMenuSettings} from "../../plugins/GlobalMenuSettings";
-import {globalRoutes} from "../../plugins/GlobalRoutes";
-import {useDataAccessor, useDataApiQuery} from "../../data/ReactUtils";
-import {globalSettings} from "../../plugins/GlobalSettings";
-import {Builder} from "../../data/classes/Builder";
-import {Master} from "../../data/classes/Master";
-import {Worker} from "../../data/classes/Worker";
-import {Build} from "../../data/classes/Build";
-import DataCollection from "../../data/DataCollection";
-import WorkersTable from "../../components/WorkersTable/WorkersTable";
+import {buildbotGetSettings, buildbotSetupPlugin} from "buildbot-plugin-support";
+import {
+  Build,
+  Builder,
+  DataCollection,
+  Master,
+  Worker,
+  useDataAccessor,
+  useDataApiQuery
+} from "buildbot-data-js";
+import {WorkerActionsModal} from "../../components/WorkerActionsModal/WorkerActionsModal";
+import {WorkersTable} from "../../components/WorkersTable/WorkersTable";
 
 const isWorkerFiltered = (worker: Worker, showOldWorkers: boolean) => {
   if (showOldWorkers) {
@@ -68,10 +69,10 @@ const getBuildsForWorkerMap = (workersQuery: DataCollection<Worker>,
   return map;
 }
 
-const WorkersView = observer(() => {
+export const WorkersView = observer(() => {
   const accessor = useDataAccessor([]);
 
-  const showOldWorkers = globalSettings.getBooleanSetting("Workers.show_old_workers");
+  const showOldWorkers = buildbotGetSettings().getBooleanSetting("Workers.show_old_workers");
 
   const workersQuery = useDataApiQuery(() => Worker.getAll(accessor, {query: {order: 'name'}}));
   const buildersQuery = useDataApiQuery(() => Builder.getAll(accessor));
@@ -106,30 +107,29 @@ const WorkersView = observer(() => {
   );
 });
 
-globalMenuSettings.addGroup({
-  name: 'workers',
-  parentName: 'builds',
-  caption: 'Workers',
-  icon: null,
-  order: null,
-  route: '/workers',
-});
+buildbotSetupPlugin((reg) => {
+  reg.registerMenuGroup({
+    name: 'workers',
+    parentName: 'builds',
+    caption: 'Workers',
+    order: null,
+    route: '/workers',
+  });
 
-globalRoutes.addRoute({
-  route: "workers",
-  group: "workers",
-  element: () => <WorkersView/>,
-});
+  reg.registerRoute({
+    route: "workers",
+    group: "workers",
+    element: () => <WorkersView/>,
+  });
 
-globalSettings.addGroup({
-  name: 'Workers',
-  caption: 'Workers page related settings',
-  items: [{
+  reg.registerSettingGroup({
+    name: 'Workers',
+    caption: 'Workers page related settings',
+    items: [{
       type: 'boolean',
       name: 'show_old_workers',
       caption: 'Show old workers',
       defaultValue: false
     }]
   });
-
-export default WorkersView;
+});

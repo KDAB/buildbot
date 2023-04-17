@@ -18,22 +18,29 @@
 import './BuildsTable.scss';
 import {observer} from "mobx-react";
 import {Table} from "react-bootstrap";
-import {Builder} from "../../data/classes/Builder";
-import {Build} from "../../data/classes/Build";
-import {dateFormat, durationFormat, durationFromNowFormat, useCurrentTime} from "../../util/Moment";
-import DataCollection from "../../data/DataCollection";
+import {
+  Build,
+  Builder,
+  DataCollection,
+  getPropertyValueArrayOrEmpty,
+  getPropertyValueOrDefault
+} from "buildbot-data-js";
+import {
+  BuildLinkWithSummaryTooltip,
+  dateFormat,
+  durationFormat,
+  durationFromNowFormat,
+  useCurrentTime
+} from "buildbot-ui";
 import {Link} from "react-router-dom";
-import {getPropertyValueArrayOrEmpty, getPropertyValueOrDefault} from "../../util/Properties";
-import BuildLinkWithSummaryTooltip
-  from "../BuildLinkWithSummaryTooltip/BuildLinkWithSummaryTooltip";
-import TableHeading from "../TableHeading/TableHeading";
+import {TableHeading} from "../TableHeading/TableHeading";
 
 type BuildsTableProps = {
   builds: DataCollection<Build>;
   builders: DataCollection<Builder> | null;
 }
 
-const BuildsTable = observer(({builds, builders}: BuildsTableProps) => {
+export const BuildsTable = observer(({builds, builders}: BuildsTableProps) => {
   const now = useCurrentTime();
   const sortedBuilds = builds.array.slice().sort((a, b) => b.started_at - a.started_at);
 
@@ -109,5 +116,3 @@ const BuildsTable = observer(({builds, builders}: BuildsTableProps) => {
     </div>
   );
 });
-
-export default BuildsTable;
