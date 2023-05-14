@@ -14,12 +14,19 @@
 # Copyright Buildbot Team Members
 
 
-from twisted.trial import unittest
+from buildbot import util
+from buildbot.config.checks import check_param_str
+from buildbot.config.checks import check_param_str_none
 
-from buildbot.util import sautils
 
+class Project(util.ComparableMixin):
 
-class SAVersion(unittest.TestCase):
+    compare_attls = ("name", "slug", "description")
 
-    def test_sa_version(self):
-        self.assertTrue(sautils.sa_version() > (0, 5, 0))
+    def __init__(self, name, slug=None, description=None):
+        if slug is None:
+            slug = name
+
+        self.name = check_param_str(name, self.__class__, "name")
+        self.slug = check_param_str(slug, self.__class__, "slug")
+        self.description = check_param_str_none(description, self.__class__, "description")
