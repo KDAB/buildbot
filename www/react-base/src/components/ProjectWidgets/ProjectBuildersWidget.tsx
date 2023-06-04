@@ -15,6 +15,7 @@
   Copyright Buildbot Team Members
 */
 
+import "./ProjectBuildersWidget.scss";
 import {observer} from "mobx-react";
 import {Card} from "react-bootstrap";
 import {
@@ -68,14 +69,17 @@ export const ProjectBuildersWidget = observer(({projectid, filterManager}: Proje
   }).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <Card>
+    <Card className="bb-project-builders-widget">
       <Card.Body>
+        <h5>Builders</h5>
         <form role="search" style={{width: "150px"}}>
           <input type="text" value={builderNameFilter}
                  onChange={e => setBuilderNameFilter(e.target.value)}
                  placeholder="Search for builders" className="bb-builders-view-form-control"/>
         </form>
-        <BuildersTable builders={filteredBuilders} allWorkers={workers} filterManager={filterManager}/>
+        <BuildersTable builders={filteredBuilders} allWorkers={workers}
+                       isLoading={!builders.isResolved() || !workers.isResolved()}
+                       filterManager={filterManager}/>
         <div>
           <SettingCheckbox value={showOldBuilders} label="Show old builders"
                            settingSelector="Builders.show_old_builders"/>
