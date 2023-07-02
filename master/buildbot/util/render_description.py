@@ -14,6 +14,10 @@
 # Copyright Buildbot Team Members
 
 
-def patch_all():
-    from buildbot_worker.monkeypatches import testcase_assert
-    testcase_assert.patch()
+def render_description(description, format):
+    if format is None:
+        return None
+    if format == "markdown":
+        import markdown
+        return markdown.markdown(description)
+    raise Exception(f"Unsupported description format {format}")

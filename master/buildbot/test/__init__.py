@@ -34,7 +34,7 @@ except ImportError as e:
                       "try 'pip install mock'") from e
 
 # apply the same patches the buildmaster does when it starts
-monkeypatches.patch_all(for_tests=True)
+monkeypatches.patch_all()
 
 # enable deprecation warnings
 warnings.filterwarnings('always', category=DeprecationWarning)
@@ -144,4 +144,8 @@ warnings.filterwarnings('ignore', ".*'urllib3.contrib.pyopenssl' module is depre
 
 # pipes is still used in astroid and buildbot_worker in default installation
 warnings.filterwarnings('ignore', "'pipes' is deprecated and slated for removal in Python 3.13",
+                        category=DeprecationWarning)
+
+# shown on Python 3.7 on Windows
+warnings.filterwarnings('ignore', "SelectableGroups dict interface is deprecated. Use select.",
                         category=DeprecationWarning)

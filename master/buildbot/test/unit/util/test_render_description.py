@@ -13,7 +13,20 @@
 #
 # Copyright Buildbot Team Members
 
+from twisted.trial import unittest
 
-def patch_all():
-    from buildbot_worker.monkeypatches import testcase_assert
-    testcase_assert.patch()
+from buildbot.util.render_description import render_description
+
+
+class TestRaml(unittest.TestCase):
+
+    def test_plain(self):
+        self.assertIsNone(render_description("description", None))
+
+    def test_unknown(self):
+        with self.assertRaises(Exception):
+            render_description("description", "unknown")
+
+    def test_markdown(self):
+        self.assertEqual(render_description("# description\ntext", "markdown"),
+                         "<h1>description</h1>\n<p>text</p>")

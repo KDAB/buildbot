@@ -14,6 +14,14 @@
 # Copyright Buildbot Team Members
 
 
-def patch_all():
-    from buildbot_worker.monkeypatches import testcase_assert
-    testcase_assert.patch()
+from twisted.trial import unittest
+
+from buildbot.process.project import Project
+from buildbot.test.util.config import ConfigErrorsMixin
+
+
+class ProjectConfigTests(ConfigErrorsMixin, unittest.TestCase):
+
+    def test_description_wrong_format(self):
+        with self.assertRaisesConfigError("project description format must be None"):
+            Project(name="a", description_format="unknown")
