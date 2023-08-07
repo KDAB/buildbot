@@ -14,8 +14,7 @@
 # Copyright Buildbot Team Members
 
 import re
-
-import mock
+from unittest import mock
 
 from twisted.internet import defer
 from twisted.internet import reactor
@@ -223,8 +222,11 @@ class TestContact(ContactMixin, unittest.TestCase):
         self.patch_send()
         yield self.do_test_command('notify', args='on worker')
         missing_worker = self.contact.channel.subscribed[2].callback
-        missing_worker((None, None, 'missing'), dict(workerid=1, name="work",
-                                                     last_connection="sometime"))
+        missing_worker((None, None, 'missing'), {
+            "workerid": 1,
+            "name": 'work',
+            "last_connection": 'sometime'
+        })
         self.assertEquals(self.sent[1], "Worker `work` is missing. It was seen last on sometime.")
         self.assertIn(1, self.contact.channel.missing_workers)
 
@@ -234,8 +236,11 @@ class TestContact(ContactMixin, unittest.TestCase):
         yield self.do_test_command('notify', args='on worker')
         self.contact.channel.missing_workers.add(1)
         missing_worker = self.contact.channel.subscribed[2].callback
-        missing_worker((None, None, 'connected'), dict(workerid=1, name="work",
-                                                       last_connection="sometime"))
+        missing_worker((None, None, 'connected'), {
+            "workerid": 1,
+            "name": 'work',
+            "last_connection": 'sometime'
+        })
         self.assertEquals(self.sent[1], "Worker `work` is back online.")
         self.assertNotIn(1, self.contact.channel.missing_workers)
 
@@ -567,22 +572,21 @@ class TestContact(ContactMixin, unittest.TestCase):
     def sendBuildFinishedMessage(self, buildid, results=0):
         self.master.db.builds.finishBuild(buildid=buildid, results=SUCCESS)
         build = yield self.master.db.builds.getBuild(buildid)
-        self.master.mq.callConsumer(('builds', str(buildid), 'complete'),
-                                    dict(
-                                        buildid=buildid,
-                                        number=build['number'],
-                                        builderid=build['builderid'],
-                                        buildrequestid=build['buildrequestid'],
-                                        workerid=build['workerid'],
-                                        masterid=build['masterid'],
-                                        started_at=datetime2epoch(
-                                            build['started_at']),
-                                        complete=True,
-                                        complete_at=datetime2epoch(
-                                            build['complete_at']),
-                                        state_string='',
-                                        results=results,
-        ))
+        self.master.mq.callConsumer(('builds', str(buildid), 'complete'), {
+            "buildid": buildid,
+            "number": build['number'],
+            "builderid": build['builderid'],
+            "buildrequestid": build['buildrequestid'],
+            "workerid": build['workerid'],
+            "masterid": build['masterid'],
+            "started_at": datetime2epoch(
+                build['started_at']),
+            "complete": True,
+            "complete_at": datetime2epoch(
+                build['complete_at']),
+            "state_string": '',
+            "results": results,
+        })
 
     @defer.inlineCallbacks
     def test_command_stop(self):

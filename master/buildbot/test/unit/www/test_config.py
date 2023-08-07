@@ -15,8 +15,7 @@
 
 import json
 import os
-
-import mock
+from unittest import mock
 
 from twisted.internet import defer
 from twisted.python import log
@@ -107,7 +106,7 @@ class IndexResource(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
         }
         self.assertEqual(res, exp)
 
-        master.session.user_info = dict(name="me", email="me@me.org")
+        master.session.user_info = {"name": 'me', "email": 'me@me.org'}
         res = yield self.render_resource(rsrc, b'/')
         res = json.loads(bytes2unicode(res))
         exp = {
@@ -191,12 +190,12 @@ class IndexResourceReactTest(TestReactorMixin, www.WwwTestMixin, unittest.TestCa
 
         first_line = self.find_matching_line(lines, '<script id="bb-config">', 0)
         if first_line is None:
-            raise Exception("Could not find first config line")
+            raise RuntimeError("Could not find first config line")
         first_line += 1
 
         last_line = self.find_matching_line(lines, '</script>', first_line)
         if last_line is None:
-            raise Exception("Could not find last config line")
+            raise RuntimeError("Could not find last config line")
 
         config_json = '\n'.join(lines[first_line:last_line])
         config_json = config_json.replace('window.buildbotFrontendConfig = ', '').strip()

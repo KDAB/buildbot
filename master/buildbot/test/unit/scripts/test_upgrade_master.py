@@ -16,8 +16,7 @@
 import os
 import sys
 from io import StringIO
-
-import mock
+from unittest import mock
 
 from twisted.internet import defer
 from twisted.trial import unittest
@@ -35,7 +34,7 @@ from buildbot.test.util import www
 
 
 def mkconfig(**kwargs):
-    config = dict(quiet=False, replace=False, basedir='test')
+    config = {"quiet": False, "replace": False, "basedir": 'test'}
     config.update(kwargs)
     return config
 

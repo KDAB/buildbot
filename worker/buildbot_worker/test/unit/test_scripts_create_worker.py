@@ -18,12 +18,15 @@ from __future__ import print_function
 
 import os
 
-import mock
-
 from twisted.trial import unittest
 
 from buildbot_worker.scripts import create_worker
 from buildbot_worker.test.util import misc
+
+try:
+    from unittest import mock
+except ImportError:
+    import mock
 
 
 def _regexp_path(name, *names):
@@ -583,6 +586,7 @@ class TestCreateWorker(misc.StdoutAssertionsMixin, unittest.TestCase):
         # import modules for mocking
         import twisted.application.service
         import twisted.python.logfile
+
         import buildbot_worker.bot
 
         # mock service.Application class

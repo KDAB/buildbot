@@ -28,8 +28,8 @@ class ShellMaster(RunMasterBase):
     def create_config(self):
         c = {}
         from buildbot.config import BuilderConfig
-        from buildbot.process.factory import BuildFactory
         from buildbot.plugins import steps
+        from buildbot.process.factory import BuildFactory
 
         c['schedulers'] = [
             schedulers.AnyBranchScheduler(
@@ -54,14 +54,15 @@ class ShellMaster(RunMasterBase):
         cfg = self.create_config()
         yield self.setup_master(cfg)
 
-        change = dict(branch="master",
-                      files=["foo.c"],
-                      author="me@foo.com",
-                      committer="me@foo.com",
-                      comments="good stuff",
-                      revision="HEAD",
-                      project="none"
-                      )
+        change = {
+            "branch": "master",
+            "files": ["foo.c"],
+            "author": "me@foo.com",
+            "committer": "me@foo.com",
+            "comments": "good stuff",
+            "revision": "HEAD",
+            "project": "none"
+        }
         # switch the configuration of the scheduler, and make sure the correct builder is run
         cfg['schedulers'] = [
             schedulers.AnyBranchScheduler(

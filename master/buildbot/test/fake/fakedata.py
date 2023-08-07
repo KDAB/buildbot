@@ -138,7 +138,7 @@ class FakeUpdates(service.AsyncService):
     @defer.inlineCallbacks
     def addBuildset(self, waited_for, scheduler=None, sourcestamps=None, reason='',
                     properties=None, builderids=None, external_idstring=None,
-                    parent_buildid=None, parent_relationship=None):
+                    parent_buildid=None, parent_relationship=None, priority=0):
         if sourcestamps is None:
             sourcestamps = []
         if properties is None:
@@ -389,8 +389,7 @@ class FakeUpdates(service.AsyncService):
         validation.verifyType(self.testcase, 'type', type,
                               validation.IdentifierValidator(1))
         logid = max([0] + list(self.logs)) + 1
-        self.logs[logid] = dict(
-            name=name, type=type, content=[], finished=False)
+        self.logs[logid] = {"name": name, "type": type, "content": [], "finished": False}
         return defer.succeed(logid)
 
     def finishLog(self, logid):

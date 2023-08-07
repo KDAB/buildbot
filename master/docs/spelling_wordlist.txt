@@ -450,7 +450,7 @@ Json
 jsonable
 JUnit
 kB
-Keepalive
+keepalive
 keepalives
 kerberos
 Kerberos
@@ -587,6 +587,7 @@ offline
 ok
 Ok
 online
+onlyIfChanged
 optimiselogs
 org
 os

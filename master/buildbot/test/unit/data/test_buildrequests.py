@@ -15,8 +15,7 @@
 
 
 import datetime
-
-import mock
+from unittest import mock
 
 from twisted.internet import defer
 from twisted.trial import unittest
@@ -323,7 +322,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin,
         yield self.doTestCallthrough('claimBuildRequests', claimBuildRequestsMock,
                                      self.rtype.claimBuildRequests,
                                      methodargs=[[44]],
-                                     methodkwargs=dict(claimed_at=self.CLAIMED_AT),
+                                     methodkwargs={"claimed_at": self.CLAIMED_AT},
                                      expectedRes=True,
                                      expectedException=None)
         msg = {
@@ -367,7 +366,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin,
         yield self.doTestCallthrough('claimBuildRequests', claimBuildRequestsMock,
                                      self.rtype.claimBuildRequests,
                                      methodargs=[[44]],
-                                     methodkwargs=dict(claimed_at=self.CLAIMED_AT),
+                                     methodkwargs={"claimed_at": self.CLAIMED_AT},
                                      expectedRes=False,
                                      expectedException=None)
         self.assertEqual(self.master.mq.productions, [])
@@ -379,7 +378,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin,
         yield self.doTestCallthrough('claimBuildRequests', claimBuildRequestsMock,
                                      self.rtype.claimBuildRequests,
                                      methodargs=[[44]],
-                                     methodkwargs=dict(claimed_at=self.CLAIMED_AT),
+                                     methodkwargs={"claimed_at": self.CLAIMED_AT},
                                      expectedRes=None,
                                      expectedException=self.dBLayerException)
         self.assertEqual(self.master.mq.productions, [])
@@ -476,7 +475,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin,
                                      completeBuildRequestsMock,
                                      self.rtype.completeBuildRequests,
                                      methodargs=[[46], 12],
-                                     methodkwargs=dict(complete_at=self.COMPLETE_AT),
+                                     methodkwargs={"complete_at": self.COMPLETE_AT},
                                      expectedRes=True,
                                      expectedException=None)
 
@@ -500,7 +499,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin,
                                      completeBuildRequestsMock,
                                      self.rtype.completeBuildRequests,
                                      methodargs=[[46], 12],
-                                     methodkwargs=dict(complete_at=self.COMPLETE_AT),
+                                     methodkwargs={"complete_at": self.COMPLETE_AT},
                                      expectedRes=False,
                                      expectedException=None)
 
@@ -512,7 +511,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin,
                                      completeBuildRequestsMock,
                                      self.rtype.completeBuildRequests,
                                      methodargs=[[46], 12],
-                                     methodkwargs=dict(complete_at=self.COMPLETE_AT),
+                                     methodkwargs={"complete_at": self.COMPLETE_AT},
                                      expectedRes=None,
                                      expectedException=self.dBLayerException)
 

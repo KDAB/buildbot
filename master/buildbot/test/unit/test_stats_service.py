@@ -14,7 +14,7 @@
 # Copyright Buildbot Team Members
 
 
-import mock
+from unittest import mock
 
 from twisted.internet import defer
 from twisted.trial import unittest
@@ -117,6 +117,7 @@ class TestInfluxDB(TestStatsServicesBase, logging.LoggingMixin):
         try:
             # Try to import
             import influxdb  # pylint: disable=import-outside-toplevel
+
             # consume it somehow to please pylint
             [influxdb]
         except ImportError:
@@ -206,19 +207,19 @@ class TestStatsServicesConsumers(TestBuildStepMixin, TestStatsServicesBase):
         yield self.stats_service.reconfigService([self.fake_storage_service])
 
     def get_dict(self, build):
-        return dict(
-            buildid=1,
-            number=build['number'],
-            builderid=build['builderid'],
-            buildrequestid=build['buildrequestid'],
-            workerid=build['workerid'],
-            masterid=build['masterid'],
-            started_at=build['started_at'],
-            complete=True,
-            complete_at=build['complete_at'],
-            state_string='',
-            results=0,
-        )
+        return {
+            "buildid": 1,
+            "number": build['number'],
+            "builderid": build['builderid'],
+            "buildrequestid": build['buildrequestid'],
+            "workerid": build['workerid'],
+            "masterid": build['masterid'],
+            "started_at": build['started_at'],
+            "complete": True,
+            "complete_at": build['complete_at'],
+            "state_string": '',
+            "results": 0,
+        }
 
     @defer.inlineCallbacks
     def end_build_call_consumers(self):

@@ -30,8 +30,8 @@ class CommandMixinMaster(RunMasterBase):
     def setup_config(self):
         c = {}
         from buildbot.config import BuilderConfig
-        from buildbot.process.factory import BuildFactory
         from buildbot.plugins import schedulers
+        from buildbot.process.factory import BuildFactory
 
         c['schedulers'] = [
             schedulers.AnyBranchScheduler(name="sched", builderNames=["testy"])
@@ -48,14 +48,15 @@ class CommandMixinMaster(RunMasterBase):
     def test_commandmixin(self):
         yield self.setup_config()
 
-        change = dict(branch="master",
-                      files=["foo.c"],
-                      author="me@foo.com",
-                      committer="me@foo.com",
-                      comments="good stuff",
-                      revision="HEAD",
-                      project="none"
-                      )
+        change = {
+            "branch": "master",
+            "files": ["foo.c"],
+            "author": "me@foo.com",
+            "committer": "me@foo.com",
+            "comments": "good stuff",
+            "revision": "HEAD",
+            "project": "none"
+        }
         build = yield self.doForceBuild(wantSteps=True, useChange=change,
                                         wantLogs=True)
         self.assertEqual(build['buildid'], 1)

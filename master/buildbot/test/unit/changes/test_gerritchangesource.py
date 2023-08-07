@@ -423,25 +423,28 @@ class TestGerritChangeSource(MasterRunProcessMixin, changesource.ChangeSourceMix
     def test_malformed_events_ignored(self):
         s = yield self.newChangeSource('somehost', 'someuser')
         # "change" not in event
-        yield s.lineReceived(json.dumps(dict(
-            type="patchset-created",
-            patchSet=dict(revision="abcdef", number="12")
-        )))
+        yield s.lineReceived(json.dumps({
+            "type": "patchset-created",
+            "patchSet": {"revision": 'abcdef', "number": '12'}
+        }))
         self.assertEqual(len(self.master.data.updates.changesAdded), 0)
 
         # "patchSet" not in event
-        yield s.lineReceived(json.dumps(dict(
-            type="patchset-created",
-            change=dict(
-                branch="br",
+        yield s.lineReceived(json.dumps({
+            "type": "patchset-created",
+            "change": {
+                "branch": "br",
                 # Note that this time "project" is a dictionary
-                project=dict(name="pr"),
-                number="4321",
-                owner=dict(name="Dustin", email="dustin@mozilla.com"),
-                url="http://buildbot.net",
-                subject="fix 1234"
-            ),
-        )))
+                "project": {"name": 'pr'},
+                "number": "4321",
+                "owner": {
+                    "name": 'Dustin',
+                    "email": 'dustin@mozilla.com'
+                },
+                "url": "http://buildbot.net",
+                "subject": "fix 1234"
+            },
+        }))
         self.assertEqual(len(self.master.data.updates.changesAdded), 0)
 
     change_merged_event = {
@@ -452,7 +455,8 @@ class TestGerritChangeSource(MasterRunProcessMixin, changesource.ChangeSourceMix
             "number": "4321",
             "owner": {"name": "Chuck", "email": "chuck@norris.com"},
             "url": "http://buildbot.net",
-            "subject": "fix 1234"},
+            "subject": "fix 1234"
+        },
         "patchSet": {"revision": "abcdefj", "number": "13"}
     }
 
@@ -493,8 +497,20 @@ class TestGerritChangeSource(MasterRunProcessMixin, changesource.ChangeSourceMix
     def test_startStreamProcess_bytes_output(self):
         s = yield self.newChangeSource('somehost', 'some_choosy_user', debug=True)
 
-        exp_argv = ['ssh', '-o', 'BatchMode=yes', 'some_choosy_user@somehost', '-p', '29418']
-        exp_argv += ['gerrit', 'stream-events']
+        exp_argv = [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+            "some_choosy_user@somehost",
+            "-p",
+            "29418",
+            "gerrit",
+            "stream-events",
+        ]
 
         def spawnProcess(pp, cmd, argv, env):
             self.assertEqual([cmd, argv], [exp_argv[0], exp_argv])
@@ -543,8 +559,23 @@ class TestGerritChangeSource(MasterRunProcessMixin, changesource.ChangeSourceMix
     def test_getFiles(self):
         s = yield self.newChangeSource('host', 'user', gerritport=2222)
         exp_argv = [
-            'ssh', '-o', 'BatchMode=yes', 'user@host', '-p', '2222',
-            'gerrit', 'query', '1000', '--format', 'JSON', '--files', '--patch-sets'
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+            "user@host",
+            "-p",
+            "2222",
+            "gerrit",
+            "query",
+            "1000",
+            "--format",
+            "JSON",
+            "--files",
+            "--patch-sets",
         ]
 
         self.expect_commands(
@@ -565,8 +596,27 @@ class TestGerritChangeSource(MasterRunProcessMixin, changesource.ChangeSourceMix
     @defer.inlineCallbacks
     def test_getFilesFromEvent(self):
         self.expect_commands(
-            ExpectMasterShell(['ssh', '-o', 'BatchMode=yes', 'user@host', '-p', '29418', 'gerrit',
-                          'query', '4321', '--format', 'JSON', '--files', '--patch-sets'])
+            ExpectMasterShell(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ServerAliveInterval=15",
+                    "-o",
+                    "ServerAliveCountMax=3",
+                    "user@host",
+                    "-p",
+                    "29418",
+                    "gerrit",
+                    "query",
+                    "4321",
+                    "--format",
+                    "JSON",
+                    "--files",
+                    "--patch-sets",
+                ]
+            )
             .stdout(self.query_files_success)
         )
 
@@ -645,25 +695,28 @@ class TestGerritEventLogPoller(changesource.ChangeSourceMixin,
             datetime.datetime.utcfromtimestamp(self.NOW_TIMESTAMP)
             - datetime.timedelta(days=30))
         self._http.expect(method='get', ep='/plugins/events-log/events/',
-                          params={'t1':
-                              thirty_days_ago.strftime("%Y-%m-%d %H:%M:%S")},
-                          content_json=dict(
-                              type="patchset-created",
-                              change=dict(
-                                  branch="master",
-                                  project="test",
-                                  number="4321",
-                                  owner=dict(name="owner owner",
-                                             email="owner@example.com"),
-                                  url="http://example.com/c/test/+/4321",
-                                  subject="change subject"
-                              ),
-                              eventCreatedOn=self.EVENT_TIMESTAMP,
-                              patchSet={
-                                  'revision': "29b73c3eb1aeaa9e6c7da520a940d60810e883db",
-                                  'number': "1",
-                                  'ref': 'refs/changes/21/4321/1'}
-                              ))
+            params={'t1': thirty_days_ago.strftime("%Y-%m-%d %H:%M:%S")},
+            content_json={
+                "type": "patchset-created",
+                "change": {
+                    "branch": "master",
+                    "project": "test",
+                    "number": "4321",
+                    "owner": {
+                        "name": 'owner owner',
+                        "email": 'owner@example.com'
+                    },
+                "url": "http://example.com/c/test/+/4321",
+                "subject": "change subject"
+                },
+                "eventCreatedOn": self.EVENT_TIMESTAMP,
+                "patchSet": {
+                    'revision': "29b73c3eb1aeaa9e6c7da520a940d60810e883db",
+                    'number': "1",
+                    'ref': 'refs/changes/21/4321/1'
+                }
+            }
+        )
 
         self._http.expect(
             method='get',
@@ -689,24 +742,25 @@ class TestGerritEventLogPoller(changesource.ChangeSourceMixin,
 
         # do a second poll, it should ask for the next events
         self._http.expect(method='get', ep='/plugins/events-log/events/',
-                          params={'t1': self.EVENT_FORMATTED},
-                          content_json=dict(
-                              type="patchset-created",
-                              change=dict(
-                                  branch="br",
-                                  project="pr",
-                                  number="4321",
-                                  owner=dict(name="Dustin",
-                                             email="dustin@mozilla.com"),
-                                  url="http://buildbot.net",
-                                  subject="fix 1234"
-                              ),
-                              eventCreatedOn=self.EVENT_TIMESTAMP + 1,
-                              patchSet={
-                                  'revision': "29b73c3eb1aeaa9e6c7da520a940d60810e883db",
-                                  'number': "1",
-                                  'ref': 'refs/changes/21/4321/1'}
-                              ))
+            params={'t1': self.EVENT_FORMATTED},
+            content_json={
+                "type": "patchset-created",
+                "change": {
+                    "branch": "br",
+                    "project": "pr",
+                    "number": "4321",
+                    "owner": {"name": 'Dustin', "email": 'dustin@mozilla.com'},
+                    "url": "http://buildbot.net",
+                    "subject": "fix 1234"
+                },
+                "eventCreatedOn": self.EVENT_TIMESTAMP + 1,
+                "patchSet": {
+                    'revision': "29b73c3eb1aeaa9e6c7da520a940d60810e883db",
+                    'number': "1",
+                    'ref': 'refs/changes/21/4321/1'
+                }
+            }
+        )
 
         self._http.expect(
             method='get',

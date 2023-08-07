@@ -22,7 +22,6 @@ from buildbot.util import identifiers
 
 
 class WorkersConnectorComponent(base.DBConnectorComponent):
-    # Documentation is in developer/database.rst
 
     def findWorkerId(self, name):
         tbl = self.db.model.workers
@@ -31,12 +30,8 @@ class WorkersConnectorComponent(base.DBConnectorComponent):
         return self.findSomethingId(
             tbl=tbl,
             whereclause=(tbl.c.name == name),
-            insert_values=dict(
-                name=name,
-                info={},
-                paused=0,
-                graceful=0,
-            ))
+            insert_values={"name": name, "info": {}, "paused": 0, "graceful": 0}
+        )
 
     def _deleteFromConfiguredWorkers_thd(self, conn, buildermasterids, workerid=None):
         cfg_tbl = self.db.model.configured_workers
@@ -220,7 +215,7 @@ class WorkersConnectorComponent(base.DBConnectorComponent):
                 pass
 
             bs_tbl = self.db.model.workers
-            q = bs_tbl.update(whereclause=(bs_tbl.c.id == workerid))
+            q = bs_tbl.update(whereclause=bs_tbl.c.id == workerid)
             conn.execute(q, info=workerinfo)
         return self.db.pool.do(thd)
 
@@ -237,6 +232,6 @@ class WorkersConnectorComponent(base.DBConnectorComponent):
     def setWorkerState(self, workerid, paused, graceful):
         def thd(conn):
             tbl = self.db.model.workers
-            q = tbl.update(whereclause=(tbl.c.id == workerid))
+            q = tbl.update(whereclause=tbl.c.id == workerid)
             conn.execute(q, paused=int(paused), graceful=int(graceful))
         return self.db.pool.do(thd)

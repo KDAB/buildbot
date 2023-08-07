@@ -42,21 +42,23 @@ expectedOutputRegex = \
 
 class TriggeringMaster(RunMasterBase):
 
-    change = dict(branch="master",
-                  files=["foo.c"],
-                  author="me@foo.com",
-                  committer="me@foo.com",
-                  comments="good stuff",
-                  revision="HEAD",
-                  project="none"
-                  )
+    change = {
+        "branch": "master",
+        "files": ["foo.c"],
+        "author": "me@foo.com",
+        "committer": "me@foo.com",
+        "comments": "good stuff",
+        "revision": "HEAD",
+        "project": "none"
+    }
 
     @defer.inlineCallbacks
     def setup_config(self, addFailure=False):
         c = {}
         from buildbot.config import BuilderConfig
+        from buildbot.plugins import schedulers
+        from buildbot.plugins import steps
         from buildbot.process.factory import BuildFactory
-        from buildbot.plugins import steps, schedulers
 
         c['schedulers'] = [
             schedulers.Triggerable(

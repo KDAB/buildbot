@@ -31,10 +31,7 @@ class BuildersConnectorComponent(base.DBConnectorComponent):
         return self.findSomethingId(
             tbl=tbl,
             whereclause=(tbl.c.name_hash == name_hash),
-            insert_values=dict(
-                name=name,
-                name_hash=name_hash,
-            ), autoCreate=autoCreate)
+            insert_values={"name": name, "name_hash": name_hash}, autoCreate=autoCreate)
 
     @defer.inlineCallbacks
     def updateBuilderInfo(self, builderid, description, description_format, description_html,
@@ -57,7 +54,7 @@ class BuildersConnectorComponent(base.DBConnectorComponent):
             transaction = conn.begin()
 
             q = builders_tbl.update(
-                whereclause=(builders_tbl.c.id == builderid))
+                whereclause=builders_tbl.c.id == builderid)
             conn.execute(q, description=description, description_format=description_format,
                          description_html=description_html, projectid=projectid).close()
             # remove previous builders_tags
@@ -66,9 +63,13 @@ class BuildersConnectorComponent(base.DBConnectorComponent):
 
             # add tag ids
             if tagsids:
-                conn.execute(builders_tags_tbl.insert(),
-                             [dict(builderid=builderid, tagid=tagid)
-                              for tagid in tagsids]).close()
+                conn.execute(builders_tags_tbl.insert(), [
+                    {
+                        "builderid": builderid,
+                        "tagid": tagid
+                    }
+                    for tagid in tagsids
+                ]).close()
 
             transaction.commit()
 
@@ -118,7 +119,7 @@ class BuildersConnectorComponent(base.DBConnectorComponent):
             if masterid is not None:
                 limiting_bm_tbl = bm_tbl.alias('limiting_bm')
                 j = j.join(limiting_bm_tbl,
-                           onclause=(bldr_tbl.c.id == limiting_bm_tbl.c.builderid))
+                           onclause=bldr_tbl.c.id == limiting_bm_tbl.c.builderid)
             q = sa.select(
                 [
                     bldr_tbl.c.id,

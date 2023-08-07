@@ -399,7 +399,7 @@ class Git(Source, GitStepMixin):
             else:
                 log.msg("Git versions < 1.7.2 don't support progress")
         if self.retry:
-            abandonOnFailure = (self.retry[1] <= 0)
+            abandonOnFailure = self.retry[1] <= 0
         else:
             abandonOnFailure = True
         # If it's a shallow clone abort build step
@@ -442,6 +442,8 @@ class Git(Source, GitStepMixin):
             cmdArgs = ["submodule", "update", "--init", "--recursive"]
             if self.remoteSubmodules:
                 cmdArgs.append("--remote")
+            if self.shallow:
+                cmdArgs.extend(["--depth", str(int(shallowClone))])
             res = yield self._dovccmd(cmdArgs, shallowClone)
 
         return res

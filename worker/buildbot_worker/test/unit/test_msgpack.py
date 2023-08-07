@@ -20,8 +20,6 @@ import time
 
 from parameterized import parameterized
 
-import mock
-
 from twisted.application import service
 from twisted.internet import defer
 from twisted.internet import reactor
@@ -33,12 +31,18 @@ from buildbot_worker import util
 from buildbot_worker.test.fake.runprocess import Expect
 from buildbot_worker.test.util import command
 
+try:
+    from unittest import mock
+except ImportError:
+    import mock
+
 if sys.version_info >= (3, 6):
     import msgpack
+
     # pylint: disable=ungrouped-imports
+    from buildbot_worker.msgpack import BuildbotWebSocketClientProtocol
     from buildbot_worker.msgpack import decode_http_authorization_header
     from buildbot_worker.msgpack import encode_http_authorization_header
-    from buildbot_worker.msgpack import BuildbotWebSocketClientProtocol
     from buildbot_worker.pb import BotMsgpack  # pylint: disable=ungrouped-imports
 
 

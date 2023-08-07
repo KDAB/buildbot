@@ -35,8 +35,8 @@ class ReporterBase(service.BuildbotService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.generators = None
-        self._event_consumers = []
-        self._pending_got_event_call = None
+        self._event_consumers = {}
+        self._pending_got_event_calls = {}
 
     def checkConfig(self, generators):
         if not isinstance(generators, list):
@@ -52,33 +52,34 @@ class ReporterBase(service.BuildbotService):
 
     @defer.inlineCallbacks
     def reconfigService(self, generators):
-
-        for consumer in self._event_consumers:
-            yield consumer.stopConsuming()
-        self._event_consumers = []
-
-        if self._pending_got_event_call is not None:
-            yield self._pending_got_event_call
-        self._pending_got_event_call = None
-
         self.generators = generators
 
         wanted_event_keys = set()
         for g in self.generators:
             wanted_event_keys.update(g.wanted_event_keys)
 
+        # Remove consumers for keys that are no longer wanted
+        for key in list(self._event_consumers.keys()):
+            if key not in wanted_event_keys:
+                yield self._event_consumers[key].stopConsuming()
+                del self._event_consumers[key]
+
+        # Add consumers for new keys
         for key in sorted(list(wanted_event_keys)):
-            consumer = yield self.master.mq.startConsuming(self._got_event, key)
-            self._event_consumers.append(consumer)
+            if key not in self._event_consumers:
+                self._event_consumers[key] = \
+                    yield self.master.mq.startConsuming(self._got_event, key)
 
     @defer.inlineCallbacks
     def stopService(self):
-        for consumer in self._event_consumers:
+        for consumer in self._event_consumers.values():
             yield consumer.stopConsuming()
-        self._event_consumers = []
-        if self._pending_got_event_call is not None:
-            yield self._pending_got_event_call
-        self._pending_got_event_call = None
+        self._event_consumers = {}
+
+        for pending_call in list(self._pending_got_event_calls.values()):
+            yield pending_call
+        self._pending_got_event_calls = {}
+
         yield super().stopService()
 
     def _does_generator_want_key(self, generator, key):
@@ -87,17 +88,22 @@ class ReporterBase(service.BuildbotService):
                 return True
         return False
 
+    def _get_chain_key_for_event(self, key, msg):
+        if key[0] in ["builds", "buildrequests"]:
+            return ("buildrequestid", msg["buildrequestid"])
+        return None
+
     @defer.inlineCallbacks
     def _got_event(self, key, msg):
-        pending_got_event_call = self._pending_got_event_call
-
-        # Mark this call as pending.
-        self._pending_got_event_call = d = defer.Deferred()
-
-        # Wait for previously pending call, if any, to ensure
-        # reports are sent out in the order events were queued.
-        if pending_got_event_call is not None:
-            yield pending_got_event_call
+        chain_key = self._get_chain_key_for_event(key, msg)
+        if chain_key is not None:
+            d = defer.Deferred()
+            pending_call = self._pending_got_event_calls.get(chain_key)
+            self._pending_got_event_calls[chain_key] = d
+            # Wait for previously pending call, if any, to ensure
+            # reports are sent out in the order events were queued.
+            if pending_call is not None:
+                yield pending_call
 
         try:
             reports = []
@@ -112,7 +118,10 @@ class ReporterBase(service.BuildbotService):
         except Exception as e:
             log.err(e, 'Got exception when handling reporter events')
 
-        d.callback(None)  # This event is now fully handled
+        if chain_key is not None:
+            if self._pending_got_event_calls.get(chain_key) == d:
+                del self._pending_got_event_calls[chain_key]
+            d.callback(None)  # This event is now fully handled
 
     def getResponsibleUsersForBuild(self, master, buildid):
         # Use library method but subclassers may want to override that

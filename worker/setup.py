@@ -31,9 +31,9 @@ try:
     # If setuptools is installed, then we'll add setuptools-specific arguments
     # to the setup args.
     import setuptools
+    from distutils.command.install_data import install_data
     from setuptools import setup
     from setuptools.command.sdist import sdist
-    from distutils.command.install_data import install_data
 except ImportError:
     setuptools = None
     from distutils.command.sdist import sdist
@@ -174,9 +174,13 @@ if setuptools is not None:
 
     # Unit test hard dependencies.
     test_deps = [
-        'mock',
         'psutil',
     ]
+    if sys.version_info < (3, 3):
+        # unittest.mock added in Python 3.3
+        test_deps += [
+            'mock',
+        ]
 
     setup_args['tests_require'] = test_deps
 

@@ -60,7 +60,7 @@ flake8:
 
 frontend_deps: $(VENV_NAME)
 	$(PIP) install -e pkg
-	$(PIP) install mock wheel buildbot
+	$(PIP) install wheel buildbot
 	cd www/build_common; $(YARN) install --pure-lockfile
 	for i in $(WWW_DEP_PKGS); \
 		do (cd $$i; $(YARN) install --pure-lockfile; $(YARN) run build); done
@@ -120,7 +120,9 @@ $(VENV_NAME):
 
 # helper for virtualenv creation
 virtualenv: $(VENV_NAME)   # usage: make virtualenv VENV_PY_VERSION=python3.4
-	$(PIP) install -r requirements-minimal.txt \
+	$(PIP) install -r requirements-ci.txt \
+		-r requirements-ciworker.txt \
+		-r requirements-cidocs.txt \
 		packaging towncrier
 	@echo now you can type following command  to activate your virtualenv
 	@echo . $(VENV_NAME)/bin/activate
