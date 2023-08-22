@@ -16,15 +16,14 @@
 */
 
 import './LogViewerText.scss'
-import {forwardRef, useEffect, useRef, useState} from 'react';
+import {forwardRef, useCallback, useMemo, useRef, useState} from 'react';
 import {generateStyleElement} from "../../util/AnsiEscapeCodes";
 import {observer} from "mobx-react";
 import {Log, useDataAccessor} from "buildbot-data-js";
-import {ListOnItemsRenderedProps} from 'react-window';
+import {FixedSizeList, ListOnItemsRenderedProps} from 'buildbot-ui';
 import AutoSizer, {Size} from "react-virtualized-auto-sizer";
 import {digitCount} from "../../util/Math";
 import {LogDownloadButton} from "../LogDownloadButton/LogDownloadButton";
-import {CustomFixedSizeList} from "./CustomFixedSizeList";
 import {LogSearchField} from "../LogSearchField/LogSearchField";
 import {LogTextManager} from "./LogTextManager";
 import {LogViewerTextLineRenderer} from "./LogViewerTextLineRenderer";
@@ -79,9 +78,9 @@ export const LogViewerText = observer(({log, downloadInitiateOverscanRowCount, d
   };
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const checkSelection = () => {
+  const checkSelection = useCallback(() => {
     manager.setIsSelectionActive(isSelectionActiveWithinElement(containerRef.current));
-  };
+  }, []);
 
   const getRangeToRenderOverride = (overscanStartIndex: number,
                                     overscanStopIndex: number,
@@ -103,7 +102,7 @@ export const LogViewerText = observer(({log, downloadInitiateOverscanRowCount, d
     manager.setSearchString(text === '' ? null : text);
   }
 
-  const listRef = useRef<CustomFixedSizeList>(null);
+  const listRef = useRef<FixedSizeList<any>>(null);
   const currentSearchResultLineRef = useRef<number>(-1);
   const currentSearchResultLine = manager.getCurrentSearchResultLine();
   if (currentSearchResultLineRef.current !== currentSearchResultLine && listRef.current !== null) {
@@ -114,6 +113,10 @@ export const LogViewerText = observer(({log, downloadInitiateOverscanRowCount, d
       return c + 1;
     });
   }
+
+  const outerElementType = useMemo(() => forwardRef<HTMLDivElement>((props, ref) => (
+    <div ref={ref} onMouseDown={checkSelection} onMouseUp={checkSelection} {...props}/>
+  )), []);
 
   const LogTextArea: React.FC<Size> = ({height, width}) => (
     <div className="bb-logviewer-text-area" ref={containerRef}>
@@ -127,7 +130,7 @@ export const LogViewerText = observer(({log, downloadInitiateOverscanRowCount, d
           <LogDownloadButton log={log}/>
         </div>
       </div>
-      <CustomFixedSizeList
+      <FixedSizeList
         className="bb-logviewer-text-area"
         ref={listRef}
         itemCount={log.num_lines}
@@ -136,16 +139,15 @@ export const LogViewerText = observer(({log, downloadInitiateOverscanRowCount, d
         width={width}
         itemSize={18}
         getRangeToRenderOverride={getRangeToRenderOverride}
-        outerElementType={forwardRef((props, ref) => (
-          <div ref={ref} onMouseDown={checkSelection} onMouseUp={checkSelection} {...props}/>
-        ))}
+        onCacheClear={() => manager.clearCache()}
+        outerElementType={outerElementType}
       >
         {({index, style}) => (
           LogViewerTextLineRenderer({manager: manager, logLineDigitCount: logLineDigitCount,
             style: style, index: index})
         )
         }
-      </CustomFixedSizeList>
+      </FixedSizeList>
     </div>
   );
 
