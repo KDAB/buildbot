@@ -33,7 +33,7 @@ def project_db_to_data(dbdict):
 
 class ProjectEndpoint(base.BuildNestingMixin, base.Endpoint):
 
-    isCollection = False
+    kind = base.EndpointKind.SINGLE
     pathPatterns = """
         /projects/n:projectid
         /projects/i:projectname
@@ -53,7 +53,7 @@ class ProjectEndpoint(base.BuildNestingMixin, base.Endpoint):
 
 class ProjectsEndpoint(base.Endpoint):
 
-    isCollection = True
+    kind = base.EndpointKind.COLLECTION
     rootLinkName = 'projects'
     pathPatterns = """
         /projects
@@ -61,7 +61,21 @@ class ProjectsEndpoint(base.Endpoint):
 
     @defer.inlineCallbacks
     def get(self, result_spec, kwargs):
-        dbdicts = yield self.master.db.projects.get_projects()
+        active = result_spec.popBooleanFilter("active")
+        if active is None:
+            dbdicts = yield self.master.db.projects.get_projects()
+        elif active:
+            dbdicts = yield self.master.db.projects.get_active_projects()
+        else:
+            # This is not optimized case which is assumed to be infrequently required
+            dbdicts_all = yield self.master.db.projects.get_projects()
+            dbdicts_active = yield self.master.db.projects.get_active_projects()
+            ids_active = set(dbdict["id"] for dbdict in dbdicts_active)
+            dbdicts = [
+                dbdict for dbdict in dbdicts_all
+                if dbdict["id"] not in ids_active
+            ]
+
         return [project_db_to_data(dbdict) for dbdict in dbdicts]
 
     def get_kwargs_from_graphql(self, parent, resolve_info, args):

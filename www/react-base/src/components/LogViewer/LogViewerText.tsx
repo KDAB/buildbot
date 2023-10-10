@@ -17,13 +17,14 @@
 
 import './LogViewerText.scss'
 import {forwardRef, useCallback, useMemo, useRef, useState} from 'react';
+import {useHotkeys} from "react-hotkeys-hook";
 import {generateStyleElement} from "../../util/AnsiEscapeCodes";
 import {observer} from "mobx-react";
 import {Log, useDataAccessor} from "buildbot-data-js";
 import {FixedSizeList, ListOnItemsRenderedProps} from 'buildbot-ui';
 import AutoSizer, {Size} from "react-virtualized-auto-sizer";
 import {digitCount} from "../../util/Math";
-import {LogDownloadButton} from "../LogDownloadButton/LogDownloadButton";
+import {LogDownloadButtons} from "../LogDownloadButtons/LogDownloadButtons";
 import {LogSearchField} from "../LogSearchField/LogSearchField";
 import {LogTextManager} from "./LogTextManager";
 import {LogViewerTextLineRenderer} from "./LogViewerTextLineRenderer";
@@ -114,6 +115,9 @@ export const LogViewerText = observer(({log, downloadInitiateOverscanRowCount, d
     });
   }
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useHotkeys('Ctrl+F', () => { searchInputRef.current?.focus(); }, {preventDefault: true});
+
   const outerElementType = useMemo(() => forwardRef<HTMLDivElement>((props, ref) => (
     <div ref={ref} onMouseDown={checkSelection} onMouseUp={checkSelection} {...props}/>
   )), []);
@@ -126,8 +130,9 @@ export const LogViewerText = observer(({log, downloadInitiateOverscanRowCount, d
                           totalResults={Math.max(manager.totalSearchResultCount, 0)}
                           onTextChanged={onSearchTextChanged}
                           onPrevClicked={() => manager.setPrevSearchResult()}
-                          onNextClicked={() => manager.setNextSearchResult()}/>
-          <LogDownloadButton log={log}/>
+                          onNextClicked={() => manager.setNextSearchResult()}
+                          inputRef={searchInputRef}/>
+          <LogDownloadButtons log={log}/>
         </div>
       </div>
       <FixedSizeList
