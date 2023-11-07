@@ -20,6 +20,8 @@ import ntpath
 import socket
 from io import BytesIO
 
+from packaging.version import parse as parse_version
+
 from twisted.internet import defer
 from twisted.internet import threads
 from twisted.python import log
@@ -33,14 +35,12 @@ from buildbot.worker import AbstractLatentWorker
 
 try:
     import docker
-    from docker import client
     from docker.errors import NotFound
-    _hush_pyflakes = [docker, client]
-    docker_py_version = float(docker.__version__.rsplit(".", 1)[0])
+    _hush_pyflakes = [docker]
+    docker_py_version = parse_version(docker.__version__)
 except ImportError:
     docker = None
-    client = None
-    docker_py_version = 0.0
+    docker_py_version = parse_version("0.0")
 
 
 def _handle_stream_line(line):
@@ -139,8 +139,8 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
 
         super().checkConfig(name, password, image, masterFQDN, **kwargs)
 
-        if not client:
-            config.error("The python module 'docker>=2.0' is needed to use a"
+        if docker_py_version < parse_version("4.0.0"):
+            config.error("The python module 'docker>=4.0' is needed to use a"
                          " DockerLatentWorker")
         if not image and not dockerfile:
             config.error("DockerLatentWorker: You need to specify at least"
@@ -219,11 +219,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
         return volume_list, volumes
 
     def _getDockerClient(self, client_args):
-        if 1.0 <= docker_py_version < 2.0:
-            docker_client = client.Client(**client_args)
-        else:
-            docker_client = client.APIClient(**client_args)
-        return docker_client
+        return docker.APIClient(**client_args)
 
     def renderWorkerProps(self, build):
         return build.render((self.docker_host, self.image, self.dockerfile,
@@ -313,7 +309,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
 
         volumes, binds = self._thd_parse_volumes(volumes)
         host_config['binds'] = binds
-        if docker_py_version >= 2.2 and 'init' not in host_config:
+        if 'init' not in host_config:
             host_config['init'] = True
         host_config = docker_client.create_host_config(**host_config)
 
@@ -360,6 +356,27 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
             del logs
         docker_client.close()
         return [instance['Id'], image]
+
+    def check_instance(self):
+        if self.instance is None:
+            return defer.succeed((True, ""))
+        return threads.deferToThread(
+            self._thd_check_instance,
+            self._curr_client_args
+        )
+
+    def _thd_check_instance(self, curr_client_args):
+        docker_client = self._getDockerClient(curr_client_args)
+        container_name = self.getContainerName()
+        instances = docker_client.containers(all=1, filters={"name": container_name})
+        container_name = f"/{container_name}"
+        for instance in instances:
+            if container_name not in instance["Names"]:
+                continue
+            if instance["State"] == "exited":
+                logs = docker_client.logs(instance['Id'], tail=100).decode("utf-8")
+                return (False, "logs: \n" + logs)
+        return (True, "")
 
     def stop_instance(self, fast=False):
         if self.instance is None:
