@@ -53,6 +53,7 @@ from buildbot.process.results import WARNINGS
 from buildbot.process.results import statusToString
 from buildbot.util import bytes2unicode
 from buildbot.util import debounce
+from buildbot.util import deferwaiter
 from buildbot.util import flatten
 from buildbot.util.test_result_submitter import TestResultSubmitter
 from buildbot.warnings import warn_deprecated
@@ -285,6 +286,7 @@ class BuildStep(results.ResultComputingConfigMixin,
         self.stepid = None
         self.results = None
         self._start_unhandled_deferreds = None
+        self._interrupt_deferwaiter = deferwaiter.DeferWaiter()
         self._test_result_submitters = {}
 
     def __new__(klass, *args, **kwargs):
@@ -433,47 +435,9 @@ class BuildStep(results.ResultComputingConfigMixin,
         self.remote = remote
 
         yield self.addStep()
-        self.locks = yield self.build.render(self.locks)
-
-        # convert all locks into their real form
-        botmaster = self.build.builder.botmaster
-        self.locks = yield botmaster.getLockFromLockAccesses(self.locks, self.build.config_version)
-
-        # then narrow WorkerLocks down to the worker that this build is being
-        # run on
-        self.locks = [(l.getLockForWorker(self.build.workerforbuilder.worker.workername),
-                       la)
-                      for l, la in self.locks]
-
-        for l, _ in self.locks:
-            if l in self.build.locks:
-                log.msg(f"Hey, lock {l} is claimed by both a Step ({self}) and the"
-                        f" parent Build ({self.build})")
-                raise RuntimeError("lock claimed by both Step and Build")
 
         try:
-            # set up locks
-            yield self.acquireLocks()
-
-            if self.stopped:
-                raise BuildStepCancelled
-
-            yield self.master.data.updates.set_step_locks_acquired_at(self.stepid)
-
-            # render renderables in parallel
-            renderables = []
-            accumulateClassList(self.__class__, 'renderables', renderables)
-
-            def setRenderable(res, attr):
-                setattr(self, attr, res)
-
-            dl = []
-            for renderable in renderables:
-                d = self.build.render(getattr(self, renderable))
-                d.addCallback(setRenderable, renderable)
-                dl.append(d)
-            yield defer.gatherResults(dl)
-            self.rendered = True
+            yield self._render_renderables()
             # we describe ourselves only when renderables are interpolated
             self.updateSummary()
 
@@ -483,8 +447,17 @@ class BuildStep(results.ResultComputingConfigMixin,
             else:
                 doStep = yield self.doStepIf(self)
 
-            # run -- or skip -- the step
             if doStep:
+                yield self._setup_locks()
+
+                # set up locks
+                yield self.acquireLocks()
+
+                if self.stopped:
+                    raise BuildStepCancelled
+
+                yield self.master.data.updates.set_step_locks_acquired_at(self.stepid)
+
                 yield self.addTestResultSets()
                 try:
                     self._running = True
@@ -552,12 +525,53 @@ class BuildStep(results.ResultComputingConfigMixin,
 
         return self.results
 
+    @defer.inlineCallbacks
+    def _setup_locks(self):
+
+        self.locks = yield self.build.render(self.locks)
+
+        # convert all locks into their real form
+        botmaster = self.build.builder.botmaster
+        self.locks = yield botmaster.getLockFromLockAccesses(self.locks, self.build.config_version)
+
+        # then narrow WorkerLocks down to the worker that this build is being
+        # run on
+        self.locks = [(l.getLockForWorker(self.build.workerforbuilder.worker.workername),
+                       la)
+                      for l, la in self.locks]
+
+        for l, _ in self.locks:
+            if l in self.build.locks:
+                log.msg(f"Hey, lock {l} is claimed by both a Step ({self}) and the"
+                        f" parent Build ({self.build})")
+                raise RuntimeError("lock claimed by both Step and Build")
+
+    @defer.inlineCallbacks
+    def _render_renderables(self):
+        # render renderables in parallel
+        renderables = []
+        accumulateClassList(self.__class__, 'renderables', renderables)
+
+        def setRenderable(res, attr):
+            setattr(self, attr, res)
+
+        dl = []
+        for renderable in renderables:
+            d = self.build.render(getattr(self, renderable))
+            d.addCallback(setRenderable, renderable)
+            dl.append(d)
+        yield defer.gatherResults(dl)
+        self.rendered = True
+
     def setBuildData(self, name, value, source):
         # returns a Deferred that yields nothing
         return self.master.data.updates.setBuildData(self.build.buildid, name, value, source)
 
     @defer.inlineCallbacks
     def _cleanup_logs(self):
+        # Wait until any in-progress interrupt() to finish (that function may add new logs)
+        yield self._interrupt_deferwaiter.wait()
+
         all_success = True
         not_finished_logs = [v for (k, v) in self.logs.items() if not v.finished]
         finish_logs = yield defer.DeferredList([v.finish() for v in not_finished_logs],
@@ -632,8 +646,13 @@ class BuildStep(results.ResultComputingConfigMixin,
         except Exception as e:
             log.err(e, 'while cancelling command')
 
-    @defer.inlineCallbacks
     def interrupt(self, reason):
+        # Note that this method may be run outside usual step lifecycle (e.g. after run() has
+        # already completed), so extra care needs to be taken to prevent race conditions.
+        return self._interrupt_deferwaiter.add(self._interrupt_impl(reason))
+
+    @defer.inlineCallbacks
+    def _interrupt_impl(self, reason):
         if self.stopped:
             # If we are in the process of interruption and connection is lost then we must tell
             # the command not to wait for the interruption to complete.
@@ -647,12 +666,8 @@ class BuildStep(results.ResultComputingConfigMixin,
                 lock.stopWaitingUntilAvailable(self, access, d)
             self._acquiringLocks = []
 
-        if self._waitingForLocks:
-            yield self.addCompleteLog(
-                'cancelled while waiting for locks', str(reason))
-        else:
-            yield self.addCompleteLog('cancelled', str(reason))
-
+        log_name = "cancelled while waiting for locks" if self._waitingForLocks else "cancelled"
+        yield self.addCompleteLog(log_name, str(reason))
         yield self._maybe_interrupt_cmd(reason)
 
     def releaseLocks(self):
