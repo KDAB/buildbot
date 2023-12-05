@@ -749,9 +749,6 @@ class BuildStep(results.ResultComputingConfigMixin,
         for lock, access in self._locks_to_acquire:
             if lock.isOwner(self, access):
                 lock.release(self, access)
-            else:
-                # This should only happen if we've been interrupted
-                assert self.stopped
 
     # utility methods that BuildSteps may find useful
 
