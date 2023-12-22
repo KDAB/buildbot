@@ -18,9 +18,6 @@
 # We can't put this method in utility modules, because they import dependency packages
 #
 
-from __future__ import division
-from __future__ import print_function
-
 import datetime
 import os
 import re
@@ -94,7 +91,7 @@ def getVersionFromArchiveId(git_archive_id='$Format:%ct %d$'):
 def getVersion(init_file):
     """
     Return BUILDBOT_VERSION environment variable, content of VERSION file, git
-    tag or 'latest'
+    tag or '0.0.0' meaning we could not find the version, but the output still has to be valid
     """
 
     try:
@@ -132,7 +129,7 @@ def getVersion(init_file):
         return mTimeVersion(init_file)
     except Exception:
         # bummer. lets report something
-        return "latest"
+        return "0.0.0"
 
 
 version = getVersion(__file__)

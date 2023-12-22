@@ -87,8 +87,8 @@ class BuildChooserBase:
                                                  [resultspec.Filter('claimed',
                                                                     'eq',
                                                                     [False])])
-            # sort by submitted_at, so the first is the oldest
-            brdicts.sort(key=lambda brd: brd['submitted_at'])
+            # sort by buildrequestid, so the first is the oldest
+            brdicts.sort(key=lambda brd: brd['buildrequestid'])
             self.unclaimedBrdicts = brdicts
         return self.unclaimedBrdicts
 
@@ -158,6 +158,8 @@ class BasicBuildChooser(BuildChooserBase):
         super().__init__(bldr, master)
 
         self.nextWorker = self.bldr.config.nextWorker
+        if not self.nextWorker:
+            self.nextWorker = self.master.config.select_next_worker
         if not self.nextWorker:
             self.nextWorker = lambda _, workers, __: random.choice(
                 workers) if workers else None

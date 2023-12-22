@@ -13,6 +13,9 @@
 #
 # Copyright Buildbot Team Members
 
+import base64
+from unittest import mock
+
 from twisted.internet import defer
 from twisted.trial import unittest
 
@@ -20,11 +23,10 @@ from buildbot.interfaces import LatentWorkerFailedToSubstantiate
 from buildbot.process.properties import Interpolate
 from buildbot.process.properties import Properties
 from buildbot.test.fake import fakemaster
+from buildbot.test.fake import httpclientservice as fakehttpclientservice
 from buildbot.test.fake.fakebuild import FakeBuildForRendering as FakeBuild
 from buildbot.test.fake.fakeprotocol import FakeTrivialConnection as FakeBot
-from buildbot.test.fake.kube import KubeClientService
 from buildbot.test.reactor import TestReactorMixin
-from buildbot.util.kubeclientservice import KubeError
 from buildbot.util.kubeclientservice import KubeHardcodedConfig
 from buildbot.worker import kubernetes
 
@@ -37,6 +39,26 @@ def mock_delete(*args):
     return defer.succeed(FakeResult())
 
 
+KUBE_CTL_PROXY_FAKE = """
+import time
+import sys
+
+print("Starting to serve on 127.0.0.1:" + sys.argv[2])
+sys.stdout.flush()
+time.sleep(1000)
+"""
+
+
+KUBE_CTL_PROXY_FAKE_ERROR = """
+import time
+import sys
+
+print("Issue with the config!", file=sys.stderr)
+sys.stderr.flush()
+sys.exit(1)
+"""
+
+
 class TestKubernetesWorker(TestReactorMixin, unittest.TestCase):
     worker = None
 
@@ -44,22 +66,65 @@ class TestKubernetesWorker(TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
 
     @defer.inlineCallbacks
-    def setupWorker(self, *args, **kwargs):
-        config = KubeHardcodedConfig(master_url="https://kube.example.com")
-        self.worker = worker = kubernetes.KubeLatentWorker(
-            *args, kube_config=config, **kwargs)
-        master = fakemaster.make_master(self, wantData=True)
-        self._kube = yield KubeClientService.getService(master, self, kube_config=config)
-        worker.setServiceParent(master)
-        yield master.startService()
+    def setupWorker(self, *args, config=None, **kwargs):
+        self.patch(kubernetes.KubeLatentWorker, "_generate_random_password", lambda _: "random_pw")
+
+        if config is None:
+            config = KubeHardcodedConfig(master_url="https://kube.example.com")
+
+        worker = kubernetes.KubeLatentWorker(
+            *args,
+            masterFQDN="buildbot-master",
+            kube_config=config,
+            **kwargs
+        )
+        self.master = fakemaster.make_master(self, wantData=True)
+        self._http = yield fakehttpclientservice.HTTPClientService.getService(
+            self.master,
+            self,
+            "https://kube.example.com"
+        )
+
+        yield worker.setServiceParent(self.master)
+        yield self.master.startService()
         self.assertTrue(config.running)
-
-        def cleanup():
-            self._kube.delete = mock_delete
-
-        self.addCleanup(master.stopService)
-        self.addCleanup(cleanup)
+        self.addCleanup(self.master.stopService)
         return worker
+
+    def get_expected_metadata(self):
+        return {
+            "name": "buildbot-worker-87de7e"
+        }
+
+    def get_expected_spec(self, image):
+        return {
+            "affinity": {},
+            "containers": [
+                {
+                    "name": "buildbot-worker-87de7e",
+                    "image": image,
+                    "env": [
+                        {
+                            "name": "BUILDMASTER", "value": "buildbot-master"
+                        },
+                        {
+                            "name": "WORKERNAME", "value": "worker"
+                        },
+                        {
+                            "name": "WORKERPASS", "value": "random_pw"
+                        },
+                        {
+                            "name": "BUILDMASTER_PORT", "value": "1234"
+                        }
+                    ],
+                    "resources": {},
+                    "volumeMounts": []
+                }
+            ],
+            "nodeSelector": {},
+            "restartPolicy": "Never",
+            "volumes": []
+        }
 
     def test_instantiate(self):
         worker = kubernetes.KubeLatentWorker('worker')
@@ -76,43 +141,133 @@ class TestKubernetesWorker(TestReactorMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_builds_may_be_incompatible(self):
-        yield self.setupWorker('worker')
+        worker = yield self.setupWorker('worker')
         # http is lazily created on worker substantiation
-        self.assertEqual(self.worker.builds_may_be_incompatible, True)
+        self.assertEqual(worker.builds_may_be_incompatible, True)
 
     @defer.inlineCallbacks
     def test_start_service(self):
-        yield self.setupWorker('worker')
+        worker = yield self.setupWorker('worker')
         # http is lazily created on worker substantiation
-        self.assertNotEqual(self.worker._kube, None)
+        self.assertNotEqual(worker._kube, None)
+
+    def expect_pod_delete_nonexisting(self):
+        self._http.expect(
+            "delete",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e",
+            params={"graceperiod": 0},
+            code=404,
+            content_json={"message": "Pod not found", "reason": "NotFound"}
+        )
+
+    def expect_pod_delete_existing(self, image):
+        self._http.expect(
+            "delete",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e",
+            params={"graceperiod": 0},
+            code=200,
+            content_json={
+                "kind": "Pod",
+                "metadata": self.get_expected_metadata(),
+                "spec": self.get_expected_spec(image)
+            }
+        )
+
+    def expect_pod_status_not_found(self):
+        self._http.expect(
+            "get",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e/status",
+            code=404,
+            content_json={"kind": "Status", "reason": "NotFound"}
+        )
+
+    def expect_pod_status_exists(self, image):
+        self._http.expect(
+            "get",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e/status",
+            code=200,
+            content_json={
+                "kind": "Pod",
+                "metadata": self.get_expected_metadata(),
+                "spec": self.get_expected_spec(image)
+            }
+        )
+
+    def expect_pod_startup(self, image):
+        self._http.expect(
+            "post",
+            "/api/v1/namespaces/default/pods",
+            json={
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": self.get_expected_metadata(),
+                "spec": self.get_expected_spec(image)
+            },
+            code=200,
+            content_json={
+                "kind": "Pod",
+                "metadata": self.get_expected_metadata(),
+                "spec": self.get_expected_spec(image)
+            }
+        )
+
+    def expect_pod_startup_error(self, image):
+        self._http.expect(
+            "post",
+            "/api/v1/namespaces/default/pods",
+            json={
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": self.get_expected_metadata(),
+                "spec": self.get_expected_spec(image)
+            },
+            code=400,
+            content_json={
+                "kind": "Status",
+                "reason": "MissingName",
+                "message": "need name"
+            }
+        )
 
     @defer.inlineCallbacks
     def test_start_worker(self):
         worker = yield self.setupWorker('worker')
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
+        self.expect_pod_startup("rendered:buildbot/buildbot-worker")
+        self.expect_pod_delete_existing("rendered:buildbot/buildbot-worker")
+        self.expect_pod_status_not_found()
+
         d = worker.substantiate(None, FakeBuild())
         worker.attached(FakeBot())
         yield d
-        self.assertEqual(len(worker._kube.pods), 1)
-        pod_name = list(worker._kube.pods.keys())[0]
-        self.assertRegex(pod_name, r'default/buildbot-worker-[0-9a-f]+')
-        pod = worker._kube.pods[pod_name]
-        self.assertEqual(
-            sorted(pod['spec'].keys()), ['containers', 'restartPolicy', "volumes"])
-        self.assertEqual(sorted(pod['spec']['containers'][0].keys()),
-                         ['env', 'image', 'name', 'resources', "volumeMounts"])
-        self.assertEqual(pod['spec']['containers'][0]['image'],
-                         'rendered:buildbot/buildbot-worker')
-        self.assertEqual(pod["spec"]["volumes"], [])
-        self.assertEqual(pod['spec']['restartPolicy'], 'Never')
 
     @defer.inlineCallbacks
     def test_start_worker_but_error(self):
         worker = yield self.setupWorker('worker')
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
 
-        def createPod(namespace, spec):
-            raise KubeError({'message': "yeah, but no"})
+        def create_pod(namespace, spec):
+            raise kubernetes.KubeJsonError(400, {'message': "yeah, but no"})
 
-        self.patch(self._kube, 'createPod', createPod)
+        with mock.patch.object(worker, '_create_pod', create_pod):
+            with self.assertRaises(LatentWorkerFailedToSubstantiate):
+                yield worker.substantiate(None, FakeBuild())
+        self.assertEqual(worker.instance, None)
+
+    @defer.inlineCallbacks
+    def test_start_worker_but_error_spec(self):
+        worker = yield self.setupWorker('worker')
+
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
+        self.expect_pod_startup_error("rendered:buildbot/buildbot-worker")
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
+
         with self.assertRaises(LatentWorkerFailedToSubstantiate):
             yield worker.substantiate(None, FakeBuild())
         self.assertEqual(worker.instance, None)
@@ -122,6 +277,12 @@ class TestKubernetesWorker(TestReactorMixin, unittest.TestCase):
         build1 = Properties(img_prop="image1")
         build2 = Properties(img_prop="image2")
         worker = yield self.setupWorker('worker', image=Interpolate("%(prop:img_prop)s"))
+
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
+        self.expect_pod_startup("image1")
+        self.expect_pod_delete_existing("image1")
+        self.expect_pod_status_not_found()
 
         yield worker.start_instance(build1)
         yield worker.stop_instance()
@@ -133,5 +294,221 @@ class TestKubernetesWorker(TestReactorMixin, unittest.TestCase):
         build2 = Properties(img_prop="image2")
         worker = yield self.setupWorker('worker', image=Interpolate("%(prop:img_prop)s"))
 
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
+        self.expect_pod_startup("image1")
+        self.expect_pod_delete_existing("image1")
+        self.expect_pod_status_not_found()
+
         yield worker.start_instance(build1)
         self.assertFalse((yield worker.isCompatibleWithBuild(build2)))
+        yield worker.stop_instance()
+
+    @defer.inlineCallbacks
+    def test_start_worker_delete_non_json_response(self):
+        worker = yield self.setupWorker('worker')
+        self._http.expect(
+            "delete",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e",
+            params={"graceperiod": 0},
+            code=404,
+            content="not json"
+        )
+
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
+
+        with self.assertRaises(LatentWorkerFailedToSubstantiate) as e:
+            yield worker.substantiate(None, FakeBuild())
+        self.assertIn("Failed to decode: not json", e.exception.args[0])
+
+    @defer.inlineCallbacks
+    def test_start_worker_delete_timeout(self):
+        worker = yield self.setupWorker('worker', missing_timeout=4)
+
+        self.expect_pod_delete_existing("rendered:buildbot/buildbot-worker")
+        self.expect_pod_status_exists("rendered:buildbot/buildbot-worker")
+        self.expect_pod_status_exists("rendered:buildbot/buildbot-worker")
+        self.expect_pod_status_exists("rendered:buildbot/buildbot-worker")
+        self.expect_pod_status_exists("rendered:buildbot/buildbot-worker")
+        self.expect_pod_status_exists("rendered:buildbot/buildbot-worker")
+
+        d = worker.stop_instance()
+        self.reactor.pump([0.5] * 20)
+        with self.assertRaises(TimeoutError):
+            yield d
+
+    @defer.inlineCallbacks
+    def test_start_worker_create_non_json_response(self):
+        worker = yield self.setupWorker('worker')
+
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
+
+        expected_metadata = {
+            "name": "buildbot-worker-87de7e"
+        }
+        expected_spec = {
+            "affinity": {},
+            "containers": [
+                {
+                    "name": "buildbot-worker-87de7e",
+                    "image": "rendered:buildbot/buildbot-worker",
+                    "env": [
+                        {
+                            "name": "BUILDMASTER", "value": "buildbot-master"
+                        },
+                        {
+                            "name": "WORKERNAME", "value": "worker"
+                        },
+                        {
+                            "name": "WORKERPASS", "value": "random_pw"
+                        },
+                        {
+                            "name": "BUILDMASTER_PORT", "value": "1234"
+                        }
+                    ],
+                    "resources": {},
+                    "volumeMounts": []
+                }
+            ],
+            "nodeSelector": {},
+            "restartPolicy": "Never",
+            "volumes": []
+        }
+
+        self._http.expect(
+            "post",
+            "/api/v1/namespaces/default/pods",
+            json={
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": expected_metadata,
+                "spec": expected_spec
+            },
+            code=200,
+            content="not json"
+        )
+        self.expect_pod_delete_nonexisting()
+        self.expect_pod_status_not_found()
+
+        with self.assertRaises(LatentWorkerFailedToSubstantiate) as e:
+            yield worker.substantiate(None, FakeBuild())
+        self.assertIn("Failed to decode: not json", e.exception.args[0])
+
+    @defer.inlineCallbacks
+    def test_hardcoded_config_verify_is_forwarded(self):
+        config = KubeHardcodedConfig(
+            master_url="https://kube.example.com",
+            namespace="default",
+            verify="/path/to/pem"
+        )
+        worker = yield self.setupWorker('worker', config=config)
+
+        self._http.expect(
+            "delete",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e",
+            params={"graceperiod": 0},
+            verify="/path/to/pem",
+            code=200,
+            content_json={}
+        )
+        self._http.expect(
+            "get",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e/status",
+            verify="/path/to/pem",
+            code=404,
+            content_json={"kind": "Status", "reason": "NotFound"},
+        )
+
+        yield worker.stop_instance()
+
+    @defer.inlineCallbacks
+    def test_hardcoded_config_verify_headers_is_forwarded(self):
+        config = KubeHardcodedConfig(
+            master_url="https://kube.example.com",
+            namespace="default",
+            verify="/path/to/pem",
+            headers={"Test": "10"}
+        )
+        worker = yield self.setupWorker('worker', config=config)
+
+        self._http.expect(
+            "delete",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e",
+            params={"graceperiod": 0},
+            headers={'Test': '10'},
+            verify="/path/to/pem",
+            code=200,
+            content_json={}
+        )
+        self._http.expect(
+            "get",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e/status",
+            headers={'Test': '10'},
+            verify="/path/to/pem",
+            code=404,
+            content_json={"kind": "Status", "reason": "NotFound"},
+        )
+
+        yield worker.stop_instance()
+
+    @defer.inlineCallbacks
+    def test_hardcoded_config_verify_bearer_token_is_rendered(self):
+        config = KubeHardcodedConfig(
+            master_url="https://kube.example.com",
+            namespace="default",
+            verify="/path/to/pem",
+            bearerToken=Interpolate("%(kw:test)s", test=10)
+        )
+        worker = yield self.setupWorker('worker', config=config)
+
+        self._http.expect(
+            "delete",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e",
+            params={"graceperiod": 0},
+            headers={"Authorization": "Bearer 10"},
+            verify="/path/to/pem",
+            code=200,
+            content_json={}
+        )
+        self._http.expect(
+            "get",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e/status",
+            headers={"Authorization": "Bearer 10"},
+            verify="/path/to/pem",
+            code=404,
+            content_json={"kind": "Status", "reason": "NotFound"},
+        )
+
+        yield worker.stop_instance()
+
+    @defer.inlineCallbacks
+    def test_hardcoded_config_verify_basicAuth_is_expanded(self):
+        config = KubeHardcodedConfig(
+            master_url="https://kube.example.com",
+            namespace="default",
+            verify="/path/to/pem",
+            basicAuth={'user': 'name', 'password': Interpolate("%(kw:test)s", test=10)}
+        )
+        worker = yield self.setupWorker('worker', config=config)
+
+        self._http.expect(
+            "delete",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e",
+            params={"graceperiod": 0},
+            headers={"Authorization": "Basic " + str(base64.b64encode("name:10".encode("utf-8")))},
+            verify="/path/to/pem",
+            code=200,
+            content_json={}
+        )
+        self._http.expect(
+            "get",
+            "/api/v1/namespaces/default/pods/buildbot-worker-87de7e/status",
+            headers={"Authorization": "Basic " + str(base64.b64encode("name:10".encode("utf-8")))},
+            verify="/path/to/pem",
+            code=404,
+            content_json={"kind": "Status", "reason": "NotFound"},
+        )
+
+        yield worker.stop_instance()

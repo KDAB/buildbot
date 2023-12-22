@@ -16,6 +16,7 @@
 # Method to add build step taken from here
 # https://seasonofcode.com/posts/how-to-add-custom-build-steps-and-commands-to-setuppy.html
 import datetime
+import logging
 import os
 import re
 import shutil
@@ -27,9 +28,8 @@ from subprocess import Popen
 
 import setuptools.command.build_py
 import setuptools.command.egg_info
+from setuptools import Command
 from setuptools import setup
-
-import distutils.cmd  # isort:skip
 
 old_listdir = os.listdir
 
@@ -115,7 +115,7 @@ def getVersionFromArchiveId(git_archive_id='$Format:%ct %d$'):
 def getVersion(init_file):
     """
     Return BUILDBOT_VERSION environment variable, content of VERSION file, git
-    tag or 'latest'
+    tag or '0.0.0' meaning we could not find the version, but the output still has to be valid
     """
 
     try:
@@ -152,7 +152,7 @@ def getVersion(init_file):
         return mTimeVersion(init_file)
     except Exception:
         # bummer. lets report something
-        return "latest"
+        return "0.0.0"
 
 
 # JS build strategy:
@@ -182,7 +182,7 @@ def getVersion(init_file):
 # This is why we override both egg_info and build, and the first run build
 # the js.
 
-class BuildJsCommand(distutils.cmd.Command):
+class BuildJsCommand(Command):
     """A custom command to run JS build."""
 
     description = 'run JS build'
@@ -227,13 +227,13 @@ class BuildJsCommand(distutils.cmd.Command):
             ]
 
             for command in commands:
-                self.announce('Running command: {}'.format(str(" ".join(command))),
-                              level=distutils.log.INFO)
+                logging.info('Running command: {}'.format(str(" ".join(command))))
                 subprocess.check_call(command, shell=shell)
 
         self.copy_tree(os.path.join(package, 'static'), os.path.join(
             "build", "lib", package, "static"))
 
+        assert self.distribution.metadata.version is not None, "version is not set"
         with open(os.path.join("build", "lib", package, "VERSION"), "w") as f:
             f.write(self.distribution.metadata.version)
 

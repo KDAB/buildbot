@@ -79,6 +79,8 @@ Other optional keys may be set on each ``BuilderConfig``:
      As an example, for each ``worker`` in the list, ``worker.worker`` will be a :class:`Worker` object, and ``worker.worker.workername`` is the worker's name.
      The function can optionally return a Deferred, which should fire with the same results.
 
+    To control worker selection globally for all builders, use :bb:cfg:`select_next_worker`.
+
 ``nextBuild``
     (function, optional).
 
@@ -192,7 +194,7 @@ Possible values for both ``collapseRequests`` configurations are:
 ``False``
     Requests will never be collapsed.
 
-``callable(builder, req1, req2)``
+``callable(master, builder, req1, req2)``
     Requests will be collapsed if the callable returns true.
     See :ref:`Collapse-Request-Functions` for detailed example.
 

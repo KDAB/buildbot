@@ -20,6 +20,7 @@ from twisted.trial import unittest
 
 from buildbot import config
 from buildbot.process import results
+from buildbot.process.buildstep import create_step_from_step_or_factory
 from buildbot.process.properties import Property
 from buildbot.process.results import FAILURE
 from buildbot.process.results import SKIPPED
@@ -55,7 +56,7 @@ real_log = r"""
 class TestAddEnvPath(unittest.TestCase):
 
     def do_test(self, initial_env, name, value, expected_env):
-        step = vstudio.VisualStudio()
+        step = create_step_from_step_or_factory(vstudio.VisualStudio())
         step.env = initial_env
         step.add_env_path(name, value)
         self.assertEqual(step.env, expected_env)
@@ -337,9 +338,9 @@ class VisualStudio(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
             projectfile=Property('a'),
             config=Property('b'),
             project=Property('c')))
-        self.properties.setProperty('a', 'aa', 'Test')
-        self.properties.setProperty('b', 'bb', 'Test')
-        self.properties.setProperty('c', 'cc', 'Test')
+        self.build.setProperty('a', 'aa', 'Test')
+        self.build.setProperty('b', 'bb', 'Test')
+        self.build.setProperty('c', 'cc', 'Test')
         self.expect_commands(
             ExpectShell(workdir='wkdir',
                         command=['command', 'here'])
@@ -646,7 +647,7 @@ class TestVC8(VC8ExpectedEnvMixin, TestBuildStepMixin, TestReactorMixin,
     def test_rendering(self):
         self.setup_step(vstudio.VC8(projectfile='pf', config='cfg',
                                    arch=Property('a')))
-        self.properties.setProperty('a', 'x64', 'Test')
+        self.build.setProperty('a', 'x64', 'Test')
         self.expect_commands(
             ExpectShell(workdir='wkdir',
                         command=['devenv.com', 'pf', '/Rebuild', 'cfg'],

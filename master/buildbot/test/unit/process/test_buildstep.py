@@ -19,7 +19,6 @@ from parameterized import parameterized
 
 from twisted.internet import defer
 from twisted.internet import error
-from twisted.internet import reactor
 from twisted.internet.task import deferLater
 from twisted.python import failure
 from twisted.python import log
@@ -31,6 +30,8 @@ from buildbot.plugins import util
 from buildbot.process import buildstep
 from buildbot.process import properties
 from buildbot.process import remotecommand
+from buildbot.process.buildstep import create_step_from_step_or_factory
+from buildbot.process.locks import get_real_locks_from_accesses
 from buildbot.process.properties import renderer
 from buildbot.process.results import ALL_RESULTS
 from buildbot.process.results import CANCELLED
@@ -52,7 +53,9 @@ from buildbot.test.steps import ExpectStat
 from buildbot.test.steps import TestBuildStepMixin
 from buildbot.test.util import config
 from buildbot.test.util import interfaces
+from buildbot.test.util.warnings import assertProducesWarning
 from buildbot.util.eventual import eventually
+from buildbot.warnings import DeprecatedApiWarning
 
 
 class NewStyleStep(buildstep.BuildStep):
@@ -65,6 +68,24 @@ class CustomActionBuildStep(buildstep.BuildStep):
     # The caller is expected to set the action attribute on the step
     def run(self):
         return self.action()
+
+
+def _is_lock_owned_by_step(step, lock):
+    accesses = [
+        step_access for step_lock, step_access in step._locks_to_acquire if step_lock == lock
+    ]
+    if not accesses:
+        return False
+    return lock.isOwner(step, accesses[0])
+
+
+def _is_lock_available_for_step(step, lock):
+    accesses = [
+        step_access for step_lock, step_access in step._locks_to_acquire if step_lock == lock
+    ]
+    if not accesses:
+        return False
+    return lock.isAvailable(step, accesses[0])
 
 
 class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
@@ -92,17 +113,10 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
 
         @defer.inlineCallbacks
         def run(self):
-            botmaster = self.build.builder.botmaster
-            real_master_lock = yield botmaster.getLockFromLockAccess(self.lock_accesses[0],
-                                                                     self.build.config_version)
-            real_worker_lock = yield botmaster.getLockFromLockAccess(self.lock_accesses[1],
-                                                                     self.build.config_version)
+            locks = yield get_real_locks_from_accesses(self.lock_accesses, self.build)
 
-            self.testcase.assertFalse(real_master_lock.isAvailable(self.testcase,
-                                                                   self.lock_accesses[0]))
-            self.testcase.assertIn('workername', real_worker_lock.locks)
-            self.testcase.assertFalse(real_worker_lock.locks['workername'].isAvailable(
-                self.testcase, self.lock_accesses[1]))
+            self.testcase.assertFalse(locks[0][0].isAvailable(self.testcase, self.lock_accesses[0]))
+            self.testcase.assertFalse(locks[1][0].isAvailable(self.testcase, self.lock_accesses[1]))
             return SUCCESS
 
     def setUp(self):
@@ -174,8 +188,46 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
                                           "a list of result ids or boolean but it is 2"):
             buildstep.BuildStep(updateBuildSummaryPolicy=FAILURE)
 
+    class RecordingBuildStep(buildstep.BuildStep):
+        def __init__(self, record_target=None, arg=None, **kwargs):
+            super().__init__(**kwargs)
+            self.record_target = record_target
+            self.arg = arg
+
+        def run(self):
+            self.record_target.append(self.arg)
+            return SUCCESS
+
+    @defer.inlineCallbacks
+    def test_arg_changes(self):
+        recorded_arg = []
+
+        step = self.RecordingBuildStep(record_target=recorded_arg, arg="orig")
+        self.setup_step(step)
+
+        with assertProducesWarning(DeprecatedApiWarning):
+            step.arg = "changed"
+
+        self.expect_outcome(result=SUCCESS)
+        yield self.run_step()
+
+        self.assertEqual(recorded_arg, ["orig"])
+
+    @defer.inlineCallbacks
+    def test_arg_changes_set_step_arg(self):
+        recorded_arg = []
+
+        step = self.RecordingBuildStep(record_target=recorded_arg, arg="orig")
+        step.set_step_arg("arg", "changed")
+        self.setup_step(step)
+
+        self.expect_outcome(result=SUCCESS)
+        yield self.run_step()
+
+        self.assertEqual(recorded_arg, ["changed"])
+
     def test_getProperty(self):
-        bs = buildstep.BuildStep()
+        bs = create_step_from_step_or_factory(buildstep.BuildStep())
         bs.build = fakebuild.FakeBuild()
         props = bs.build.properties = mock.Mock()
         bs.getProperty("xyz", 'b')
@@ -184,7 +236,7 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
         props.getProperty.assert_called_with("xyz", None)
 
     def test_setProperty(self):
-        bs = buildstep.BuildStep()
+        bs = create_step_from_step_or_factory(buildstep.BuildStep())
         bs.build = fakebuild.FakeBuild()
         props = bs.build.properties = mock.Mock()
         bs.setProperty("x", "y", "t")
@@ -214,14 +266,8 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
 
         self.assertEqual(len(lock_accesses), 2)
 
-        botmaster = self.step.build.builder.botmaster
-        real_master_lock = yield botmaster.getLockFromLockAccess(lock_accesses[0],
-                                                                 self.build.config_version)
-        real_worker_lock = yield botmaster.getLockFromLockAccess(lock_accesses[1],
-                                                                 self.build.config_version)
-        self.assertTrue(real_master_lock.isAvailable(self, lock_accesses[0]))
-        self.assertIn('workername', real_worker_lock.locks)
-        self.assertTrue(real_worker_lock.locks['workername'].isAvailable(self, lock_accesses[1]))
+        self.assertTrue(self.step._locks_to_acquire[0][0].isAvailable(self, lock_accesses[0]))
+        self.assertTrue(self.step._locks_to_acquire[1][0].isAvailable(self, lock_accesses[1]))
 
     def test_compare(self):
         lbs1 = buildstep.BuildStep(name="me")
@@ -250,104 +296,164 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
         self.expect_outcome(result=SUCCESS)
         yield self.run_step()
 
-        botmaster = self.step.build.builder.botmaster
-        real_master_lock = yield botmaster.getLockFromLockAccess(lock_accesses[0],
-                                                                 self.build.config_version)
-        real_worker_lock = yield botmaster.getLockFromLockAccess(lock_accesses[1],
-                                                                 self.build.config_version)
-        self.assertTrue(real_master_lock.isAvailable(self, lock_accesses[0]))
-        self.assertIn('workername', real_worker_lock.locks)
-        self.assertTrue(real_worker_lock.locks['workername'].isAvailable(self, lock_accesses[1]))
+        self.assertTrue(self.step._locks_to_acquire[0][0].isAvailable(self, lock_accesses[0]))
+        self.assertTrue(self.step._locks_to_acquire[1][0].isAvailable(self, lock_accesses[1]))
 
     @defer.inlineCallbacks
-    def test_cancelWhileLocksAvailable(self):
+    def test_regular_locks_skip_step(self):
+        # BuildStep should not try to acquire locks when it's skipped
+        lock = locks.MasterLock("masterlock")
+        lock_access = locks.LockAccess(lock, "exclusive")
 
-        def _owns_lock(step, lock):
-            access = [step_access for step_lock, step_access in step.locks if step_lock == lock][0]
-            return lock.isOwner(step, access)
+        self.setup_step(buildstep.BuildStep(
+            locks=[locks.LockAccess(lock, "counting")],
+            doStepIf=False
+        ))
 
-        def _lock_available(step, lock):
-            access = [step_access for step_lock, step_access in step.locks if step_lock == lock][0]
-            return lock.isAvailable(step, access)
+        locks_list = yield get_real_locks_from_accesses([lock_access], self.build)
+        locks_list[0][0].claim(self, lock_access)
 
+        self.expect_outcome(result=SKIPPED)
+        yield self.run_step()
+
+    @defer.inlineCallbacks
+    def test_acquire_multiple_locks_after_not_available(self):
         lock1 = locks.MasterLock("masterlock1")
-        real_lock1 = locks.RealMasterLock(lock1)
         lock2 = locks.MasterLock("masterlock2")
-        real_lock2 = locks.RealMasterLock(lock2)
 
         stepa = self.setup_step(self.FakeBuildStep(locks=[
-            (real_lock1, locks.LockAccess(lock1, 'exclusive'))
+            locks.LockAccess(lock1, 'exclusive')
         ]))
         stepb = self.setup_step(self.FakeBuildStep(locks=[
-            (real_lock2, locks.LockAccess(lock2, 'exclusive'))
+            locks.LockAccess(lock2, 'exclusive')
         ]))
 
         stepc = self.setup_step(self.FakeBuildStep(locks=[
-            (real_lock1, locks.LockAccess(lock1, 'exclusive')),
-            (real_lock2, locks.LockAccess(lock2, 'exclusive'))
-        ]))
-        stepd = self.setup_step(self.FakeBuildStep(locks=[
-            (real_lock1, locks.LockAccess(lock1, 'exclusive')),
-            (real_lock2, locks.LockAccess(lock2, 'exclusive'))
+            locks.LockAccess(lock1, 'exclusive'),
+            locks.LockAccess(lock2, 'exclusive')
         ]))
 
-        # Start all the steps
+        yield stepa._setup_locks()
+        yield stepb._setup_locks()
+        yield stepc._setup_locks()
+
+        real_lock1 = stepc._locks_to_acquire[0][0]
+        real_lock2 = stepc._locks_to_acquire[1][0]
+
         yield stepa.acquireLocks()
         yield stepb.acquireLocks()
         c_d = stepc.acquireLocks()
-        d_d = stepd.acquireLocks()
 
-        # Check that step a and step b have the locks
-        self.assertTrue(_owns_lock(stepa, real_lock1))
-        self.assertTrue(_owns_lock(stepb, real_lock2))
+        self.assertTrue(_is_lock_owned_by_step(stepa, real_lock1))
+        self.assertFalse(_is_lock_owned_by_step(stepa, real_lock2))
+        self.assertFalse(_is_lock_owned_by_step(stepb, real_lock1))
+        self.assertTrue(_is_lock_owned_by_step(stepb, real_lock2))
+        self.assertFalse(_is_lock_owned_by_step(stepc, real_lock1))
+        self.assertFalse(_is_lock_owned_by_step(stepc, real_lock2))
 
-        # Check that step c does not have a lock
-        self.assertFalse(_owns_lock(stepc, real_lock1))
-        self.assertFalse(_owns_lock(stepc, real_lock2))
+        self.assertFalse(_is_lock_available_for_step(stepc, real_lock1))
+        self.assertFalse(_is_lock_available_for_step(stepc, real_lock2))
 
-        # Check that step d does not have a lock
-        self.assertFalse(_owns_lock(stepd, real_lock1))
-        self.assertFalse(_owns_lock(stepd, real_lock2))
-
-        # Release lock 1
         stepa.releaseLocks()
-        yield deferLater(reactor, 0, lambda: None)
+        yield deferLater(self.reactor, 0, lambda: None)
 
-        # lock1 should be available for step c
-        self.assertTrue(_lock_available(stepc, real_lock1))
-        self.assertFalse(_lock_available(stepc, real_lock2))
-        self.assertFalse(_lock_available(stepd, real_lock1))
-        self.assertFalse(_lock_available(stepd, real_lock2))
+        self.assertTrue(_is_lock_available_for_step(stepc, real_lock1))
+        self.assertFalse(_is_lock_available_for_step(stepc, real_lock2))
 
-        # Cancel step c
-        stepc.interrupt("cancelling")
+        stepb.releaseLocks()
+        yield deferLater(self.reactor, 0, lambda: None)
+
+        self.assertTrue(_is_lock_owned_by_step(stepc, real_lock1))
+        self.assertTrue(_is_lock_owned_by_step(stepc, real_lock2))
+
         yield c_d
 
-        # Check that step c does not have a lock
-        self.assertFalse(_owns_lock(stepc, real_lock1))
-        self.assertFalse(_owns_lock(stepc, real_lock2))
+    @defer.inlineCallbacks
+    def test_cancel_when_lock_available(self):
+        lock = locks.MasterLock("masterlock1")
 
-        # No lock should be available for step c
-        self.assertFalse(_lock_available(stepc, real_lock1))
-        self.assertFalse(_lock_available(stepc, real_lock2))
+        stepa = self.setup_step(self.FakeBuildStep(locks=[locks.LockAccess(lock, 'exclusive')]))
+        stepb = self.setup_step(self.FakeBuildStep(locks=[locks.LockAccess(lock, 'exclusive')]))
+        stepc = self.setup_step(self.FakeBuildStep(locks=[locks.LockAccess(lock, 'exclusive')]))
 
-        # lock 1 should be available for step d
-        self.assertTrue(_lock_available(stepd, real_lock1))
-        self.assertFalse(_lock_available(stepd, real_lock2))
+        yield stepa._setup_locks()
+        yield stepb._setup_locks()
+        yield stepc._setup_locks()
 
-        # Release lock 2
+        real_lock = stepc._locks_to_acquire[0][0]
+
+        yield stepa.acquireLocks()
+        b_d = stepb.acquireLocks()
+        c_d = stepc.acquireLocks()
+
+        self.assertTrue(_is_lock_owned_by_step(stepa, real_lock))
+        self.assertFalse(_is_lock_owned_by_step(stepb, real_lock))
+        self.assertFalse(_is_lock_owned_by_step(stepc, real_lock))
+
+        self.assertFalse(_is_lock_available_for_step(stepb, real_lock))
+        self.assertFalse(_is_lock_available_for_step(stepc, real_lock))
+
+        stepa.releaseLocks()
+        yield deferLater(self.reactor, 0, lambda: None)
+
+        self.assertFalse(_is_lock_owned_by_step(stepa, real_lock))
+        self.assertTrue(_is_lock_owned_by_step(stepb, real_lock))
+        self.assertFalse(_is_lock_available_for_step(stepc, real_lock))
+
+        stepb.interrupt("cancelling")
+        yield b_d
         stepb.releaseLocks()
 
-        # Both locks should be available for step d
-        self.assertTrue(_lock_available(stepd, real_lock1))
-        self.assertTrue(_lock_available(stepd, real_lock2))
+        self.assertFalse(_is_lock_owned_by_step(stepa, real_lock))
+        self.assertFalse(_is_lock_owned_by_step(stepb, real_lock))
+        self.assertTrue(_is_lock_available_for_step(stepc, real_lock))
 
-        # So it should run
-        yield d_d
+        yield c_d
 
-        # Check that step d owns the locks
-        self.assertTrue(_owns_lock(stepd, real_lock1))
-        self.assertTrue(_owns_lock(stepd, real_lock2))
+        self.assertFalse(_is_lock_owned_by_step(stepa, real_lock))
+        self.assertFalse(_is_lock_owned_by_step(stepb, real_lock))
+        self.assertTrue(_is_lock_owned_by_step(stepc, real_lock))
+
+    @defer.inlineCallbacks
+    def test_cancel_when_lock_not_available(self):
+        lock = locks.MasterLock("masterlock1")
+
+        stepa = self.setup_step(self.FakeBuildStep(locks=[locks.LockAccess(lock, 'exclusive')]))
+        stepb = self.setup_step(self.FakeBuildStep(locks=[locks.LockAccess(lock, 'exclusive')]))
+        stepc = self.setup_step(self.FakeBuildStep(locks=[locks.LockAccess(lock, 'exclusive')]))
+
+        yield stepa._setup_locks()
+        yield stepb._setup_locks()
+        yield stepc._setup_locks()
+
+        real_lock = stepc._locks_to_acquire[0][0]
+
+        yield stepa.acquireLocks()
+        b_d = stepb.acquireLocks()
+        c_d = stepc.acquireLocks()
+
+        self.assertTrue(_is_lock_owned_by_step(stepa, real_lock))
+        self.assertFalse(_is_lock_owned_by_step(stepb, real_lock))
+        self.assertFalse(_is_lock_owned_by_step(stepc, real_lock))
+
+        self.assertFalse(_is_lock_available_for_step(stepb, real_lock))
+        self.assertFalse(_is_lock_available_for_step(stepc, real_lock))
+
+        stepb.interrupt("cancelling")
+        yield b_d
+
+        stepa.releaseLocks()
+        yield deferLater(self.reactor, 0, lambda: None)
+
+        self.assertFalse(_is_lock_owned_by_step(stepa, real_lock))
+        self.assertFalse(_is_lock_owned_by_step(stepb, real_lock))
+        self.assertTrue(_is_lock_owned_by_step(stepc, real_lock))
+
+        yield c_d
+
+        self.assertFalse(_is_lock_owned_by_step(stepa, real_lock))
+        self.assertFalse(_is_lock_owned_by_step(stepb, real_lock))
+        self.assertTrue(_is_lock_owned_by_step(stepc, real_lock))
 
     @defer.inlineCallbacks
     def test_multiple_cancel(self):
@@ -365,7 +471,7 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
 
     @defer.inlineCallbacks
     def test_runCommand(self):
-        bs = buildstep.BuildStep()
+        bs = create_step_from_step_or_factory(buildstep.BuildStep())
         bs.worker = worker.FakeWorker(master=None)  # master is not used here
         bs.remote = 'dummy'
         bs.build = fakebuild.FakeBuild()
@@ -410,12 +516,13 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
 
         @defer.inlineCallbacks
         def on_command(cmd):
-            cmd.conn.set_expect_interrupt()
-            cmd.conn.set_block_on_interrupt()
+            conn = cmd.conn
+            conn.set_expect_interrupt()
+            conn.set_block_on_interrupt()
             d1 = step.interrupt('interrupt reason')
             d2 = step.interrupt(failure.Failure(error.ConnectionLost()))
 
-            cmd.conn.unblock_waiters()
+            conn.unblock_waiters()
             yield d1
             yield d2
 
@@ -580,7 +687,7 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
     def test_step_renders_flunkOnFailure(self):
         self.setup_step(
             TestBuildStep.FakeBuildStep(flunkOnFailure=properties.Property('fOF')))
-        self.properties.setProperty('fOF', 'yes', 'test')
+        self.build.setProperty('fOF', 'yes', 'test')
         self.expect_outcome(result=SUCCESS)
         yield self.run_step()
         self.assertEqual(self.step.flunkOnFailure, 'yes')
@@ -614,7 +721,7 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
                    lambda self: defer.succeed({'step': 'C'}))
         self.patch(NewStyleStep, 'getResultSummary',
                    lambda self: defer.succeed({'step': 'CS', 'build': 'CB'}))
-        step = NewStyleStep()
+        step = create_step_from_step_or_factory(NewStyleStep())
         step.master = fakemaster.make_master(self, wantData=True, wantDb=True)
         step.stepid = 13
         step.build = fakebuild.FakeBuild()
@@ -685,74 +792,74 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
         self.assertEqual(got, exp)
 
     def test_getCurrentSummary(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.description = None
         self.checkSummary(st.getCurrentSummary(), 'running')
 
     def test_getCurrentSummary_description(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.description = 'fooing'
         self.checkSummary(st.getCurrentSummary(), 'fooing')
 
     def test_getCurrentSummary_descriptionSuffix(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.description = 'fooing'
         st.descriptionSuffix = 'bar'
         self.checkSummary(st.getCurrentSummary(), 'fooing bar')
 
     def test_getCurrentSummary_description_list(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.description = ['foo', 'ing']
         self.checkSummary(st.getCurrentSummary(), 'foo ing')
 
     def test_getCurrentSummary_descriptionSuffix_list(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = SUCCESS
         st.description = ['foo', 'ing']
         st.descriptionSuffix = ['bar', 'bar2']
         self.checkSummary(st.getCurrentSummary(), 'foo ing bar bar2')
 
     def test_getResultSummary(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = SUCCESS
         st.description = None
         self.checkSummary(st.getResultSummary(), 'finished')
 
     def test_getResultSummary_description(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = SUCCESS
         st.description = 'fooing'
         self.checkSummary(st.getResultSummary(), 'fooing')
 
     def test_getResultSummary_descriptionDone(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = SUCCESS
         st.description = 'fooing'
         st.descriptionDone = 'fooed'
         self.checkSummary(st.getResultSummary(), 'fooed')
 
     def test_getResultSummary_descriptionSuffix(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = SUCCESS
         st.description = 'fooing'
         st.descriptionSuffix = 'bar'
         self.checkSummary(st.getResultSummary(), 'fooing bar')
 
     def test_getResultSummary_descriptionDone_and_Suffix(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = SUCCESS
         st.descriptionDone = 'fooed'
         st.descriptionSuffix = 'bar'
         self.checkSummary(st.getResultSummary(), 'fooed bar')
 
     def test_getResultSummary_description_list(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = SUCCESS
         st.description = ['foo', 'ing']
         self.checkSummary(st.getResultSummary(), 'foo ing')
 
     def test_getResultSummary_descriptionSuffix_list(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = SUCCESS
         st.description = ['foo', 'ing']
         st.descriptionSuffix = ['bar', 'bar2']
@@ -760,7 +867,7 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
 
     @defer.inlineCallbacks
     def test_getResultSummary_descriptionSuffix_failure(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = FAILURE
         st.description = 'fooing'
         self.checkSummary((yield st.getBuildResultSummary()), 'fooing (failure)',
@@ -769,7 +876,7 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
 
     @defer.inlineCallbacks
     def test_getResultSummary_descriptionSuffix_skipped(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = SKIPPED
         st.description = 'fooing'
         self.checkSummary((yield st.getBuildResultSummary()), 'fooing (skipped)')
@@ -777,7 +884,7 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
 
     @defer.inlineCallbacks
     def test_getResultSummary_description_failure_timed_out(self):
-        st = buildstep.BuildStep()
+        st = create_step_from_step_or_factory(buildstep.BuildStep())
         st.results = FAILURE
         st.description = "fooing"
         st.timed_out = True
@@ -814,7 +921,7 @@ class TestBuildStep(TestBuildStepMixin, config.ConfigErrorsMixin,
 
     @defer.inlineCallbacks
     def testRunRaisesException(self):
-        step = NewStyleStep()
+        step = create_step_from_step_or_factory(NewStyleStep())
         step.master = mock.Mock()
         step.build = mock.Mock()
         step.build.builder.botmaster.getLockFromLockAccesses = mock.Mock(return_value=[])
@@ -1209,7 +1316,7 @@ class TestShellMixin(TestBuildStepMixin,
     def test_build_workdir_renderable(self):
         self.setup_step(SimpleShellCommand(command=['cmd', 'arg']), want_default_work_dir=False)
         self.build.workdir = properties.Property("myproperty")
-        self.properties.setProperty("myproperty", "/myproperty", "test")
+        self.build.setProperty("myproperty", "/myproperty", "test")
         self.expect_commands(
             ExpectShell(workdir='/myproperty', command=['cmd', 'arg'])
             .exit(0)

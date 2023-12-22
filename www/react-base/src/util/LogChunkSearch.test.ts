@@ -20,7 +20,8 @@ import {
   ChunkSearchResults, findNextSearchResult, findPrevSearchResult,
   findTextInChunkRaw,
   overlaySearchResultsOnLine,
-  resultsListToLineIndexMap
+  resultsListToLineIndexMap,
+  getMatcher,
 } from "./LogChunkSearch";
 
 describe('LogChunkSearch', () => {
@@ -31,7 +32,7 @@ describe('LogChunkSearch', () => {
         lineIndexToFirstChunkIndex: new Map<number, number>()
       };
       for (let i = 0; i < count; ++i) {
-        results.results.push({lineIndex: 0, lineStart: 0});
+        results.results.push({lineIndex: 0, lineStart: 0, lineEnd: 0});
       }
       return results;
     });
@@ -115,39 +116,68 @@ describe('LogChunkSearch', () => {
 
   describe('findTextInChunkRaw', () => {
     it('no escapes', () => {
-      expect(findTextInChunkRaw(parseLogChunk(20, 'oaaa\nboaaabaaa\no\noaaab\n', 's'), 'aaa'))
+      expect(findTextInChunkRaw(parseLogChunk(20, 'oaaa\nboaaabaaa\no\noaaab\n', 's'), getMatcher('aaa')))
         .toEqual([
-          {lineIndex: 20, lineStart: 0},
-          {lineIndex: 21, lineStart: 1},
-          {lineIndex: 21, lineStart: 5},
-          {lineIndex: 23, lineStart: 0},
+          {lineIndex: 20, lineStart: 0, lineEnd: 3},
+          {lineIndex: 21, lineStart: 1, lineEnd: 4},
+          {lineIndex: 21, lineStart: 5, lineEnd: 8},
+          {lineIndex: 23, lineStart: 0, lineEnd: 3},
         ]);
     });
     it('many escapes', () => {
       expect(findTextInChunkRaw(parseLogChunk(20,
-          'oaaa\nboa\x1b[36maabaa\x1b[36ma\no\no\x1b[36maaa\x1b[36mb\n', 's', true), 'aaa'))
+          'oaaa\nboa\x1b[36maabaa\x1b[36ma\no\no\x1b[36maaa\x1b[36mb\n', 's', true), getMatcher('aaa')))
         .toEqual([
-          {lineIndex: 20, lineStart: 0},
-          {lineIndex: 21, lineStart: 1},
-          {lineIndex: 21, lineStart: 5},
-          {lineIndex: 23, lineStart: 0},
+          {lineIndex: 20, lineStart: 0, lineEnd: 3},
+          {lineIndex: 21, lineStart: 1, lineEnd: 4},
+          {lineIndex: 21, lineStart: 5, lineEnd: 8},
+          {lineIndex: 23, lineStart: 0, lineEnd: 3},
         ]);
     });
     it('some escapes', () => {
       expect(findTextInChunkRaw(parseLogChunk(20,
           'o\no\no\no\no\no\noaaa\nboa\x1b[36maabaa\x1b[36ma\no\no\x1b[36maaa\x1b[36mb\n', 's'),
-          'aaa'))
+          getMatcher('aaa')))
         .toEqual([
-          {lineIndex: 26, lineStart: 0},
-          {lineIndex: 27, lineStart: 1},
-          {lineIndex: 27, lineStart: 5},
-          {lineIndex: 29, lineStart: 0},
+          {lineIndex: 26, lineStart: 0, lineEnd: 3},
+          {lineIndex: 27, lineStart: 1, lineEnd: 4},
+          {lineIndex: 27, lineStart: 5, lineEnd: 8},
+          {lineIndex: 29, lineStart: 0, lineEnd: 3},
+        ]);
+    });
+    it('case insensitive', () => {
+      expect(findTextInChunkRaw(parseLogChunk(20,
+          'o\no\no\no\no\no\noaaa\nboa\x1b[36maabaa\x1b[36ma\no\no\x1b[36maaa\x1b[36mb\n', 's'),
+          getMatcher('aAa', {caseInsensitive: true})))
+        .toEqual([
+          {lineIndex: 26, lineStart: 0, lineEnd: 3},
+          {lineIndex: 27, lineStart: 1, lineEnd: 4},
+          {lineIndex: 27, lineStart: 5, lineEnd: 8},
+          {lineIndex: 29, lineStart: 0, lineEnd: 3},
+        ]);
+    });
+    it('use regex', () => {
+      expect(findTextInChunkRaw(parseLogChunk(20, 'oaaa\nboaaabaaa\no\noaaab\n', 's'), getMatcher('a+', {useRegex: true})))
+        .toEqual([
+          {lineIndex: 20, lineStart: 0, lineEnd: 3},
+          {lineIndex: 21, lineStart: 1, lineEnd: 4},
+          {lineIndex: 21, lineStart: 5, lineEnd: 8},
+          {lineIndex: 23, lineStart: 0, lineEnd: 3},
+        ]);
+    });
+    it('use regex with empty match', () => {
+      expect(findTextInChunkRaw(parseLogChunk(20, 'oaaa\nboaaabaaa\no\noaaab\n', 's'), getMatcher('a*', {useRegex: true})))
+        .toEqual([
+          {lineIndex: 20, lineStart: 0, lineEnd: 3},
+          {lineIndex: 21, lineStart: 1, lineEnd: 4},
+          {lineIndex: 21, lineStart: 5, lineEnd: 8},
+          {lineIndex: 23, lineStart: 0, lineEnd: 3},
         ]);
     });
   });
 
   function testResultsListToLineIndexMap(lineIndexes: number[], expected: Map<number, number>) {
-    const results = lineIndexes.map(i => {return {lineIndex: i, lineStart: 0}});
+    const results = lineIndexes.map(i => {return {lineIndex: i, lineStart: 0, lineEnd: 1}});
     expect(resultsListToLineIndexMap(results)).toEqual(expected);
   };
 
@@ -177,16 +207,16 @@ describe('LogChunkSearch', () => {
 
   describe('overlaySearchResultsOnLine', () => {
     it('unstyled', () => {
-      expect(overlaySearchResultsOnLine("a", {
-        results: [{lineIndex: 10, lineStart: 5}],
+      expect(overlaySearchResultsOnLine({
+        results: [{lineIndex: 10, lineStart: 5, lineEnd: 6}],
         lineIndexToFirstChunkIndex: new Map<number, number>([[10, 0]]),
       }, 10, 20, null, "b", "m", "e")).toEqual([
         {firstPos: 0, lastPos: 5, cssClasses: ""},
         {firstPos: 5, lastPos: 6, cssClasses: "m b e"},
         {firstPos: 6, lastPos: 20, cssClasses: ""},
       ]);
-      expect(overlaySearchResultsOnLine("aa", {
-        results: [{lineIndex: 10, lineStart: 5}],
+      expect(overlaySearchResultsOnLine({
+        results: [{lineIndex: 10, lineStart: 5, lineEnd: 7}],
         lineIndexToFirstChunkIndex: new Map<number, number>([[10, 0]]),
       }, 10, 20, null, "b", "m", "e")).toEqual([
         {firstPos: 0, lastPos: 5, cssClasses: ""},
@@ -194,8 +224,8 @@ describe('LogChunkSearch', () => {
         {firstPos: 6, lastPos: 7, cssClasses: "m e"},
         {firstPos: 7, lastPos: 20, cssClasses: ""},
       ]);
-      expect(overlaySearchResultsOnLine("aaa", {
-        results: [{lineIndex: 10, lineStart: 5}],
+      expect(overlaySearchResultsOnLine({
+        results: [{lineIndex: 10, lineStart: 5, lineEnd: 8}],
         lineIndexToFirstChunkIndex: new Map<number, number>([[10, 0]]),
       }, 10, 20, null, "b", "m", "e")).toEqual([
         {firstPos: 0, lastPos: 5, cssClasses: ""},
@@ -206,8 +236,8 @@ describe('LogChunkSearch', () => {
       ]);
     });
     it('styled', () => {
-      expect(overlaySearchResultsOnLine("a", {
-        results: [{lineIndex: 10, lineStart: 5}],
+      expect(overlaySearchResultsOnLine({
+        results: [{lineIndex: 10, lineStart: 5, lineEnd: 6}],
         lineIndexToFirstChunkIndex: new Map<number, number>([[10, 0]]),
       }, 10, 20, [
         {firstPos: 0, lastPos: 20, cssClasses: "u"},
@@ -216,8 +246,8 @@ describe('LogChunkSearch', () => {
         {firstPos: 5, lastPos: 6, cssClasses: "u m b e"},
         {firstPos: 6, lastPos: 20, cssClasses: "u"},
       ]);
-      expect(overlaySearchResultsOnLine("aa", {
-        results: [{lineIndex: 10, lineStart: 5}],
+      expect(overlaySearchResultsOnLine({
+        results: [{lineIndex: 10, lineStart: 5, lineEnd: 7}],
         lineIndexToFirstChunkIndex: new Map<number, number>([[10, 0]]),
       }, 10, 20, [
         {firstPos: 0, lastPos: 20, cssClasses: "u"},
@@ -227,8 +257,8 @@ describe('LogChunkSearch', () => {
         {firstPos: 6, lastPos: 7, cssClasses: "u m e"},
         {firstPos: 7, lastPos: 20, cssClasses: "u"},
       ]);
-      expect(overlaySearchResultsOnLine("aaa", {
-        results: [{lineIndex: 10, lineStart: 5}],
+      expect(overlaySearchResultsOnLine({
+        results: [{lineIndex: 10, lineStart: 5, lineEnd: 8}],
         lineIndexToFirstChunkIndex: new Map<number, number>([[10, 0]]),
       }, 10, 20, [
         {firstPos: 0, lastPos: 20, cssClasses: "u"},

@@ -19,18 +19,62 @@ import {stripLineEscapeCodes} from "./AnsiEscapeCodes";
 import {binarySearchGreater} from "./BinarySearch";
 import {addOverlayToCssClasses, combineCssClasses, LineCssClasses} from "./LineCssClasses";
 import {ParsedLogChunk} from "./LogChunkParsing";
+import {regexEscape} from "./Regex";
+
+export type ChunkSearchOptions = {
+  caseInsensitive?: boolean;
+  useRegex?: boolean;
+};
 
 export type ChunkSearchResult = {
   // Global line index
   lineIndex: number;
   // The location of the found search string occurrence
   lineStart: number;
+  lineEnd: number;
 };
 
 export type ChunkSearchResults = {
   results: ChunkSearchResult[];
   lineIndexToFirstChunkIndex: Map<number, number>;
 };
+
+export type MatchInfo = {pos: number, length: number};
+export type MatcherFn = (text: string, pos?: number) => MatchInfo | null;
+
+// Search options require the use of a regex
+// Keep the indexOf path for simple search as it's more efficient
+export function getMatcher(searchString: string, options?: ChunkSearchOptions): MatcherFn {
+  if (options === undefined || (
+    options.caseInsensitive !== true &&
+    options.useRegex !== true
+  )) {
+    return (text: string, pos?: number) => {
+      const foundPos = text.indexOf(searchString, pos ?? 0);
+      return foundPos >= 0 ? {pos: foundPos, length: searchString.length} : null;
+    };
+  }
+
+  const searchStringRegex = new RegExp(
+    (options?.useRegex ? searchString : regexEscape(searchString)),
+    (
+      "g" +
+      (options?.caseInsensitive ? "i" : "") +
+      (options?.useRegex ? "m" : "")
+    ),
+  );
+  return (text: string, pos?: number) => {
+    searchStringRegex.lastIndex = pos ?? 0;
+    let match = searchStringRegex.exec(text);
+    // regex search such as 'a*' can result in a match that is empty
+    // this is not interesting in our case, skip to the next relevant match
+    while (match !== null && match[0].length <= 0) {
+      searchStringRegex.lastIndex += 1;
+      match = searchStringRegex.exec(text);
+    }
+    return match !== null ? {pos: match.index, length: match[0].length} : null;
+  };
+}
 
 function findNextNonEmptyChunkSearchResults(results: ChunkSearchResults[], index: number) {
   for (let i = index; i < results.length; ++i) {
@@ -122,19 +166,21 @@ function maybeAdvanceLineIndexToBound(lineIndex: number, pos: number, lineBounds
 }
 
 function findTextInLine(results: ChunkSearchResult[], text: string, lineIndex: number,
-                        searchString: string) {
-  let pos = text.indexOf(searchString, 0);
-  while (pos >= 0) {
+                        matcherFn: MatcherFn) {
+
+  let match = matcherFn(text);
+  while (match !== null) {
     results.push({
       lineIndex: lineIndex,
-      lineStart: pos,
+      lineStart: match.pos,
+      lineEnd: match.pos + match.length,
     });
-    pos = text.indexOf(searchString, pos + searchString.length);
+    match = matcherFn(text, match.pos + match.length);
   }
 }
 
 export function findTextInChunkRaw(chunk: ParsedLogChunk,
-                                   searchString: string): ChunkSearchResult[] {
+                                   matcherFn: MatcherFn): ChunkSearchResult[] {
   const searchNoPerLineEscapes =
     chunk.linesWithEscapes === null || chunk.linesWithEscapes.length === 0;
 
@@ -144,15 +190,16 @@ export function findTextInChunkRaw(chunk: ParsedLogChunk,
       ? chunk.textNoEscapesLineBounds : chunk.textLineBounds;
 
     const results: ChunkSearchResult[] = [];
-    let pos = text.indexOf(searchString, 0);
     let lineIndex = 0;
-    while (pos >= 0) {
-      lineIndex = maybeAdvanceLineIndexToBound(lineIndex, pos, lineBounds);
+    let match = matcherFn(text);
+    while (match !== null) {
+      lineIndex = maybeAdvanceLineIndexToBound(lineIndex, match.pos, lineBounds);
       results.push({
         lineIndex: lineIndex + chunk.firstLine,
-        lineStart: pos - lineBounds[lineIndex]
+        lineStart: match.pos - lineBounds[lineIndex],
+        lineEnd: (match.pos - lineBounds[lineIndex]) + match.length,
       });
-      pos = text.indexOf(searchString, pos + searchString.length);
+      match = matcherFn(text, match.pos + match.length);
     }
     return results;
   }
@@ -165,17 +212,17 @@ export function findTextInChunkRaw(chunk: ParsedLogChunk,
   const linesWithEscapes = chunk.linesWithEscapes!;
 
   const results: ChunkSearchResult[] = [];
-  let pos = text.indexOf(searchString, 0);
   let lineIndex = 0;
   let linesWithEscapesIndex = 0;
 
-  while (pos >= 0) {
-    lineIndex = maybeAdvanceLineIndexToBound(lineIndex, pos, lineBounds);
+  let match = matcherFn(text);
+  while (match !== null) {
+    lineIndex = maybeAdvanceLineIndexToBound(lineIndex, match.pos, lineBounds);
 
     if (linesWithEscapesIndex < linesWithEscapes.length) {
       if (lineIndex === linesWithEscapes[linesWithEscapesIndex]) {
         // Skip results from escaped line
-        pos = text.indexOf(searchString, pos + searchString.length);
+        match = matcherFn(text, match.pos + match.length);
         continue;
       }
       if (lineIndex > linesWithEscapes[linesWithEscapesIndex]) {
@@ -185,7 +232,7 @@ export function findTextInChunkRaw(chunk: ParsedLogChunk,
           const escapedLineIndex = linesWithEscapes[linesWithEscapesIndex];
           const line = text.slice(lineBounds[escapedLineIndex], lineBounds[escapedLineIndex + 1]);
           findTextInLine(results, stripLineEscapeCodes(line), chunk.firstLine + escapedLineIndex,
-            searchString);
+            matcherFn);
           linesWithEscapesIndex++;
         }
 
@@ -194,7 +241,7 @@ export function findTextInChunkRaw(chunk: ParsedLogChunk,
         if (linesWithEscapesIndex < linesWithEscapes.length &&
           lineIndex === linesWithEscapes[linesWithEscapesIndex]) {
           // Skip results from escaped line
-          pos = text.indexOf(searchString, pos + searchString.length);
+          match = matcherFn(text, match.pos + match.length);
           continue;
         }
       }
@@ -202,16 +249,17 @@ export function findTextInChunkRaw(chunk: ParsedLogChunk,
 
     results.push({
       lineIndex: lineIndex + chunk.firstLine,
-      lineStart: pos - lineBounds[lineIndex]
+      lineStart: match.pos - lineBounds[lineIndex],
+      lineEnd: (match.pos - lineBounds[lineIndex]) + match.length,
     });
-    pos = text.indexOf(searchString, pos + searchString.length);
+    match = matcherFn(text, match.pos + match.length);
   }
 
   while (linesWithEscapesIndex < linesWithEscapes.length) {
     const escapedLineIndex = linesWithEscapes[linesWithEscapesIndex];
     const line = text.slice(lineBounds[escapedLineIndex], lineBounds[escapedLineIndex + 1]);
     findTextInLine(results, stripLineEscapeCodes(line), chunk.firstLine + escapedLineIndex,
-      searchString);
+      matcherFn);
     linesWithEscapesIndex++;
   }
 
@@ -219,14 +267,14 @@ export function findTextInChunkRaw(chunk: ParsedLogChunk,
 }
 
 export function findTextInChunk(chunk: ParsedLogChunk,
-                                searchString: string): ChunkSearchResults {
-  const results = findTextInChunkRaw(chunk, searchString);
+                                searchString: string, options?: ChunkSearchOptions): ChunkSearchResults {
+  const matcherFn = getMatcher(searchString, options);
+  const results = findTextInChunkRaw(chunk, matcherFn);
   return {results, lineIndexToFirstChunkIndex: resultsListToLineIndexMap(results)};
 }
 
 // Returns null if no overlay is needed
-export function overlaySearchResultsOnLine(searchString: string,
-                                           chunkResults: ChunkSearchResults,
+export function overlaySearchResultsOnLine(chunkResults: ChunkSearchResults,
                                            lineIndex: number,
                                            lineLength: number,
                                            lineCssClasses: LineCssClasses[]|null,
@@ -249,12 +297,14 @@ export function overlaySearchResultsOnLine(searchString: string,
       break;
     }
     const beginPos = result.lineStart;
-    const endPos = beginPos + searchString.length;
+    const endPos = result.lineEnd;
 
-    if (searchString.length === 1) {
+    const highlighLen = endPos - beginPos;
+
+    if (highlighLen === 1) {
       lineCssClasses = addOverlayToCssClasses(lineLength, lineCssClasses,
         beginPos, endPos, beginEndCssClassesAll);
-    } else if (searchString.length === 2) {
+    } else if (highlighLen === 2) {
       lineCssClasses = addOverlayToCssClasses(lineLength, lineCssClasses,
         beginPos, beginPos + 1, beginCssClassesAll);
       lineCssClasses = addOverlayToCssClasses(lineLength, lineCssClasses,

@@ -13,21 +13,27 @@
 #
 # Copyright Buildbot Team Members
 
-
-import importlib_resources
+import sys
 
 from twisted.web import static
 
 from buildbot.util import bytes2unicode
 
+if sys.version_info[:2] >= (3, 9):
+    # We need importlib.resources.files, which is added in Python 3.9
+    # https://docs.python.org/3/library/importlib.resources.html
+    import importlib.resources as importlib_resources
+else:
+    import importlib_resources
+
 
 class Application:
 
-    def __init__(self, modulename, description, ui=True):
+    def __init__(self, package_name, description, ui=True):
         self.description = description
-        self.version = importlib_resources.files(modulename).joinpath("VERSION")
+        self.version = importlib_resources.files(package_name).joinpath("VERSION")
         self.version = bytes2unicode(self.version.read_bytes())
-        self.static_dir = importlib_resources.files(modulename) / "static"
+        self.static_dir = importlib_resources.files(package_name) / "static"
         self.resource = static.File(self.static_dir)
         self.ui = ui
 

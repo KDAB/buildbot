@@ -26,6 +26,8 @@ from buildbot import interfaces
 from buildbot.locks import WorkerLock
 from buildbot.process.build import Build
 from buildbot.process.buildstep import BuildStep
+from buildbot.process.buildstep import create_step_from_step_or_factory
+from buildbot.process.locks import get_real_locks_from_accesses
 from buildbot.process.metrics import MetricLogObserver
 from buildbot.process.properties import Properties
 from buildbot.process.results import CANCELLED
@@ -114,8 +116,8 @@ class FakeBuilder:
     def getBuilderId(self):
         return defer.succeed(self.builderid)
 
-    def setupProperties(self, props):
-        pass
+    def setup_properties(self, props):
+        return defer.succeed(None)
 
     def buildFinished(self, build, workerforbuilder):
         pass
@@ -172,7 +174,7 @@ class _ControllableStep(BuildStep):
 
 
 def makeControllableStepFactory():
-    step = _ControllableStep()
+    step = create_step_from_step_or_factory(_ControllableStep())
     controller = _StepController(step)
     return controller, FakeStepFactory(step)
 
@@ -194,6 +196,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         self.builder = FakeBuilder(self.master)
         self.build = Build([r])
         self.build.conn = fakeprotocol.FakeConnection(self.worker)
+        self.build.workername = self.worker.workername
 
         self.workerforbuilder = Mock(name='workerforbuilder')
         self.workerforbuilder.worker = self.worker
@@ -201,6 +204,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         self.workerforbuilder.ping = lambda: True
 
         self.build.setBuilder(self.builder)
+        self.build.workerforbuilder = self.workerforbuilder
         self.build.text = []
         self.build.buildid = 666
 
@@ -208,10 +212,23 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         states = "".join(self.master.data.updates.stepStateString.values())
         self.assertIn(states, reason)
 
+    def create_fake_build_step(self):
+        return create_step_from_step_or_factory(FakeBuildStep())
+
+    def _setup_lock_claim_log(self, lock, claim_log):
+        if hasattr(lock, "_old_claim"):
+            return
+
+        def claim(owner, access):
+            claim_log.append(owner)
+            return lock._old_claim(owner, access)
+        lock._old_claim = lock.claim
+        lock.claim = claim
+
     def testRunSuccessfulBuild(self):
         b = self.build
 
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         b.setStepFactories([FakeStepFactory(step)])
 
         b.startBuild(self.workerforbuilder)
@@ -221,7 +238,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStopBuild(self):
         b = self.build
 
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         b.setStepFactories([FakeStepFactory(step)])
 
         def startStep(*args, **kw):
@@ -239,7 +256,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def test_build_retry_when_worker_substantiate_returns_false(self):
         b = self.build
 
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         b.setStepFactories([FakeStepFactory(step)])
 
         self.workerforbuilder.substantiate_if_needed = lambda _: False
@@ -250,7 +267,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def test_build_cancelled_when_worker_substantiate_returns_false_due_to_cancel(self):
         b = self.build
 
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         b.setStepFactories([FakeStepFactory(step)])
 
         d = defer.Deferred()
@@ -264,7 +281,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def test_build_retry_when_worker_substantiate_returns_false_due_to_cancel(self):
         b = self.build
 
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         b.setStepFactories([FakeStepFactory(step)])
 
         d = defer.Deferred()
@@ -284,10 +301,10 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         # the second one is marked with alwaysRun=True
         b = self.build
 
-        step1 = FakeBuildStep()
+        step1 = self.create_fake_build_step()
         step1.alwaysRun = False
         step1.results = None
-        step2 = FakeBuildStep()
+        step2 = self.create_fake_build_step()
         step2.alwaysRun = True
         step2.results = None
         b.setStepFactories([
@@ -320,7 +337,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def test_start_step_throws_exception(self):
         b = self.build
 
-        step1 = FakeBuildStep()
+        step1 = self.create_fake_build_step()
         b.setStepFactories([
             FakeStepFactory(step1),
         ])
@@ -334,59 +351,6 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
 
         self.assertEqual(b.results, EXCEPTION)
         self.flushLoggedErrors(TestException)
-
-    @defer.inlineCallbacks
-    def testBuild_canAcquireLocks(self):
-        b = self.build
-
-        workerforbuilder1 = Mock()
-        workerforbuilder2 = Mock()
-
-        lock = WorkerLock('lock')
-        counting_access = lock.access('counting')
-
-        real_lock = yield b.builder.botmaster.getLockByID(lock, 0)
-
-        # no locks, so both these pass (call twice to verify there's no
-        # state/memory)
-        lock_list = [(real_lock, counting_access)]
-        self.assertTrue(
-            Build._canAcquireLocks(lock_list, workerforbuilder1))
-        self.assertTrue(
-            Build._canAcquireLocks(lock_list, workerforbuilder1))
-        self.assertTrue(
-            Build._canAcquireLocks(lock_list, workerforbuilder2))
-        self.assertTrue(
-            Build._canAcquireLocks(lock_list, workerforbuilder2))
-
-        worker_lock_1 = real_lock.getLockForWorker(
-            workerforbuilder1.worker.workername)
-        worker_lock_2 = real_lock.getLockForWorker(
-            workerforbuilder2.worker.workername)
-
-        # then have workerforbuilder2 claim its lock:
-        worker_lock_2.claim(workerforbuilder2, counting_access)
-        self.assertTrue(
-            Build._canAcquireLocks(lock_list, workerforbuilder1))
-        self.assertTrue(
-            Build._canAcquireLocks(lock_list, workerforbuilder1))
-        self.assertFalse(
-            Build._canAcquireLocks(lock_list, workerforbuilder2))
-        self.assertFalse(
-            Build._canAcquireLocks(lock_list, workerforbuilder2))
-        worker_lock_2.release(workerforbuilder2, counting_access)
-
-        # then have workerforbuilder1 claim its lock:
-        worker_lock_1.claim(workerforbuilder1, counting_access)
-        self.assertFalse(
-            Build._canAcquireLocks(lock_list, workerforbuilder1))
-        self.assertFalse(
-            Build._canAcquireLocks(lock_list, workerforbuilder1))
-        self.assertTrue(
-            Build._canAcquireLocks(lock_list, workerforbuilder2))
-        self.assertTrue(
-            Build._canAcquireLocks(lock_list, workerforbuilder2))
-        worker_lock_1.release(workerforbuilder1, counting_access)
 
     def testBuilddirPropType(self):
 
@@ -411,27 +375,22 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         b = self.build
 
         lock = WorkerLock('lock')
-        claimCount = [0]
+        claim_log = []
         lock_access = lock.access('counting')
         lock.access = lambda mode: lock_access
 
-        real_workerlock = yield b.builder.botmaster.getLockByID(lock, 0)
-        real_lock = real_workerlock.getLockForWorker(self.workerforbuilder.worker.workername)
+        b.setLocks([lock_access])
+        yield b._setup_locks()
 
-        def claim(owner, access):
-            claimCount[0] += 1
-            return real_lock.old_claim(owner, access)
-        real_lock.old_claim = real_lock.claim
-        real_lock.claim = claim
-        yield b.setLocks([lock_access])
+        self._setup_lock_claim_log(b._locks_to_acquire[0][0], claim_log)
 
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         b.setStepFactories([FakeStepFactory(step)])
 
         b.startBuild(self.workerforbuilder)
 
         self.assertEqual(b.results, SUCCESS)
-        self.assertEqual(claimCount[0], 1)
+        self.assertEqual(len(claim_log), 1)
 
     @defer.inlineCallbacks
     def testBuildLocksOrder(self):
@@ -440,6 +399,8 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         eBuild = self.build
         cBuilder = FakeBuilder(self.master)
         cBuild = Build([self.request])
+        cBuild.workerforbuilder = self.workerforbuilder
+        cBuild.workername = self.worker.workername
         cBuild.setBuilder(cBuilder)
 
         eWorker = Mock()
@@ -451,25 +412,24 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         eWorker.ping = cWorker.ping = lambda: True
 
         lock = WorkerLock('lock', 2)
-        claimLog = []
+        claim_log = []
 
-        real_workerlock = yield self.master.botmaster.getLockByID(lock, 0)
-        realLock = real_workerlock.getLockForWorker(self.worker.workername)
+        eBuild.setLocks([lock.access('exclusive')])
+        yield eBuild._setup_locks()
 
-        def claim(owner, access):
-            claimLog.append(owner)
-            return realLock.oldClaim(owner, access)
-        realLock.oldClaim = realLock.claim
-        realLock.claim = claim
+        cBuild.setLocks([lock.access('counting')])
+        yield cBuild._setup_locks()
 
-        yield eBuild.setLocks([lock.access('exclusive')])
-        yield cBuild.setLocks([lock.access('counting')])
+        self._setup_lock_claim_log(eBuild._locks_to_acquire[0][0], claim_log)
+        self._setup_lock_claim_log(cBuild._locks_to_acquire[0][0], claim_log)
 
-        fakeBuild = Mock()
-        fakeBuildAccess = lock.access('counting')
-        realLock.claim(fakeBuild, fakeBuildAccess)
+        real_lock = eBuild._locks_to_acquire[0][0]
 
-        step = FakeBuildStep()
+        b3 = Mock()
+        b3_access = lock.access('counting')
+        real_lock.claim(b3, b3_access)
+
+        step = self.create_fake_build_step()
         eBuild.setStepFactories([FakeStepFactory(step)])
         cBuild.setStepFactories([FakeStepFactory(step)])
 
@@ -477,40 +437,35 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         c = cBuild.startBuild(cWorker)
         d = defer.DeferredList([e, c])
 
-        realLock.release(fakeBuild, fakeBuildAccess)
+        real_lock.release(b3, b3_access)
 
         yield d
         self.assertEqual(eBuild.results, SUCCESS)
         self.assertEqual(cBuild.results, SUCCESS)
-        self.assertEqual(claimLog, [fakeBuild, eBuild, cBuild])
+        self.assertEqual(claim_log, [b3, eBuild, cBuild])
 
     @defer.inlineCallbacks
     def testBuildWaitingForLocks(self):
         b = self.build
 
+        claim_log = []
+
         lock = WorkerLock('lock')
-        claimCount = [0]
         lock_access = lock.access('counting')
-        lock.access = lambda mode: lock_access
 
-        real_workerlock = yield b.builder.botmaster.getLockByID(lock, 0)
-        real_lock = real_workerlock.getLockForWorker(self.workerforbuilder.worker.workername)
+        b.setLocks([lock_access])
+        yield b._setup_locks()
+        self._setup_lock_claim_log(b._locks_to_acquire[0][0], claim_log)
 
-        def claim(owner, access):
-            claimCount[0] += 1
-            return real_lock.old_claim(owner, access)
-        real_lock.old_claim = real_lock.claim
-        real_lock.claim = claim
-        yield b.setLocks([lock_access])
-
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         b.setStepFactories([FakeStepFactory(step)])
 
+        real_lock = b._locks_to_acquire[0][0]
         real_lock.claim(Mock(), lock.access('counting'))
 
         b.startBuild(self.workerforbuilder)
 
-        self.assertEqual(claimCount[0], 1)
+        self.assertEqual(len(claim_log), 1)
         self.assertTrue(b.currentStep is None)
         self.assertTrue(b._acquiringLock is not None)
 
@@ -520,17 +475,15 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
 
         lock = WorkerLock('lock')
         lock_access = lock.access('counting')
-        lock.access = lambda mode: lock_access
 
-        real_workerlock = yield b.builder.botmaster.getLockByID(lock, 0)
-        real_lock = real_workerlock.getLockForWorker(self.workerforbuilder.worker.workername)
+        b.setLocks([lock_access])
+        yield b._setup_locks()
 
-        yield b.setLocks([lock_access])
-
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.alwaysRun = False
         b.setStepFactories([FakeStepFactory(step)])
 
+        real_lock = b._locks_to_acquire[0][0]
         real_lock.claim(Mock(), lock.access('counting'))
 
         def acquireLocks(res=None):
@@ -552,15 +505,14 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         lock_access = lock.access('counting')
         lock.access = lambda mode: lock_access
 
-        real_workerlock = yield b.builder.botmaster.getLockByID(lock, 0)
-        real_lock = real_workerlock.getLockForWorker(self.workerforbuilder.worker.workername)
+        b.setLocks([lock_access])
+        yield b._setup_locks()
 
-        yield b.setLocks([lock_access])
-
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.alwaysRun = False
         b.setStepFactories([FakeStepFactory(step)])
 
+        real_lock = b._locks_to_acquire[0][0]
         real_lock.claim(Mock(), lock.access('counting'))
 
         def acquireLocks(res=None):
@@ -580,15 +532,13 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
 
         lock = WorkerLock('lock')
         lock_access = lock.access('counting')
-        lock.access = lambda mode: lock_access
 
-        real_workerlock = yield b.builder.botmaster.getLockByID(lock, 0)
-        real_lock = real_workerlock.getLockForWorker(self.workerforbuilder.worker.workername)
+        locks = yield get_real_locks_from_accesses([lock_access], b)
 
-        step = BuildStep(locks=[lock_access])
+        step = create_step_from_step_or_factory(BuildStep(locks=[lock_access]))
         b.setStepFactories([FakeStepFactory(step)])
 
-        real_lock.claim(Mock(), lock.access('counting'))
+        locks[0][0].claim(Mock(), lock.access('counting'))
 
         gotLocks = [False]
 
@@ -608,7 +558,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDone(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         terminate = b.stepDone(SUCCESS, step)
         self.assertFalse(terminate.result)
         self.assertEqual(b.results, SUCCESS)
@@ -616,7 +566,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneHaltOnFailure(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.haltOnFailure = True
         terminate = b.stepDone(FAILURE, step)
         self.assertTrue(terminate.result)
@@ -625,7 +575,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneHaltOnFailureNoFlunkOnFailure(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.flunkOnFailure = False
         step.haltOnFailure = True
         terminate = b.stepDone(FAILURE, step)
@@ -635,7 +585,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneFlunkOnWarningsFlunkOnFailure(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.flunkOnFailure = True
         step.flunkOnWarnings = True
         b.stepDone(WARNINGS, step)
@@ -646,7 +596,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneNoWarnOnWarnings(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.warnOnWarnings = False
         terminate = b.stepDone(WARNINGS, step)
         self.assertFalse(terminate.result)
@@ -655,7 +605,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneWarnings(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         terminate = b.stepDone(WARNINGS, step)
         self.assertFalse(terminate.result)
         self.assertEqual(b.results, WARNINGS)
@@ -663,7 +613,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneFail(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         terminate = b.stepDone(FAILURE, step)
         self.assertFalse(terminate.result)
         self.assertEqual(b.results, FAILURE)
@@ -671,7 +621,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneFailOverridesWarnings(self):
         b = self.build
         b.results = WARNINGS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         terminate = b.stepDone(FAILURE, step)
         self.assertFalse(terminate.result)
         self.assertEqual(b.results, FAILURE)
@@ -679,7 +629,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneWarnOnFailure(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.warnOnFailure = True
         step.flunkOnFailure = False
         terminate = b.stepDone(FAILURE, step)
@@ -689,7 +639,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneFlunkOnWarnings(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.flunkOnWarnings = True
         terminate = b.stepDone(WARNINGS, step)
         self.assertFalse(terminate.result)
@@ -698,7 +648,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneHaltOnFailureFlunkOnWarnings(self):
         b = self.build
         b.results = SUCCESS
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.flunkOnWarnings = True
         self.haltOnFailure = True
         terminate = b.stepDone(WARNINGS, step)
@@ -708,7 +658,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneWarningsDontOverrideFailure(self):
         b = self.build
         b.results = FAILURE
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         terminate = b.stepDone(WARNINGS, step)
         self.assertFalse(terminate.result)
         self.assertEqual(b.results, FAILURE)
@@ -716,7 +666,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
     def testStepDoneRetryOverridesAnythingElse(self):
         b = self.build
         b.results = RETRY
-        step = FakeBuildStep()
+        step = self.create_fake_build_step()
         step.alwaysRun = True
         b.stepDone(WARNINGS, step)
         b.stepDone(FAILURE, step)
@@ -744,7 +694,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         steps = []
 
         def create_fake_step(name):
-            step = FakeBuildStep()
+            step = self.create_fake_build_step()
             step.name = name
             return step
 
@@ -758,7 +708,7 @@ class TestBuild(TestReactorMixin, unittest.TestCase):
         b = self.build
         b.setProperty("foo", "bar", "test")
 
-        step = FakeBuildStep()
+        step = create_step_from_step_or_factory(self.create_fake_build_step())
         b.setStepFactories([FakeStepFactory(step)])
 
         yield b.startBuild(self.workerforbuilder)

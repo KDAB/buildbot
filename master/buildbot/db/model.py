@@ -289,6 +289,12 @@ class Model(base.DBConnectorComponent):
         # text describing what is the relationship with the build
         # could be 'triggered from', 'rebuilt from', 'inherited from'
         sa.Column('parent_relationship', sa.Text),
+
+        # optional rebuilt build id
+        sa.Column('rebuilt_buildid', sa.Integer,
+                  sa.ForeignKey('builds.id', use_alter=True,
+                                name='rebuilt_buildid', ondelete='SET NULL'),
+                  nullable=True),
     )
 
     # Tables related to change sources
@@ -331,6 +337,7 @@ class Model(base.DBConnectorComponent):
         sa.Column("name", sa.String(50), nullable=False),
         sa.Column("info", JsonObject, nullable=False),
         sa.Column("paused", sa.SmallInteger, nullable=False, server_default="0"),
+        sa.Column("pause_reason", sa.Text, nullable=True),
         sa.Column("graceful", sa.SmallInteger, nullable=False, server_default="0"),
     )
 
@@ -981,6 +988,8 @@ class Model(base.DBConnectorComponent):
             {"unique": False, "column_names": ['sourcestampid'], "name": 'sourcestampid'}),
         ('buildsets',
             {"unique": False, "column_names": ['parent_buildid'], "name": 'parent_buildid'}),
+        ('buildsets',
+            {"unique": False, "column_names": ['rebuilt_buildid'], "name": 'rebuilt_buildid'}),
         ('builders_tags',
             {"unique": False, "column_names": ['tagid'], "name": 'tagid'}),
         ('changes', {

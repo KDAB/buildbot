@@ -467,7 +467,7 @@ py_38 = sys.version_info[0] > 3 or (
 if not py_38:
     raise RuntimeError("Buildbot master requires at least Python-3.8")
 
-twisted_ver = ">= 18.7.0, <=22.10.0"
+twisted_ver = ">= 18.7.0, <=23.10.0"
 
 bundle_version = version.split("-")[0]
 
@@ -478,7 +478,7 @@ setup_args['install_requires'] = [
     'Jinja2 >= 2.1',
     'msgpack >= 0.6.0',
     "croniter >= 1.3.0",
-    'importlib-resources >= 5',
+    'importlib-resources >= 5; python_version < "3.9"',
     # required for tests, but Twisted requires this anyway
     'zope.interface >= 4.1.1',
     'sqlalchemy >= 1.3.0, < 1.5',

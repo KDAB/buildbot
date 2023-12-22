@@ -302,37 +302,39 @@ class TestBuilder(TestReactorMixin, BuilderMixin, unittest.TestCase):
     def test_canStartBuild_cant_acquire_locks_but_no_locks(self):
         yield self.makeBuilder()
 
+        self.bldr.config.locks = [mock.Mock]
         self.bldr.botmaster.getLockFromLockAccesses = mock.Mock(return_value=[])
+        self.bldr._can_acquire_locks = lambda _: False
 
         wfb = mock.Mock()
         wfb.worker = FakeWorker('worker')
 
-        with mock.patch(
-                'buildbot.process.build.Build._canAcquireLocks',
-                mock.Mock(return_value=False)):
-            startable = yield self.bldr.canStartBuild(wfb, 100)
-            self.assertEqual(startable, True)
+        startable = yield self.bldr.canStartBuild(wfb, 100)
+        self.assertEqual(startable, True)
 
     @defer.inlineCallbacks
     def test_canStartBuild_with_locks(self):
         yield self.makeBuilder()
 
-        self.bldr.botmaster.getLockFromLockAccesses = mock.Mock(return_value=[mock.Mock()])
+        self.bldr.config.locks = [mock.Mock]
+        self.bldr.botmaster.getLockFromLockAccesses = mock.Mock(return_value=[
+            (mock.Mock(), mock.Mock())
+        ])
+        self.bldr._can_acquire_locks = lambda _: False
 
         wfb = mock.Mock()
         wfb.worker = FakeWorker('worker')
 
-        with mock.patch(
-                'buildbot.process.build.Build._canAcquireLocks',
-                mock.Mock(return_value=False)):
-            startable = yield self.bldr.canStartBuild(wfb, 100)
-            self.assertEqual(startable, False)
+        startable = yield self.bldr.canStartBuild(wfb, 100)
+        self.assertEqual(startable, False)
 
     @defer.inlineCallbacks
     def test_canStartBuild_with_renderable_locks(self):
         yield self.makeBuilder()
 
-        self.bldr.botmaster.getLockFromLockAccesses = mock.Mock(return_value=[mock.Mock()])
+        self.bldr.botmaster.getLockFromLockAccesses = mock.Mock(return_value=[
+            (mock.Mock(), mock.Mock())
+        ])
 
         renderedLocks = [False]
 
@@ -342,18 +344,16 @@ class TestBuilder(TestReactorMixin, BuilderMixin, unittest.TestCase):
             return [mock.Mock()]
 
         self.bldr.config.locks = rendered_locks
+        self.bldr._can_acquire_locks = lambda _: False
 
         wfb = mock.Mock()
         wfb.worker = FakeWorker('worker')
 
         with mock.patch(
-                'buildbot.process.build.Build._canAcquireLocks',
-                mock.Mock(return_value=False)):
-            with mock.patch(
-                    'buildbot.process.build.Build.setupPropertiesKnownBeforeBuildStarts',
-                    mock.Mock()):
-                startable = yield self.bldr.canStartBuild(wfb, 100)
-                self.assertEqual(startable, False)
+                'buildbot.process.build.Build.setup_properties_known_before_build_starts',
+                mock.Mock()):
+            startable = yield self.bldr.canStartBuild(wfb, 100)
+            self.assertEqual(startable, False)
 
         self.assertTrue(renderedLocks[0])
 
@@ -365,7 +365,7 @@ class TestBuilder(TestReactorMixin, BuilderMixin, unittest.TestCase):
         wfb.worker = FakeLatentWorker(is_compatible_with_build=False)
 
         with mock.patch(
-                'buildbot.process.build.Build.setupPropertiesKnownBeforeBuildStarts',
+                'buildbot.process.build.Build.setup_properties_known_before_build_starts',
                 mock.Mock()):
             startable = yield self.bldr.canStartBuild(wfb, 100)
         self.assertFalse(startable)
@@ -374,7 +374,10 @@ class TestBuilder(TestReactorMixin, BuilderMixin, unittest.TestCase):
     def test_canStartBuild_with_renderable_locks_with_compatible_latent_worker(self):
         yield self.makeBuilder()
 
-        self.bldr.botmaster.getLockFromLockAccesses = mock.Mock(return_value=[mock.Mock()])
+        self.bldr.config.locks = [mock.Mock]
+        self.bldr.botmaster.getLockFromLockAccesses = mock.Mock(return_value=[
+            (mock.Mock(), mock.Mock())
+        ])
 
         rendered_locks = [False]
 
@@ -384,18 +387,16 @@ class TestBuilder(TestReactorMixin, BuilderMixin, unittest.TestCase):
             return [mock.Mock()]
 
         self.bldr.config.locks = locks_renderer
+        self.bldr._can_acquire_locks = lambda _: False
 
         wfb = mock.Mock()
         wfb.worker = FakeLatentWorker(is_compatible_with_build=True)
 
         with mock.patch(
-                'buildbot.process.build.Build._canAcquireLocks',
-                mock.Mock(return_value=False)):
-            with mock.patch(
-                    'buildbot.process.build.Build.setupPropertiesKnownBeforeBuildStarts',
-                    mock.Mock()):
-                startable = yield self.bldr.canStartBuild(wfb, 100)
-                self.assertEqual(startable, False)
+                'buildbot.process.build.Build.setup_properties_known_before_build_starts',
+                mock.Mock()):
+            startable = yield self.bldr.canStartBuild(wfb, 100)
+            self.assertEqual(startable, False)
         self.assertFalse(startable)
         self.assertTrue(rendered_locks[0])
 
@@ -471,7 +472,7 @@ class TestBuilder(TestReactorMixin, BuilderMixin, unittest.TestCase):
 
         yield self.makeBuilder(defaultProperties={'bar': 'onoes', 'cuckoo': 42})
 
-        self.bldr.setupProperties(props)
+        yield self.bldr.setup_properties(props)
 
         self.assertEquals(props.getProperty('bar'), 'bleh')
         self.assertEquals(props.getProperty('cuckoo'), 42)

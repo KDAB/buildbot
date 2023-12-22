@@ -148,6 +148,7 @@ class Buildset(TestReactorMixin, util_interfaces.InterfaceTests,
             self.rtype.addBuildset)  # real
         def addBuildset(self, waited_for, scheduler=None, sourcestamps=None, reason='',
                         properties=None, builderids=None, external_idstring=None,
+                        rebuilt_buildid=None,
                         parent_buildid=None, parent_relationship=None, priority=0):
             pass
 
@@ -221,10 +222,12 @@ class Buildset(TestReactorMixin, util_interfaces.InterfaceTests,
                 "complete": False,
                 "complete_at": None,
                 "external_idstring": external_idstring,
+                "parent_buildid": None,
                 "reason": reason,
                 "results": None,
                 "scheduler": scheduler,
                 "sourcestamps": [ssmap[ssid] for ssid in sourcestampids],
+                "rebuilt_buildid": None,
                 "submitted_at": submitted_at
             }
         )
@@ -244,6 +247,7 @@ class Buildset(TestReactorMixin, util_interfaces.InterfaceTests,
             "results": results,
             "submitted_at": submitted_at,
             "sourcestamps": [ssmap[ssid] for ssid in sourcestampids],
+            "rebuilt_buildid": None,
             "parent_buildid": None,
             "parent_relationship": None,
         })
@@ -270,7 +274,8 @@ class Buildset(TestReactorMixin, util_interfaces.InterfaceTests,
         expectedBuildset = {
             "reason": 'because',
             "properties": {},
-            "external_idstring": 'extid'
+            "external_idstring": 'extid',
+            "rebuilt_buildid": None,
         }
         return self.do_test_addBuildset(kwargs,
                                         expectedReturn, expectedMessages, expectedBuildset)
@@ -292,7 +297,8 @@ class Buildset(TestReactorMixin, util_interfaces.InterfaceTests,
         expectedBuildset = {
             "reason": 'because',
             "properties": {},
-            "external_idstring": 'extid'
+            "external_idstring": 'extid',
+            "rebuilt_buildid": None,
         }
         return self.do_test_addBuildset(kwargs,
                                         expectedReturn, expectedMessages, expectedBuildset)

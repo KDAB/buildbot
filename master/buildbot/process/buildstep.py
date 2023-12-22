@@ -40,6 +40,7 @@ from buildbot.process import logobserver
 from buildbot.process import properties
 from buildbot.process import remotecommand
 from buildbot.process import results
+from buildbot.process.locks import get_real_locks_from_accesses
 # (WithProperties used to be available in this module)
 from buildbot.process.properties import WithProperties
 from buildbot.process.results import ALL_RESULTS
@@ -53,6 +54,7 @@ from buildbot.process.results import WARNINGS
 from buildbot.process.results import statusToString
 from buildbot.util import bytes2unicode
 from buildbot.util import debounce
+from buildbot.util import deferwaiter
 from buildbot.util import flatten
 from buildbot.util.test_result_submitter import TestResultSubmitter
 from buildbot.warnings import warn_deprecated
@@ -132,16 +134,19 @@ class _BuildStepFactory(util.ComparableMixin):
     """
     compare_attrs = ('factory', 'args', 'kwargs')
 
-    def __init__(self, factory, *args, **kwargs):
-        self.factory = factory
+    def __init__(self, step_class, *args, **kwargs):
+        self.step_class = step_class
         self.args = args
         self.kwargs = kwargs
 
     def buildStep(self):
         try:
-            return self.factory(*self.args, **self.kwargs)
+            step = object.__new__(self.step_class)
+            step._factory = self
+            step.__init__(*self.args, **self.kwargs)  # noqa pylint: disable=unnecessary-dunder-call
+            return step
         except Exception:
-            log.msg(f"error while creating step, factory={self.factory}, args={self.args}, "
+            log.msg(f"error while creating step, step_class={self.step_class}, args={self.args}, "
                     f"kwargs={self.kwargs}")
             raise
 
@@ -162,6 +167,43 @@ def get_factory_from_step_or_factory(step_or_factory):
 
 def create_step_from_step_or_factory(step_or_factory):
     return get_factory_from_step_or_factory(step_or_factory).buildStep()
+
+
+class BuildStepWrapperMixin:
+    __init_completed = False
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__init_completed = True
+
+    def __setattr__(self, name, value):
+        if self.__init_completed:
+            warn_deprecated(
+                "3.10.0",
+                "Changes to attributes of a BuildStep instance are ignored, this is a bug. "
+                "Use set_step_arg(name, value) for that."
+            )
+        super().__setattr__(name, value)
+
+
+# This is also needed for comparisons to work because ComparableMixin requires type(x) and
+# x.__class__ to be equal in order to perform comparison at all.
+_buildstep_wrapper_cache = {}
+
+
+def _create_buildstep_wrapper_class(klass):
+    class_id = id(klass)
+    cached = _buildstep_wrapper_cache.get(class_id, None)
+    if cached is not None:
+        return cached
+
+    wrapper = type(
+        klass.__qualname__,
+        (BuildStepWrapperMixin, klass),
+        {}
+    )
+    _buildstep_wrapper_cache[class_id] = wrapper
+    return wrapper
 
 
 @implementer(interfaces.IBuildStep)
@@ -223,6 +265,7 @@ class BuildStep(results.ResultComputingConfigMixin,
     descriptionSuffix = None  # extra information to append to suffix
     updateBuildSummaryPolicy = None
     locks = []
+    _locks_to_acquire = []
     progressMetrics = ()  # 'time' is implicit
     useProgress = True  # set to False if step is really unpredictable
     build = None
@@ -285,12 +328,34 @@ class BuildStep(results.ResultComputingConfigMixin,
         self.stepid = None
         self.results = None
         self._start_unhandled_deferreds = None
+        self._interrupt_deferwaiter = deferwaiter.DeferWaiter()
+        self._update_summary_debouncer = debounce.Debouncer(
+            1.0,
+            self._update_summary_impl,
+            lambda: self.master.reactor
+        )
         self._test_result_submitters = {}
 
     def __new__(klass, *args, **kwargs):
-        self = object.__new__(klass)
+        # The following code prevents changing BuildStep attributes after an instance
+        # is created during config time. Such attribute changes don't affect the factory,
+        # so they will be lost when actual build step is created.
+        #
+        # This is implemented by dynamically creating a subclass that disallows attribute
+        # writes after __init__ completes.
+        self = object.__new__(_create_buildstep_wrapper_class(klass))
         self._factory = _BuildStepFactory(klass, *args, **kwargs)
         return self
+
+    def is_exact_step_class(self, klass):
+        # Due to wrapping BuildStep in __new__, it's not possible to compare self.__class__ to
+        # check if self is an instance of some class (but not subclass).
+        if self.__class__ is klass:
+            return True
+        mro = self.__class__.mro()
+        if len(mro) >= 3 and mro[1] is BuildStepWrapperMixin and mro[2] is klass:
+            return True
+        return False
 
     def __str__(self):
         args = [repr(x) for x in self._factory.args]
@@ -345,6 +410,15 @@ class BuildStep(results.ResultComputingConfigMixin,
     def get_step_factory(self):
         return self._factory
 
+    def set_step_arg(self, name, value):
+        self._factory.kwargs[name] = value
+        # check if buildstep can still be constructed with the new arguments
+        try:
+            self._factory.buildStep()
+        except Exception:
+            log.msg(f"Cannot set step factory attribute {name} to {value}: step creation fails")
+            raise
+
     def setupProgress(self):
         # this function temporarily does nothing
         pass
@@ -385,9 +459,11 @@ class BuildStep(results.ResultComputingConfigMixin,
             summary['build'] = summary['step']
         return summary
 
-    @debounce.method(wait=1)
-    @defer.inlineCallbacks
     def updateSummary(self):
+        self._update_summary_debouncer()
+
+    @defer.inlineCallbacks
+    def _update_summary_impl(self):
         def methodInfo(m):
             lines = inspect.getsourcelines(m)
             return "\nat {}:{}:\n {}".format(inspect.getsourcefile(m), lines[1],
@@ -433,47 +509,9 @@ class BuildStep(results.ResultComputingConfigMixin,
         self.remote = remote
 
         yield self.addStep()
-        self.locks = yield self.build.render(self.locks)
-
-        # convert all locks into their real form
-        botmaster = self.build.builder.botmaster
-        self.locks = yield botmaster.getLockFromLockAccesses(self.locks, self.build.config_version)
-
-        # then narrow WorkerLocks down to the worker that this build is being
-        # run on
-        self.locks = [(l.getLockForWorker(self.build.workerforbuilder.worker.workername),
-                       la)
-                      for l, la in self.locks]
-
-        for l, _ in self.locks:
-            if l in self.build.locks:
-                log.msg(f"Hey, lock {l} is claimed by both a Step ({self}) and the"
-                        f" parent Build ({self.build})")
-                raise RuntimeError("lock claimed by both Step and Build")
 
         try:
-            # set up locks
-            yield self.acquireLocks()
-
-            if self.stopped:
-                raise BuildStepCancelled
-
-            yield self.master.data.updates.set_step_locks_acquired_at(self.stepid)
-
-            # render renderables in parallel
-            renderables = []
-            accumulateClassList(self.__class__, 'renderables', renderables)
-
-            def setRenderable(res, attr):
-                setattr(self, attr, res)
-
-            dl = []
-            for renderable in renderables:
-                d = self.build.render(getattr(self, renderable))
-                d.addCallback(setRenderable, renderable)
-                dl.append(d)
-            yield defer.gatherResults(dl)
-            self.rendered = True
+            yield self._render_renderables()
             # we describe ourselves only when renderables are interpolated
             self.updateSummary()
 
@@ -483,8 +521,17 @@ class BuildStep(results.ResultComputingConfigMixin,
             else:
                 doStep = yield self.doStepIf(self)
 
-            # run -- or skip -- the step
             if doStep:
+                yield self._setup_locks()
+
+                # set up locks
+                yield self.acquireLocks()
+
+                if self.stopped:
+                    raise BuildStepCancelled
+
+                yield self.master.data.updates.set_step_locks_acquired_at(self.stepid)
+
                 yield self.addTestResultSets()
                 try:
                     self._running = True
@@ -540,7 +587,7 @@ class BuildStep(results.ResultComputingConfigMixin,
         # update the summary one last time, make sure that completes,
         # and then don't update it any more.
         self.updateSummary()
-        yield self.updateSummary.stop()
+        yield self._update_summary_debouncer.stop()
 
         for sub in self._test_result_submitters.values():
             yield sub.finish()
@@ -552,12 +599,41 @@ class BuildStep(results.ResultComputingConfigMixin,
 
         return self.results
 
+    @defer.inlineCallbacks
+    def _setup_locks(self):
+        self._locks_to_acquire = yield get_real_locks_from_accesses(self.locks, self.build)
+        for l, _ in self._locks_to_acquire:
+            if l in self.build.locks:
+                log.msg(f"Hey, lock {l} is claimed by both a Step ({self}) and the"
+                        f" parent Build ({self.build})")
+                raise RuntimeError("lock claimed by both Step and Build")
+
+    @defer.inlineCallbacks
+    def _render_renderables(self):
+        # render renderables in parallel
+        renderables = []
+        accumulateClassList(self.__class__, 'renderables', renderables)
+
+        def setRenderable(res, attr):
+            setattr(self, attr, res)
+
+        dl = []
+        for renderable in renderables:
+            d = self.build.render(getattr(self, renderable))
+            d.addCallback(setRenderable, renderable)
+            dl.append(d)
+        yield defer.gatherResults(dl)
+        self.rendered = True
+
     def setBuildData(self, name, value, source):
         # returns a Deferred that yields nothing
         return self.master.data.updates.setBuildData(self.build.buildid, name, value, source)
 
     @defer.inlineCallbacks
     def _cleanup_logs(self):
+        # Wait until any in-progress interrupt() to finish (that function may add new logs)
+        yield self._interrupt_deferwaiter.wait()
+
         all_success = True
         not_finished_logs = [v for (k, v) in self.logs.items() if not v.finished]
         finish_logs = yield defer.DeferredList([v.finish() for v in not_finished_logs],
@@ -591,12 +667,12 @@ class BuildStep(results.ResultComputingConfigMixin,
                                                             line=line, duration_ns=duration_ns)
 
     def acquireLocks(self, res=None):
-        if not self.locks:
+        if not self._locks_to_acquire:
             return defer.succeed(None)
         if self.stopped:
             return defer.succeed(None)
-        log.msg(f"acquireLocks(step {self}, locks {self.locks})")
-        for lock, access in self.locks:
+        log.msg(f"acquireLocks(step {self}, locks {self._locks_to_acquire})")
+        for lock, access in self._locks_to_acquire:
             for waited_lock, _, _ in self._acquiringLocks:
                 if lock is waited_lock:
                     continue
@@ -609,7 +685,7 @@ class BuildStep(results.ResultComputingConfigMixin,
                 d.addCallback(self.acquireLocks)
                 return d
         # all locks are available, claim them all
-        for lock, access in self.locks:
+        for lock, access in self._locks_to_acquire:
             lock.claim(self, access)
         self._acquiringLocks = []
         self._waitingForLocks = False
@@ -632,8 +708,13 @@ class BuildStep(results.ResultComputingConfigMixin,
         except Exception as e:
             log.err(e, 'while cancelling command')
 
-    @defer.inlineCallbacks
     def interrupt(self, reason):
+        # Note that this method may be run outside usual step lifecycle (e.g. after run() has
+        # already completed), so extra care needs to be taken to prevent race conditions.
+        return self._interrupt_deferwaiter.add(self._interrupt_impl(reason))
+
+    @defer.inlineCallbacks
+    def _interrupt_impl(self, reason):
         if self.stopped:
             # If we are in the process of interruption and connection is lost then we must tell
             # the command not to wait for the interruption to complete.
@@ -647,17 +728,13 @@ class BuildStep(results.ResultComputingConfigMixin,
                 lock.stopWaitingUntilAvailable(self, access, d)
             self._acquiringLocks = []
 
-        if self._waitingForLocks:
-            yield self.addCompleteLog(
-                'cancelled while waiting for locks', str(reason))
-        else:
-            yield self.addCompleteLog('cancelled', str(reason))
-
+        log_name = "cancelled while waiting for locks" if self._waitingForLocks else "cancelled"
+        yield self.addCompleteLog(log_name, str(reason))
         yield self._maybe_interrupt_cmd(reason)
 
     def releaseLocks(self):
-        log.msg(f"releaseLocks({self}): {self.locks}")
-        for lock, access in self.locks:
+        log.msg(f"releaseLocks({self}): {self._locks_to_acquire}")
+        for lock, access in self._locks_to_acquire:
             if lock.isOwner(self, access):
                 lock.release(self, access)
             else:

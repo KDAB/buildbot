@@ -99,8 +99,10 @@ export const LogViewerText = observer(({log, downloadInitiateOverscanRowCount, d
     return [overscanStartIndex, overscanStopIndex, visibleStartIndex, visibleStopIndex];
   }
 
-  const onSearchTextChanged = (text: string) => {
+  const onSearchInputChanged = (text: string, caseSensitive: boolean, useRegex: boolean) => {
     manager.setSearchString(text === '' ? null : text);
+    manager.setSearchCaseSensitivity(caseSensitive);
+    manager.setUseRegex(useRegex);
   }
 
   const listRef = useRef<FixedSizeList<any>>(null);
@@ -128,7 +130,7 @@ export const LogViewerText = observer(({log, downloadInitiateOverscanRowCount, d
         <div>
           <LogSearchField currentResult={manager.currentSearchResultIndex + 1}
                           totalResults={Math.max(manager.totalSearchResultCount, 0)}
-                          onTextChanged={onSearchTextChanged}
+                          onSearchInputChanged={onSearchInputChanged}
                           onPrevClicked={() => manager.setPrevSearchResult()}
                           onNextClicked={() => manager.setNextSearchResult()}
                           inputRef={searchInputRef}/>

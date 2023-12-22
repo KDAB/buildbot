@@ -77,10 +77,11 @@ class UpgradeTestMixin(db.RealDatabaseMixin, TestReactorMixin):
             with tarfile.open(tarball) as tf:
                 prefixes = set()
                 for inf in tf:
-                    tf.extract(inf)
+                    if hasattr(tarfile, 'data_filter'):
+                        tf.extract(inf, filter='data')
+                    else:
+                        tf.extract(inf)
                     prefixes.add(inf.name.split('/', 1)[0])
-
-            # (note that tf.extractall isn't available in py2.4)
 
             # get the top-level dir from the tarball
             assert len(prefixes) == 1, "tarball has multiple top-level dirs!"

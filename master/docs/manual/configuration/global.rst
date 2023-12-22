@@ -154,16 +154,7 @@ Wamp
 
 This is a MQ implementation using the `wamp <http://wamp.ws/>`_ protocol.
 This implementation uses `Python Autobahn <http://autobahn.ws>`_ wamp client library, and is fully asynchronous (no use of threads).
-To use this implementation, you need a wamp router like `Crossbar <http://crossbar.io>`_.
-
-Please refer to Crossbar documentation for more details, but the default Crossbar setup will just work with Buildbot, provided you use the example ``mq`` configuration above, and start Crossbar with:
-
-.. code-block:: bash
-
-    # of course, you should work in a virtualenv...
-    pip install crossbar
-    crossbar init
-    crossbar start
+To use this implementation, you need a wamp router like Crossbar.
 
 The implementation does not yet support wamp authentication.
 This MQ allows buildbot to run in multi-master mode.
@@ -182,6 +173,89 @@ For example, if a change is received, but the master shuts down before the sched
 You must use a router with very reliable connection to the master.
 If for some reason, the wamp connection is lost, then the master will stop, and should be restarted via a process manager.
 
+.. _mq-Crossbar:
+
+Crossbar
+++++++++
+
+The default Crossbar setup will just work with Buildbot, provided you use the example ``mq``
+configuration below, and start Crossbar with:
+
+.. code-block:: bash
+
+    # of course, you should work in a virtualenv...
+    pip install crossbar
+    crossbar init
+    crossbar start
+
+.crossbar/config.json:
+
+.. code-block:: bash
+
+    {
+        "version": 2,
+        "controller": {},
+        "workers": [
+            {
+                "type": "router",
+                "realms": [
+                    {
+                        "name": "test_realm",
+                        "roles": [
+                            {
+                                "name": "anonymous",
+                                "permissions": [
+                                    {
+                                        "uri": "",
+                                        "match": "prefix",
+                                        "allow": {
+                                            "call": true,
+                                            "register": true,
+                                            "publish": true,
+                                            "subscribe": true
+                                        },
+                                        "disclose": {
+                                            "caller": false,
+                                            "publisher": false
+                                        },
+                                        "cache": true
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                "transports": [
+                    {
+                        "type": "web",
+                        "endpoint": {
+                            "type": "tcp",
+                            "port": 1245
+                        },
+                        "paths": {
+                            "ws": {
+                                "type": "websocket"
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+Buildbot can be configured to use Crossbar by the following:
+
+.. code-block:: bash
+
+    c["mq"] = {
+        "type" : "wamp",
+        "router_url": "ws://localhost:1245/ws",
+        "realm": "test_realm",
+        "wamp_debug_level" : "warn"
+    }
+
+Please refer to `Crossbar <https://github.com/crossbario/crossbar/tree/master>`_ documentation for
+more details.
 
 .. bb:cfg:: multiMaster
 
@@ -412,6 +486,28 @@ See :ref:`Builder-Priority-Functions` for details on this callable.
 This parameter controls the order that the buildmaster can start builds, and is useful in situations where there is resource contention between builders, e.g., for a test database.
 It does not affect the order in which a builder processes the build requests in its queue.
 For that purpose, see :ref:`Prioritizing-Builds`.
+
+.. bb:cfg:: select_next_worker
+
+Prioritizing Workers
+~~~~~~~~~~~~~~~~~~~~
+
+By default Buildbot will select worker for a build randomly from available workers. This can be
+adjusted by ``select_next_worker`` function in global master configuration and additionally by
+``nextWorker`` per-builder configuration parameter. These two functions work exactly the same:
+
+The function is passed three arguments, the :class:`Builder` object which is assigning a new job,
+a list of :class:`WorkerForBuilder` objects and the :class:`BuildRequest`.
+
+The function should return one of the :class:`WorkerForBuilder` objects, or ``None`` if none of the
+available workers should be used. The function can optionally return a Deferred, which should fire
+with the same results.
+
+.. code-block:: python
+
+   def select_next_worker(builder, workers, buildrequest):
+       ...
+   c["select_next_worker"] = select_next_worker
 
 .. bb:cfg:: protocols
 
