@@ -32,7 +32,6 @@ certifi==2023.11.17
 cffi==1.16.0
 chardet==5.2.0
 charset-normalizer==3.3.2
-click-default-group==1.2.4
 click==8.1.7
 configparser==6.0.0
 constantly==23.10.4
@@ -48,7 +47,8 @@ docutils==0.18.1  # pyup: ignore (sphinx-rtd-theme 1.2.0 requires docutils<0.19)
 extras==1.0.0
 fixtures==4.1.0
 funcsigs==1.0.2
-graphql-core==3.2.3
+graphql-core==3.3.0a3; python_version >= "3.12" # pyup: ignore (temporary switch to PRE-RELEASE version; remove this once 3.3.0 or newer is released as RELEASE version)
+graphql-core==3.2.3; python_version < "3.12"
 greenlet==3.0.2
 hvac==1.2.1
 hyperlink==21.0.0
@@ -107,14 +107,14 @@ singledispatch==4.1.0
 six==1.16.0
 snowballstemmer==2.2.0
 # Buildbot supports only sqlalchemy >= 1.3.0, < 1.5
-SQLAlchemy==1.4.40  # pyup: ignore
+SQLAlchemy==1.4.50  # pyup: ignore
 sqlparse==0.4.4
 termcolor==2.4.0
 testtools==2.7.1
 toml==0.10.2
 tomli==2.0.1
 tomlkit==0.12.3
-towncrier==21.9.0
+towncrier==23.11.0
 treq==23.11.0;  python_version >= "3.9"
 treq==22.2.0;  python_version < "3.9" # pyup: ignore
 Twisted==23.10.0

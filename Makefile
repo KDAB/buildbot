@@ -1,3 +1,6 @@
+# Enable more strict mode for shell
+.SHELLFLAGS := -eu -c
+
 # developer utilities
 DOCKERBUILD := docker build --build-arg http_proxy=$$http_proxy --build-arg https_proxy=$$https_proxy
 ROOT_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
@@ -27,9 +30,13 @@ docs:
 	@echo "You can now open master/docs/_build/html/index.html"
 
 docs-towncrier:
+	# Check that master/docs/relnotes/index.rst is not already generated (so it's in the the staging area).
+	# If docs-release and docs-release-spelling are called one after the other, then towncrier will report duplicate release notes.
+	if ! git diff --name-only --cached | grep -q "master/docs/relnotes/index.rst"; then \
 	if command -v towncrier >/dev/null 2>&1 ;\
 	then \
 	towncrier --draft | grep  'No significant changes.' || yes n | towncrier ;\
+	fi \
 	fi
 
 docs-spelling:
@@ -61,7 +68,6 @@ flake8:
 frontend_deps: $(VENV_NAME)
 	$(PIP) install -e pkg
 	$(PIP) install wheel buildbot
-	cd www/build_common; $(YARN) install --pure-lockfile
 	for i in $(WWW_DEP_PKGS); \
 		do (cd $$i; $(YARN) install --pure-lockfile; $(YARN) run build); done
 

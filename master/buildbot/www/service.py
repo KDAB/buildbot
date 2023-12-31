@@ -132,7 +132,7 @@ class BuildbotSession(server.Session):
 
         This should actually only be used for cookie generation
         """
-        exp = datetime.datetime.utcnow() + self.expDelay
+        exp = datetime.datetime.now(datetime.timezone.utc) + self.expDelay
         claims = {
             'user_info': self.user_info,
             # Note that we use JWT standard 'exp' field to implement session expiration
@@ -306,8 +306,10 @@ class WWWService(service.ReconfigurableServiceMixin, service.AsyncMultiService):
 
         self.reconfigurableResources = []
 
-        # we're going to need at least the base plugin (buildbot-www)
+        # we're going to need at least the base plugin (buildbot-www or buildbot-www-react)
         if self.base_plugin_name not in self.apps:
+            if self.base_plugin_name == 'base_react':
+                raise RuntimeError("could not find buildbot-www-react; is it installed?")
             raise RuntimeError("could not find buildbot-www; is it installed?")
 
         root = self.apps.get(self.base_plugin_name).resource

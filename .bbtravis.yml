@@ -31,6 +31,8 @@ matrix:
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=js_unit NUM_CPU=2 MEMORY_SIZE=1G
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=e2e_react_whl NUM_CPU=2 MEMORY_SIZE=2G
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=e2e_react_tgz NUM_CPU=2 MEMORY_SIZE=2G
+    - env: PYTHON=3.12 TWISTED=latest SQLALCHEMY=latest TESTS=e2e_react_whl NUM_CPU=2 MEMORY_SIZE=2G
+    - env: PYTHON=3.12 TWISTED=latest SQLALCHEMY=latest TESTS=e2e_react_tgz NUM_CPU=2 MEMORY_SIZE=2G
 
     # include "ci" string into the name of the status that is eventually submitted to Github, so
     # that the codecov.io service would wait until this build is finished before creating report.
@@ -40,8 +42,9 @@ matrix:
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
     - env: PYTHON=3.10 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
     - env: PYTHON=3.11 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
+    - env: PYTHON=3.12 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
 
-    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=dev_virtualenv
+    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=dev_virtualenv
 
     # Worker-master interoperability tests
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=interop WORKER_PYTHON=3.9
@@ -76,6 +79,9 @@ install:
   - /tmp/bbvenv/bin/pip install -U pip wheel
   - condition: TESTS not in ("dev_virtualenv", "smokes", "e2e_react_whl", "e2e_react_tgz", "trial_worker")
     cmd: /tmp/bbvenv/bin/pip install -r requirements-ci.txt
+  # On python 3.12 workaround done in dcbc28d1431e1aae892f7fdc0e266253365bc11e is no longer enough.
+  - condition: TESTS not in ("dev_virtualenv", "smokes", "e2e_react_whl", "e2e_react_tgz", "trial_worker")
+    cmd: /tmp/bbvenv/bin/pip install -e master -e worker
   - condition: TESTS == "dev_virtualenv"
     cmd: /tmp/bbvenv/bin/pip install -r requirements-ci.txt -r requirements-ciworker.txt -r requirements-cidocs.txt
   - condition: TESTS == "trial_worker"
@@ -144,7 +150,7 @@ script:
 
   - title: master and worker tests
     condition: TESTS in ("dev_virtualenv", "trial")
-    cmd: /tmp/bbvenv/bin/trial -j4 --reporter=text --rterrors buildbot.test buildbot_worker.test
+    cmd: /tmp/bbvenv/bin/trial -j8 --reporter=text --rterrors buildbot.test buildbot_worker.test
 
   - title: interop tests
     condition: TESTS == "interop"
@@ -160,7 +166,7 @@ script:
   # run tests under coverage for latest only (it's slower..)
   - title: coverage tests
     condition: TESTS == "ci/coverage"
-    cmd: /tmp/bbvenv/bin/coverage run --rcfile=.coveragerc /tmp/bbvenv/bin/trial -j4 --reporter=text --rterrors buildbot.test buildbot_worker.test
+    cmd: /tmp/bbvenv/bin/coverage run --rcfile=.coveragerc /tmp/bbvenv/bin/trial -j8 --reporter=text --rterrors buildbot.test buildbot_worker.test
 
   # Run additional tests in their separate job
   - title: pylint
