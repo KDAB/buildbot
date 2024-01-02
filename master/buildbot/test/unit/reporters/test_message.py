@@ -196,6 +196,38 @@ class MessageFormatterTestBase(TestReactorMixin, unittest.TestCase):
                                                        users=["him@bar", "me@foo"])
         return res
 
+    @defer.inlineCallbacks
+    def do_one_test_buildset(
+        self,
+        formatter,
+        lastresults,
+        results,
+        mode="all",
+        with_steps=False,
+        extra_build_properties=None
+    ):
+        self.setup_db(
+            lastresults,
+            results,
+            with_steps=with_steps,
+            extra_build_properties=extra_build_properties
+        )
+
+        res = yield utils.getDetailsForBuildset(
+            self.master,
+            99,
+            want_properties=formatter.want_properties,
+            want_steps=formatter.want_steps,
+            want_previous_build=True,
+            want_logs=formatter.want_logs,
+            want_logs_content=formatter.want_logs_content
+        )
+
+        res = yield formatter.format_message_for_buildset(
+            self.master, res["buildset"], res["builds"], mode=mode, users=["him@bar", "me@foo"]
+        )
+        return res
+
 
 class TestMessageFormatter(MessageFormatterTestBase):
 
@@ -226,6 +258,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
         self.assertEqual(res, {
             'type': 'plain',
             'subject': '☺ Buildbot (Buildbot): Builder1 - test ((unknown revision))',
+            "extra_info": None,
             'body': textwrap.dedent('''\
                 A passing build has been detected on builder Builder1 while building Buildbot.
 
@@ -252,6 +285,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
         self.assertEqual(res, {
             'type': 'plain',
             'subject': '☺ Buildbot (Buildbot): Builder1 - test (abcd1234)',
+            "extra_info": None,
             'body': textwrap.dedent('''\
                 A passing build has been detected on builder Builder1 while building Buildbot.
 
@@ -287,6 +321,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
         self.assertEqual(res, {
             'type': 'html',
             'subject': '☺ Buildbot (Buildbot): Builder1 - test ((unknown revision))',
+            "extra_info": None,
             'body': textwrap.dedent('''\
                 <p>A passing build has been detected on builder
                 <a href="http://localhost:8080/#/builders/80/builds/1">Builder1</a>
@@ -315,6 +350,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
         self.assertEqual(res, {
             'type': 'html',
             'subject': '☺ Buildbot (Buildbot): Builder1 - test (abcd1234)',
+            "extra_info": None,
             'body': textwrap.dedent('''\
                 <p>A passing build has been detected on builder
                 <a href="http://localhost:8080/#/builders/80/builds/1">Builder1</a>
@@ -353,18 +389,39 @@ class TestMessageFormatter(MessageFormatterTestBase):
         })
 
     @defer.inlineCallbacks
-    def test_inline_template(self):
-        formatter = message.MessageFormatter(template="URL: {{ build_url }} -- {{ summary }}")
+    def test_inline_templates(self):
+        formatter = message.MessageFormatter(
+            template="URL: {{ build_url }} -- {{ summary }}",
+            subject="subject"
+        )
         res = yield self.do_one_test(formatter, SUCCESS, SUCCESS)
-        self.assertEqual(res['type'], "plain")
-        self.assertEqual(res['body'],
-                         "URL: http://localhost:8080/#/builders/80/builds/1 -- Build succeeded!")
+        self.assertEqual(
+            res,
+            {
+                "type": "plain",
+                "subject": "subject",
+                "extra_info": None,
+                "body": "URL: http://localhost:8080/#/builders/80/builds/1 -- Build succeeded!"
+            }
+        )
 
     @defer.inlineCallbacks
-    def test_inline_subject(self):
-        formatter = message.MessageFormatter(subject="subject")
+    def test_inline_templates_extra_info(self):
+        formatter = message.MessageFormatter(
+            template="URL: {{ build_url }} -- {{ summary }}",
+            subject="subject",
+            extra_info_cb=lambda ctx: {"key1", ctx["build"]["state_string"]}
+        )
         res = yield self.do_one_test(formatter, SUCCESS, SUCCESS)
-        self.assertEqual(res['subject'], "subject")
+        self.assertEqual(
+            res,
+            {
+                "type": "plain",
+                "subject": "subject",
+                "extra_info": {"key1", "test"},
+                "body": "URL: http://localhost:8080/#/builders/80/builds/1 -- Build succeeded!"
+            }
+        )
 
     @defer.inlineCallbacks
     def test_message_failure(self):
@@ -413,6 +470,7 @@ class TestMessageFormatterRenderable(MessageFormatterTestBase):
             'body': 'templ_wrkr/because',
             'type': 'plain',
             'subject': 'subj_wrkr/because',
+            "extra_info": None,
         })
 
 
@@ -432,25 +490,45 @@ class TestMessageFormatterFunction(MessageFormatterTestBase):
             'body': {'key': 'value'},
             'type': 'json',
             'subject': None,
+            "extra_info": None,
+        })
+
+
+class TestMessageFormatterFunctionRaw(MessageFormatterTestBase):
+    @defer.inlineCallbacks
+    def test_basic(self):
+        function = mock.Mock(side_effect=lambda master, ctx: {
+            "body": {"key": "value"},
+            "type": "json",
+            "subject": "sub1",
+            "extra_info": {"key": {"kk": "vv"}},
+        })
+        formatter = message.MessageFormatterFunctionRaw(function)
+        res = yield self.do_one_test(formatter, SUCCESS, SUCCESS)
+
+        self.assertEqual(res, {
+            "body": {"key": "value"},
+            "type": "json",
+            "subject": "sub1",
+            "extra_info": {"key": {"kk": "vv"}},
         })
 
     @defer.inlineCallbacks
-    def test_renderable(self):
-        function = mock.Mock(side_effect=lambda x: {'key': 'value'})
-
-        formatter = message.MessageFormatterFunction(function, 'json')
-
-        res = yield self.do_one_test(formatter, SUCCESS, SUCCESS)
-
-        function.assert_called_with({
-            'build': BuildDictLookAlike(extra_keys=['prev_build'],
-                                        expected_missing_keys=['parentbuilder', 'buildrequest',
-                                                               'parentbuild'])
+    def test_basic_buildset(self):
+        function = mock.Mock(side_effect=lambda master, ctx: {
+            "body": {"key": "value"},
+            "type": "json",
+            "subject": "sub1",
+            "extra_info": {"key": {"kk": "vv"}},
         })
+        formatter = message.MessageFormatterFunctionRaw(function)
+        res = yield self.do_one_test_buildset(formatter, SUCCESS, SUCCESS)
+
         self.assertEqual(res, {
-            'body': {'key': 'value'},
-            'type': 'json',
-            'subject': None,
+            "body": {"key": "value"},
+            "type": "json",
+            "subject": "sub1",
+            "extra_info": {"key": {"kk": "vv"}},
         })
 
 

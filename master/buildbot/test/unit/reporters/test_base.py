@@ -55,15 +55,17 @@ class TestReporterBase(ConfigErrorsMixin, TestReactorMixin, LoggingMixin,
         return mn
 
     @defer.inlineCallbacks
-    def setupBuildMessage(self, **kwargs):
+    def setup_build_message(self, **kwargs):
 
         build = yield self.insert_build_finished(FAILURE)
+        buildset = yield self.get_inserted_buildset()
 
         formatter = mock.Mock(spec=MessageFormatter)
         formatter.format_message_for_build.return_value = {
             "body": "body",
             "type": "text",
-            "subject": "subject"
+            "subject": "subject",
+            "extra_info": None,
         }
         formatter.want_properties = False
         formatter.want_steps = False
@@ -74,7 +76,7 @@ class TestReporterBase(ConfigErrorsMixin, TestReactorMixin, LoggingMixin,
         mn = yield self.setupNotifier(generators=[generator])
 
         yield mn._got_event(('builds', 20, 'finished'), build)
-        return (mn, build, formatter)
+        return (mn, build, buildset, formatter)
 
     def setup_mock_generator(self, events_filter):
         gen = mock.Mock()
@@ -88,7 +90,7 @@ class TestReporterBase(ConfigErrorsMixin, TestReactorMixin, LoggingMixin,
 
     @defer.inlineCallbacks
     def test_buildMessage_nominal(self):
-        mn, build, formatter = yield self.setupBuildMessage(mode=("failing",))
+        mn, build, buildset, formatter = yield self.setup_build_message(mode=("failing",))
 
         formatter.format_message_for_build.assert_called_with(self.master, build, is_buildset=False,
                                                               mode=('failing',), users=['me@foo'])
@@ -97,8 +99,10 @@ class TestReporterBase(ConfigErrorsMixin, TestReactorMixin, LoggingMixin,
             'body': 'body',
             'subject': 'subject',
             'type': 'text',
+            "extra_info": None,
             'results': FAILURE,
             'builds': [build],
+            "buildset": buildset,
             'users': ['me@foo'],
             'patches': [],
             'logs': []

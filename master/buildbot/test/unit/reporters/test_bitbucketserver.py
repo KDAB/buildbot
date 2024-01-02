@@ -514,7 +514,8 @@ class TestBitbucketServerPRCommentPush(TestReactorMixin, unittest.TestCase,
         formatter.format_message_for_build.return_value = {
             "body": UNICODE_BODY,
             "type": "text",
-            "subject": "subject"
+            "subject": "subject",
+            "extra_info": None,
         }
         formatter.want_properties = True
         formatter.want_steps = False
@@ -582,7 +583,7 @@ class TestBitbucketServerPRCommentPush(TestReactorMixin, unittest.TestCase,
     def test_reporter_with_buildset(self):
         yield self.setupReporter(generator_class=BuildSetStatusGenerator)
         yield self.setupBuildResults(SUCCESS)
-        buildset = yield self.master.data.get(('buildsets', 98))
+        buildset = yield self.get_inserted_buildset()
         self._http.expect(
             "post",
             EXPECTED_API,

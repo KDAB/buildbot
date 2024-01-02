@@ -68,19 +68,20 @@ class BuildSetStatusGenerator(BuildStatusGeneratorMixin):
         if not builds:
             return None
 
-        report = yield self.buildset_message(self.formatter, master, reporter, builds,
-                                             buildset['results'])
+        report = yield self.buildset_message(self.formatter, master, reporter, builds, buildset)
         return report
 
     @defer.inlineCallbacks
-    def buildset_message(self, formatter, master, reporter, builds, results):
+    def buildset_message(self, formatter, master, reporter, builds, buildset):
         # The given builds must refer to builds from a single buildset
         patches = []
         logs = []
         body = None
         subject = None
         msgtype = None
+        extra_info = None
         users = set()
+        results = buildset["results"]
         for build in builds:
             patches.extend(self._get_patches_for_build(build))
 
@@ -103,6 +104,10 @@ class BuildSetStatusGenerator(BuildStatusGeneratorMixin):
             if not ok:
                 continue
 
+            extra_info, ok = self._merge_extra_info(extra_info, buildmsg["extra_info"])
+            if not ok:
+                continue
+
         if subject is None and self.subject is not None:
             subject = self.subject % {'result': statusToString(results),
                                       'projectName': master.config.title,
@@ -115,10 +120,72 @@ class BuildSetStatusGenerator(BuildStatusGeneratorMixin):
             'type': msgtype,
             'results': results,
             'builds': builds,
+            "buildset": buildset,
             'users': list(users),
             'patches': patches,
-            'logs': logs
+            'logs': logs,
+            "extra_info": extra_info,
         }
 
     def _want_previous_build(self):
         return "change" in self.mode or "problem" in self.mode
+
+
+@implementer(interfaces.IReportGenerator)
+class BuildSetCombinedStatusGenerator:
+
+    wanted_event_keys = [
+        ("buildsets", None, "complete"),
+    ]
+
+    compare_attrs = ["formatter"]
+
+    def __init__(self, message_formatter):
+        self.formatter = message_formatter
+
+    @defer.inlineCallbacks
+    def generate(self, master, reporter, key, message):
+        bsid = message["bsid"]
+
+        res = yield utils.getDetailsForBuildset(
+            master,
+            bsid,
+            want_properties=self.formatter.want_properties,
+            want_steps=self.formatter.want_steps,
+            want_logs=self.formatter.want_logs,
+            want_logs_content=self.formatter.want_logs_content
+        )
+
+        builds = res['builds']
+        buildset = res['buildset']
+
+        report = yield self.buildset_message(self.formatter, master, reporter, buildset, builds)
+
+        return report
+
+    def check(self):
+        pass
+
+    @defer.inlineCallbacks
+    def buildset_message(self, formatter, master, reporter, buildset, builds):
+        buildmsg = yield formatter.format_message_for_buildset(
+            master,
+            buildset,
+            builds,
+            is_buildset=True,
+            mode=("passing",),
+            users=[]
+        )
+
+        return {
+            "body": buildmsg["body"],
+            "subject": buildmsg["subject"],
+            "type": buildmsg["type"],
+            "extra_info": buildmsg["extra_info"],
+            "results": buildset["results"],
+            "builds": builds,
+            "buildset": buildset,
+            "users": [],
+            "patches": [],
+            "logs": []
+        }

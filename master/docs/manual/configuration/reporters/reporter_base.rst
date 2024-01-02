@@ -52,6 +52,9 @@ This documents frequently used keys within the dictionaries that are passed to t
  - ``builds`` (a list of build dictionaries as reported by the data API)
     A list of builds that the report describes.
 
+ - ``buildset`` (a buildset dictionary as reported by the data API)
+    The buildset that is being described.
+
  - ``users`` (a list of strings)
     A list of users to send the report to.
 
@@ -65,3 +68,6 @@ This documents frequently used keys within the dictionaries that are passed to t
     - ``stepname`` (string) The name of the step that produced the log.
 
     - ``content`` (string) The content of the log.
+
+ - ``extra_info`` (a dictionary of dictionaries with string keys in both)
+    A list of additional reporter-specific data to apply.

@@ -145,6 +145,26 @@ def create_context_for_build(mode, build, is_buildset, master, blamelist):
     }
 
 
+def create_context_for_buildset(mode, buildset, builds, master, blamelist):
+    ss_list = buildset['sourcestamps']
+    results = buildset["results"]
+
+    return {
+        "results": results,
+        "result_names": Results,
+        "mode": mode,
+        "buildset": buildset,
+        "builds": builds,
+        "is_buildset": True,
+        "projects": get_projects_text(ss_list, master),
+        "status_detected": get_detected_status_text(mode, results, None),
+        "buildbot_title": master.config.title,
+        "buildbot_url": master.config.buildbotURL,
+        "blamelist": blamelist,
+        "sourcestamps": get_message_source_stamp_text(ss_list)
+    }
+
+
 def create_context_for_worker(master, worker):
     return {
         'buildbot_title': master.config.title,
@@ -214,6 +234,8 @@ class MessageFormatterBase(util.ComparableMixin):
                   of dictionary, list or string. This must not change during all invocations of
                   a particular instance of the formatter.
 
+              - "extra_info" is an optional dictionary of dictionaries of extra information.
+
             In case of a report being created for multiple builds (e.g. in the case of a buildset),
             the values returned by message formatter are concatenated. If this is not possible
             (e.g. if the body is a dictionary), any subsequent messages are ignored.
@@ -221,10 +243,19 @@ class MessageFormatterBase(util.ComparableMixin):
         yield self.buildAdditionalContext(master, context)
         context.update(self.context)
 
+        body, subject, extra_info = yield defer.gatherResults(
+            [
+                defer.maybeDeferred(self.render_message_body, context),
+                defer.maybeDeferred(self.render_message_subject, context),
+                defer.maybeDeferred(self.render_message_extra_info, context),
+            ]
+        )
+
         return {
-            'body': (yield self.render_message_body(context)),
+            "body": body,
             'type': self.template_type,
-            'subject': (yield self.render_message_subject(context))
+            "subject": subject,
+            "extra_info": extra_info,
         }
 
     def render_message_body(self, context):
@@ -233,7 +264,14 @@ class MessageFormatterBase(util.ComparableMixin):
     def render_message_subject(self, context):
         return None
 
+    def render_message_extra_info(self, context):
+        return None
+
     def format_message_for_build(self, master, build, **kwargs):
+        # Known kwargs keys: mode, users, is_buildset
+        raise NotImplementedError
+
+    def format_message_for_buildset(self, master, buildset, builds, **kwargs):
         # Known kwargs keys: mode, users, is_buildset
         raise NotImplementedError
 
@@ -243,7 +281,52 @@ class MessageFormatterEmpty(MessageFormatterBase):
         return {
             'body': None,
             'type': 'plain',
-            'subject': None
+            'subject': None,
+            "extra_info": None
+        }
+
+    def format_message_for_buildset(self, master, buildset, builds, **kwargs):
+        return {
+            "body": None,
+            "type": "plain",
+            "subject": None
+        }
+
+
+class MessageFormatterFunctionRaw(MessageFormatterBase):
+
+    def __init__(self, function, **kwargs):
+        super().__init__(**kwargs)
+        self._function = function
+
+    @defer.inlineCallbacks
+    def format_message_for_build(self, master, build, is_buildset=False, users=None, mode=None):
+        ctx = create_context_for_build(mode, build, is_buildset, master, users)
+        msgdict = yield self._function(master, ctx)
+        return {
+            "body": msgdict.get("body", None),
+            "type": msgdict.get("type", "plain"),
+            "subject": msgdict.get("subject", None),
+            "extra_info": msgdict.get("extra_info", None),
+        }
+
+    @defer.inlineCallbacks
+    def format_message_for_buildset(
+        self,
+        master,
+        buildset,
+        builds,
+        users=None,
+        mode=None,
+        **kwargs
+    ):
+        ctx = create_context_for_buildset(mode, buildset, builds, master, users)
+        msgdict = yield self._function(master, ctx)
+        return {
+            "body": msgdict.get("body", None),
+            "type": msgdict.get("type", "plain"),
+            "subject": msgdict.get("subject", None),
+            "extra_info": msgdict.get("extra_info", None),
         }
 
 
@@ -257,6 +340,11 @@ class MessageFormatterFunction(MessageFormatterBase):
     @defer.inlineCallbacks
     def format_message_for_build(self, master, build, **kwargs):
         msgdict = yield self.render_message_dict(master, {'build': build})
+        return msgdict
+
+    @defer.inlineCallbacks
+    def format_message_for_buildset(self, master, buildset, builds, **kwargs):
+        msgdict = yield self.render_message_dict(master, {"buildset": buildset, "builds": builds})
         return msgdict
 
     def render_message_body(self, context):
@@ -280,6 +368,9 @@ class MessageFormatterRenderable(MessageFormatterBase):
         msgdict = yield self.render_message_dict(master, {'build': build, 'master': master})
         return msgdict
 
+    def format_message_for_buildset(self, master, buildset, builds, **kwargs):
+        raise NotImplementedError
+
     @defer.inlineCallbacks
     def render_message_body(self, context):
         props = Properties.fromDict(context['build']['properties'])
@@ -290,6 +381,9 @@ class MessageFormatterRenderable(MessageFormatterBase):
 
     @defer.inlineCallbacks
     def render_message_subject(self, context):
+        if self.subject is None:
+            return None
+
         props = Properties.fromDict(context['build']['properties'])
         props.master = context['master']
 
@@ -362,7 +456,14 @@ class MessageFormatterBaseJinja(MessageFormatterBase):
     template_type = 'plain'
     uses_default_body_template = False
 
-    def __init__(self, template=None, subject=None, template_type=None, **kwargs):
+    def __init__(
+        self,
+        template=None,
+        subject=None,
+        template_type=None,
+        extra_info_cb=None,
+        **kwargs
+    ):
         if template_type is not None:
             self.template_type = template_type
 
@@ -384,6 +485,7 @@ class MessageFormatterBaseJinja(MessageFormatterBase):
 
         self.body_template = jinja2.Template(template)
         self.subject_template = jinja2.Template(subject)
+        self.extra_info_cb = extra_info_cb
 
         super().__init__(**kwargs)
 
@@ -405,11 +507,22 @@ class MessageFormatterBaseJinja(MessageFormatterBase):
     def render_message_subject(self, context):
         return self.subject_template.render(context)
 
+    def render_message_extra_info(self, context):
+        if self.extra_info_cb is None:
+            return None
+        return self.extra_info_cb(context)
+
 
 class MessageFormatter(MessageFormatterBaseJinja):
     @defer.inlineCallbacks
     def format_message_for_build(self, master, build, is_buildset=False, users=None, mode=None):
         ctx = create_context_for_build(mode, build, is_buildset, master, users)
+        msgdict = yield self.render_message_dict(master, ctx)
+        return msgdict
+
+    @defer.inlineCallbacks
+    def format_message_for_buildset(self, master, buildset, builds, users=None, mode=None):
+        ctx = create_context_for_buildset(mode, buildset, builds, master, users)
         msgdict = yield self.render_message_dict(master, ctx)
         return msgdict
 

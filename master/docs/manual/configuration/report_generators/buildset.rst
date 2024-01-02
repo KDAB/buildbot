@@ -8,7 +8,24 @@ BuildSetStatusGenerator
 .. py:class:: buildbot.reporters.BuildSetStatusGenerator
 
 This report generator sends a message about builds in a buildset.
-It is very similar to :bb:reportgen:`BuildStatusGenerator` but sends single message about all builds in a buildset, not individual builds.
+
+Message formatters are invoked for each matching build in the buildset. The collected messages are
+then joined and sent as a single message. :bb:reportgen:`BuildStatusGenerator` report generator
+uses the same message generation logic, but a single, not multiple builds.
+
+In case of multiple builds, the following algorithm is used to build the final message:
+
+ - message body is merged from bodies provided by message formatters for the builds. If message
+   bodies are lists or strings, then the result is simple concatenation. If the type is different
+   or there is type mismatch, then mismatching messages are ignored.
+
+ - message subject is taken from the first build for which message formatter a subject.
+
+ - extra information is merged from the information dictionaries provided by message formatters.
+   Note that extra information is specified as dictionary of dictionaries. Two root dictionaries
+   are merged by merging child dictionaries. Values in merged child dictionaries that conflict
+   (i.e. correspond to the same keys) are resolved by taking the value of the first build for
+   which it is provided.
 
 The following parameters are supported:
 
