@@ -36,6 +36,7 @@ from buildbot.worker import AbstractLatentWorker
 try:
     import docker
     from docker.errors import NotFound
+
     _hush_pyflakes = [docker]
     docker_py_version = parse_version(docker.__version__)
 except ImportError:
@@ -62,10 +63,7 @@ def _handle_stream_line(line):
 
 
 class DockerBaseWorker(AbstractLatentWorker):
-
-    def checkConfig(self, name, password=None, image=None,
-                    masterFQDN=None, **kwargs):
-
+    def checkConfig(self, name, password=None, image=None, masterFQDN=None, **kwargs):
         # Set build_wait_timeout to 0 if not explicitly set: Starting a
         # container is almost immediate, we can afford doing so for each build.
         if 'build_wait_timeout' not in kwargs:
@@ -76,8 +74,7 @@ class DockerBaseWorker(AbstractLatentWorker):
 
         super().checkConfig(name, password, **kwargs)
 
-    def reconfigService(self, name, password=None, image=None,
-                        masterFQDN=None, **kwargs):
+    def reconfigService(self, name, password=None, image=None, masterFQDN=None, **kwargs):
         # Set build_wait_timeout to 0 if not explicitly set: Starting a
         # container is almost immediate, we can afford doing so for each build.
         if 'build_wait_timeout' not in kwargs:
@@ -105,7 +102,7 @@ class DockerBaseWorker(AbstractLatentWorker):
         result = {
             "BUILDMASTER": self.masterFQDN,
             "WORKERNAME": self.name,
-            "WORKERPASS": self.password
+            "WORKERPASS": self.password,
         }
         if self.registration is not None:
             result["BUILDMASTER_PORT"] = str(self.registration.getPBPort())
@@ -126,31 +123,45 @@ class DockerBaseWorker(AbstractLatentWorker):
             return fqdn
 
 
-class DockerLatentWorker(CompatibleLatentWorkerMixin,
-                         DockerBaseWorker):
+class DockerLatentWorker(CompatibleLatentWorkerMixin, DockerBaseWorker):
     instance = None
 
-    def checkConfig(self, name, password, docker_host, image=None,
-                    command=None, volumes=None, dockerfile=None, version=None,
-                    tls=None, followStartupLogs=False, masterFQDN=None,
-                    hostconfig=None, autopull=False, alwaysPull=False,
-                    custom_context=False, encoding='gzip', buildargs=None,
-                    hostname=None, **kwargs):
-
+    def checkConfig(
+        self,
+        name,
+        password,
+        docker_host,
+        image=None,
+        command=None,
+        volumes=None,
+        dockerfile=None,
+        version=None,
+        tls=None,
+        followStartupLogs=False,
+        masterFQDN=None,
+        hostconfig=None,
+        autopull=False,
+        alwaysPull=False,
+        custom_context=False,
+        encoding='gzip',
+        buildargs=None,
+        hostname=None,
+        **kwargs,
+    ):
         super().checkConfig(name, password, image, masterFQDN, **kwargs)
 
         if docker_py_version < parse_version("4.0.0"):
-            config.error("The python module 'docker>=4.0' is needed to use a"
-                         " DockerLatentWorker")
+            config.error("The python module 'docker>=4.0' is needed to use a DockerLatentWorker")
         if not image and not dockerfile:
-            config.error("DockerLatentWorker: You need to specify at least"
-                         " an image name, or a dockerfile")
+            config.error(
+                "DockerLatentWorker: You need to specify at least an image name, or a dockerfile"
+            )
 
         # Following block is only for checking config errors,
         # actual parsing happens in self.parse_volumes()
         # Renderables can be direct volumes definition or list member
         if isinstance(volumes, list):
-            for volume_string in (volumes or []):
+            for volume_string in volumes or []:
                 if not isinstance(volume_string, str):
                     continue
                 try:
@@ -158,19 +169,35 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
                     # of elements is wrong
                     _, __ = volume_string.split(":", 1)
                 except ValueError:
-                    config.error("Invalid volume definition for docker "
-                                 f"{volume_string}. Skipping...")
+                    config.error(
+                        "Invalid volume definition for docker " f"{volume_string}. Skipping..."
+                    )
                     continue
 
     @defer.inlineCallbacks
-    def reconfigService(self, name, password, docker_host, image=None,
-                        command=None, volumes=None, dockerfile=None,
-                        version=None, tls=None, followStartupLogs=False,
-                        masterFQDN=None, hostconfig=None, autopull=False,
-                        alwaysPull=False, custom_context=False,
-                        encoding='gzip', target="", buildargs=None,
-                        hostname=None, **kwargs):
-
+    def reconfigService(
+        self,
+        name,
+        password,
+        docker_host,
+        image=None,
+        command=None,
+        volumes=None,
+        dockerfile=None,
+        version=None,
+        tls=None,
+        followStartupLogs=False,
+        masterFQDN=None,
+        hostconfig=None,
+        autopull=False,
+        alwaysPull=False,
+        custom_context=False,
+        encoding='gzip',
+        target="",
+        buildargs=None,
+        hostname=None,
+        **kwargs,
+    ):
         yield super().reconfigService(name, password, image, masterFQDN, **kwargs)
         self.docker_host = docker_host
         self.volumes = volumes or []
@@ -196,7 +223,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
 
     def _thd_parse_volumes(self, volumes):
         volume_list = []
-        for volume_string in (volumes or []):
+        for volume_string in volumes or []:
             try:
                 # based on https://github.com/docker/docker-py/pull/1888/commits/209ae2423d3fc1f41ed8dc617963d560d9d9e4e1  # noqa pylint:disable=line-too-long
                 # attempt to split windows drive from front
@@ -208,8 +235,9 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
                     volume = bits[1]
 
             except ValueError:
-                config.error("Invalid volume definition for docker "
-                             f"{volume_string}. Skipping...")
+                config.error(
+                    "Invalid volume definition for docker " f"{volume_string}. Skipping..."
+                )
                 continue
 
             if volume.endswith(':ro') or volume.endswith(':rw'):
@@ -222,22 +250,49 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
         return docker.APIClient(**client_args)
 
     def renderWorkerProps(self, build):
-        return build.render((self.docker_host, self.image, self.dockerfile,
-                             self.volumes, self.hostconfig, self.custom_context,
-                             self.encoding, self.target, self.buildargs,
-                             self.hostname))
+        return build.render((
+            self.docker_host,
+            self.image,
+            self.dockerfile,
+            self.volumes,
+            self.hostconfig,
+            self.custom_context,
+            self.encoding,
+            self.target,
+            self.buildargs,
+            self.hostname,
+        ))
 
     @defer.inlineCallbacks
     def start_instance(self, build):
         if self.instance is not None:
             raise ValueError('instance active')
-        docker_host, image, dockerfile, volumes, hostconfig, custom_context, \
-            encoding, target, buildargs, \
-            hostname = yield self.renderWorkerPropsOnStart(build)
+        (
+            docker_host,
+            image,
+            dockerfile,
+            volumes,
+            hostconfig,
+            custom_context,
+            encoding,
+            target,
+            buildargs,
+            hostname,
+        ) = yield self.renderWorkerPropsOnStart(build)
 
-        res = yield threads.deferToThread(self._thd_start_instance, docker_host, image,
-                                          dockerfile, volumes, hostconfig, custom_context,
-                                          encoding, target, buildargs, hostname)
+        res = yield threads.deferToThread(
+            self._thd_start_instance,
+            docker_host,
+            image,
+            dockerfile,
+            volumes,
+            hostconfig,
+            custom_context,
+            encoding,
+            target,
+            buildargs,
+            hostname,
+        )
         return res
 
     def _image_exists(self, client, name):
@@ -250,17 +305,26 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
                     return True
         return False
 
-    def _thd_start_instance(self, docker_host, image, dockerfile, volumes, host_config,
-                            custom_context, encoding, target, buildargs, hostname):
+    def _thd_start_instance(
+        self,
+        docker_host,
+        image,
+        dockerfile,
+        volumes,
+        host_config,
+        custom_context,
+        encoding,
+        target,
+        buildargs,
+        hostname,
+    ):
         curr_client_args = self.client_args.copy()
         curr_client_args['base_url'] = docker_host
 
         docker_client = self._getDockerClient(curr_client_args)
         container_name = self.getContainerName()
         # cleanup the old instances
-        instances = docker_client.containers(
-            all=1,
-            filters={"name": container_name})
+        instances = docker_client.containers(all=1, filters={"name": container_name})
         container_name = f"/{container_name}"
         for instance in instances:
             if container_name not in instance['Names']:
@@ -279,16 +343,21 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
             log.msg(f"Image '{image}' not found, building it from scratch")
             if custom_context:
                 with open(dockerfile, 'rb') as fin:
-                    lines = docker_client.build(fileobj=fin,
-                                                custom_context=custom_context,
-                                                encoding=encoding, tag=image,
-                                                pull=self.alwaysPull,
-                                                target=target,
-                                                buildargs=buildargs)
+                    lines = docker_client.build(
+                        fileobj=fin,
+                        custom_context=custom_context,
+                        encoding=encoding,
+                        tag=image,
+                        pull=self.alwaysPull,
+                        target=target,
+                        buildargs=buildargs,
+                    )
             else:
                 lines = docker_client.build(
                     fileobj=BytesIO(dockerfile.encode('utf-8')),
-                    tag=image, pull=self.alwaysPull, target=target,
+                    tag=image,
+                    pull=self.alwaysPull,
+                    target=target,
                 )
 
             for line in lines:
@@ -320,15 +389,13 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
             volumes=volumes,
             environment=self.createEnvironment(),
             host_config=host_config,
-            hostname=hostname
+            hostname=hostname,
         )
 
         if instance.get('Id') is None:
             log.msg('Failed to create the container')
             docker_client.close()
-            raise LatentWorkerFailedToSubstantiate(
-                'Failed to start container'
-            )
+            raise LatentWorkerFailedToSubstantiate('Failed to start container')
         shortid = instance['Id'][:6]
         log.msg(f'Container created, Id: {shortid}...')
         instance['image'] = image
@@ -347,8 +414,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
 
         log.msg('Container started')
         if self.followStartupLogs:
-            logs = docker_client.attach(
-                container=instance, stdout=True, stderr=True, stream=True)
+            logs = docker_client.attach(container=instance, stdout=True, stderr=True, stream=True)
             for line in logs:
                 log.msg(f"docker VM {shortid}: {line.strip()}")
                 if self.conn:
@@ -360,10 +426,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin,
     def check_instance(self):
         if self.instance is None:
             return defer.succeed((True, ""))
-        return threads.deferToThread(
-            self._thd_check_instance,
-            self._curr_client_args
-        )
+        return threads.deferToThread(self._thd_check_instance, self._curr_client_args)
 
     def _thd_check_instance(self, curr_client_args):
         docker_client = self._getDockerClient(curr_client_args)
