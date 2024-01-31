@@ -19,9 +19,8 @@ import inspect
 import os
 import warnings
 
-from packaging.version import parse as parse_version
-
 import twisted
+from packaging.version import parse as parse_version
 from twisted.trial import unittest
 from twisted.trial.unittest import SkipTest
 from zope.interface.verify import verifyClass
@@ -114,6 +113,7 @@ class TestSetupPyEntryPoints(unittest.TestCase):
             'buildbot.util.croniter.croniter',
             'buildbot.util.debounce.Debouncer',
             'buildbot.util.deferwaiter.DeferWaiter',
+            "buildbot.util.deferwaiter.NonRepeatedActionHandler",
             'buildbot.util.deferwaiter.RepeatedActionHandler',
             'buildbot.util.git.GitMixin',
             'buildbot.util.git.GitStepMixin',
@@ -157,6 +157,7 @@ class TestSetupPyEntryPoints(unittest.TestCase):
             'buildbot.util.subscription.Subscription',
             'buildbot.util.subscription.SubscriptionPoint',
             'buildbot.util.test_result_submitter.TestResultSubmitter',
+            "buildbot.util.watchdog.Watchdog",
         }
         self.verify_plugins_registered('util', 'buildbot.util', None, known_not_exported)
 

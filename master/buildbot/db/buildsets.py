@@ -22,7 +22,6 @@ from operator import and_
 from operator import or_
 
 import sqlalchemy as sa
-
 from twisted.internet import defer
 
 from buildbot.db import NULL

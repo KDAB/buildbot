@@ -14,12 +14,12 @@ PYTHON ?= $(ROOT_DIR)/$(VENV_NAME)/bin/python
 VENV_PY_VERSION ?= python3
 YARN := $(shell which yarnpkg || which yarn)
 
-WWW_PKGS := www/react-base www/react-console_view www/react-grid_view www/react-waterfall_view www/badges
+WWW_PKGS := www/react-base www/react-console_view www/react-grid_view www/react-waterfall_view www/react-wsgi_dashboards www/badges
 WWW_EX_PKGS := www/nestedexample www/codeparameter
 WWW_DEP_PKGS := www/plugin_support www/react-data-module www/react-ui
 ALL_PKGS := master worker pkg $(WWW_PKGS)
 
-WWW_PKGS_FOR_UNIT_TESTS := $(filter-out www/badges www/plugin_support www/react-ui www/react-grid_view, $(WWW_DEP_PKGS) $(WWW_PKGS))
+WWW_PKGS_FOR_UNIT_TESTS := $(filter-out www/badges www/plugin_support www/react-ui www/react-grid_view www/react-wsgi_dashboards, $(WWW_DEP_PKGS) $(WWW_PKGS))
 
 ALL_PKGS_TARGETS := $(addsuffix _pkg,$(ALL_PKGS))
 .PHONY: $(ALL_PKGS_TARGETS)
@@ -67,7 +67,7 @@ flake8:
 
 frontend_deps: $(VENV_NAME)
 	$(PIP) install -e pkg
-	$(PIP) install wheel buildbot
+	$(PIP) install build wheel buildbot
 	for i in $(WWW_DEP_PKGS); \
 		do (cd $$i; $(YARN) install --pure-lockfile; $(YARN) run build); done
 
@@ -84,7 +84,7 @@ frontend: frontend_deps
 # build frontend wheels for installation elsewhere
 frontend_wheels: frontend_deps
 	for i in pkg $(WWW_PKGS); \
-		do (cd $$i; $(PYTHON) setup.py bdist_wheel || exit 1) || exit 1; done
+		do (cd $$i; $(PYTHON) -m build --no-isolation --wheel || exit 1) || exit 1; done
 
 # do installation tests. Test front-end can build and install for all install methods
 frontend_install_tests: frontend_deps
@@ -101,9 +101,8 @@ hooks:
 rmpyc:
 	find master worker \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -v {} \;
 
-isort:
-	isort -rc worker master
-
+ruff:
+	ruff --fix .
 
 docker: docker-buildbot-worker docker-buildbot-master
 	echo done
@@ -114,7 +113,7 @@ docker-buildbot-master:
 
 $(VENV_NAME):
 	virtualenv -p $(VENV_PY_VERSION) $(VENV_NAME)
-	$(PIP) install -U pip setuptools wheel
+	$(PIP) install -U build pip setuptools wheel
 
 # helper for virtualenv creation
 virtualenv: $(VENV_NAME)   # usage: make virtualenv VENV_PY_VERSION=python3.4
