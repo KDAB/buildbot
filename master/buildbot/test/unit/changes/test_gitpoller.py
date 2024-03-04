@@ -1777,7 +1777,7 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
         'buildbot.util.private_tempdir.PrivateTemporaryDirectory',
         new_callable=MockPrivateTemporaryDirectory,
     )
-    @mock.patch('buildbot.changes.gitpoller.writeLocalFile')
+    @mock.patch('buildbot.util.git.writeLocalFile')
     @defer.inlineCallbacks
     def test_check_git_features_ssh_1_7(self, write_local_file_mock, temp_dir_mock):
         self.expect_commands(
@@ -1795,7 +1795,7 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
         'buildbot.util.private_tempdir.PrivateTemporaryDirectory',
         new_callable=MockPrivateTemporaryDirectory,
     )
-    @mock.patch('buildbot.changes.gitpoller.writeLocalFile')
+    @mock.patch('buildbot.util.git.writeLocalFile')
     @defer.inlineCallbacks
     def test_poll_initial_2_10(self, write_local_file_mock, temp_dir_mock):
         key_path = os.path.join('basedir', 'gitpoller-work', '.buildbot-ssh@@@', 'ssh-key')
@@ -1844,13 +1844,13 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
 
         temp_dir_path = os.path.join('basedir', 'gitpoller-work', '.buildbot-ssh@@@')
         self.assertEqual(temp_dir_mock.dirs, [(temp_dir_path, 0o700), (temp_dir_path, 0o700)])
-        write_local_file_mock.assert_called_with(key_path, 'ssh-key', mode=0o400)
+        write_local_file_mock.assert_called_with(key_path, 'ssh-key\n', mode=0o400)
 
     @mock.patch(
         'buildbot.util.private_tempdir.PrivateTemporaryDirectory',
         new_callable=MockPrivateTemporaryDirectory,
     )
-    @mock.patch('buildbot.changes.gitpoller.writeLocalFile')
+    @mock.patch('buildbot.util.git.writeLocalFile')
     @defer.inlineCallbacks
     def test_poll_initial_2_3(self, write_local_file_mock, temp_dir_mock):
         key_path = os.path.join('basedir', 'gitpoller-work', '.buildbot-ssh@@@', 'ssh-key')
@@ -1894,13 +1894,13 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
 
         temp_dir_path = os.path.join('basedir', 'gitpoller-work', '.buildbot-ssh@@@')
         self.assertEqual(temp_dir_mock.dirs, [(temp_dir_path, 0o700), (temp_dir_path, 0o700)])
-        write_local_file_mock.assert_called_with(key_path, 'ssh-key', mode=0o400)
+        write_local_file_mock.assert_called_with(key_path, 'ssh-key\n', mode=0o400)
 
     @mock.patch(
         'buildbot.util.private_tempdir.PrivateTemporaryDirectory',
         new_callable=MockPrivateTemporaryDirectory,
     )
-    @mock.patch('buildbot.changes.gitpoller.writeLocalFile')
+    @mock.patch('buildbot.util.git.writeLocalFile')
     @defer.inlineCallbacks
     def test_poll_failFetch_git_2_10(self, write_local_file_mock, temp_dir_mock):
         key_path = os.path.join('basedir', 'gitpoller-work', '.buildbot-ssh@@@', 'ssh-key')
@@ -1937,7 +1937,7 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
 
         temp_dir_path = os.path.join('basedir', 'gitpoller-work', '.buildbot-ssh@@@')
         self.assertEqual(temp_dir_mock.dirs, [(temp_dir_path, 0o700), (temp_dir_path, 0o700)])
-        write_local_file_mock.assert_called_with(key_path, 'ssh-key', mode=0o400)
+        write_local_file_mock.assert_called_with(key_path, 'ssh-key\n', mode=0o400)
 
 
 class TestGitPollerWithSshHostKey(TestGitPollerBase):
@@ -1948,7 +1948,7 @@ class TestGitPollerWithSshHostKey(TestGitPollerBase):
         'buildbot.util.private_tempdir.PrivateTemporaryDirectory',
         new_callable=MockPrivateTemporaryDirectory,
     )
-    @mock.patch('buildbot.changes.gitpoller.writeLocalFile')
+    @mock.patch('buildbot.util.git.writeLocalFile')
     @defer.inlineCallbacks
     def test_poll_initial_2_10(self, write_local_file_mock, temp_dir_mock):
         key_path = os.path.join('basedir', 'gitpoller-work', '.buildbot-ssh@@@', 'ssh-key')
@@ -2004,10 +2004,10 @@ class TestGitPollerWithSshHostKey(TestGitPollerBase):
         self.assertEqual(temp_dir_mock.dirs, [(temp_dir_path, 0o700), (temp_dir_path, 0o700)])
 
         expected_file_writes = [
-            mock.call(key_path, 'ssh-key', mode=0o400),
-            mock.call(known_hosts_path, '* ssh-host-key'),
-            mock.call(key_path, 'ssh-key', mode=0o400),
-            mock.call(known_hosts_path, '* ssh-host-key'),
+            mock.call(key_path, 'ssh-key\n', mode=0o400),
+            mock.call(known_hosts_path, '* ssh-host-key', mode=0o400),
+            mock.call(key_path, 'ssh-key\n', mode=0o400),
+            mock.call(known_hosts_path, '* ssh-host-key', mode=0o400),
         ]
 
         self.assertEqual(expected_file_writes, write_local_file_mock.call_args_list)
@@ -2016,14 +2016,14 @@ class TestGitPollerWithSshHostKey(TestGitPollerBase):
 class TestGitPollerWithSshKnownHosts(TestGitPollerBase):
     def createPoller(self):
         return gitpoller.GitPoller(
-            self.REPOURL, sshPrivateKey='ssh-key', sshKnownHosts='ssh-known-hosts'
+            self.REPOURL, sshPrivateKey='ssh-key\n', sshKnownHosts='ssh-known-hosts'
         )
 
     @mock.patch(
         'buildbot.util.private_tempdir.PrivateTemporaryDirectory',
         new_callable=MockPrivateTemporaryDirectory,
     )
-    @mock.patch('buildbot.changes.gitpoller.writeLocalFile')
+    @mock.patch('buildbot.util.git.writeLocalFile')
     @defer.inlineCallbacks
     def test_poll_initial_2_10(self, write_local_file_mock, temp_dir_mock):
         key_path = os.path.join('basedir', 'gitpoller-work', '.buildbot-ssh@@@', 'ssh-key')
@@ -2079,10 +2079,10 @@ class TestGitPollerWithSshKnownHosts(TestGitPollerBase):
         self.assertEqual(temp_dir_mock.dirs, [(temp_dir_path, 0o700), (temp_dir_path, 0o700)])
 
         expected_file_writes = [
-            mock.call(key_path, 'ssh-key', mode=0o400),
-            mock.call(known_hosts_path, 'ssh-known-hosts'),
-            mock.call(key_path, 'ssh-key', mode=0o400),
-            mock.call(known_hosts_path, 'ssh-known-hosts'),
+            mock.call(key_path, 'ssh-key\n', mode=0o400),
+            mock.call(known_hosts_path, 'ssh-known-hosts', mode=0o400),
+            mock.call(key_path, 'ssh-key\n', mode=0o400),
+            mock.call(known_hosts_path, 'ssh-known-hosts', mode=0o400),
         ]
 
         self.assertEqual(expected_file_writes, write_local_file_mock.call_args_list)
