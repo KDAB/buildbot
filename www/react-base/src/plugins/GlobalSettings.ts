@@ -20,13 +20,14 @@ import {Config} from "buildbot-ui";
 import {ISettings, registerBuildbotSettingsSingleton} from "buildbot-plugin-support";
 
 export type SettingValue = string | number | boolean;
-export type SettingType = "string" | "integer" | "float" | "boolean";
+export type SettingType = "string" | "integer" | "float" | "boolean" | "choice_combo";
 
 export type SettingItemConfig = {
   name: string;
   type: SettingType;
   caption: string;
   defaultValue: SettingValue;
+  choices?: string[]; // only when type == "choice_combo"
 }
 
 export type SettingGroupConfig = {
@@ -39,7 +40,9 @@ export type SettingItem = {
   name: string;
   type: string;
   value: SettingValue;
+  valueIsSet: boolean;
   defaultValue: SettingValue;
+  choices?: string[]; // only when type == "choice_combo"
   caption: string;
 }
 
@@ -69,7 +72,7 @@ export class GlobalSettings implements ISettings {
 
   @action fillDefaults(uiConfig: {[key: string]: any}) {
     for (const [selector, value] of Object.entries(uiConfig)) {
-      this.setSetting(selector, value);
+      this.setSettingDefaultValue(selector, value);
     }
   }
 
@@ -116,7 +119,7 @@ export class GlobalSettings implements ISettings {
             console.log(`Ignoring unknown loaded setting ${groupName}.${itemName}`);
             continue;
           }
-          this.setSettingItem(group.items[itemName], item);
+          this.setSettingItem(group.items[itemName], item, true);
         }
       }
 
@@ -130,7 +133,9 @@ export class GlobalSettings implements ISettings {
     for (const [groupName, group] of Object.entries(this.groups)) {
       const storedGroup: StoredSettingGroup = {};
       for (const [itemName, item] of Object.entries(group.items)) {
-        storedGroup[itemName] = item.value;
+        if (item.valueIsSet) {
+          storedGroup[itemName] = item.value;
+        }
       }
       storedGroups[groupName] = storedGroup;
     }
@@ -181,15 +186,27 @@ export class GlobalSettings implements ISettings {
     return this.getTypedSettingOrDefault(selector, 'boolean', false);
   }
 
-  @action private setSettingItem(item: SettingItem, value: SettingValue) {
+  getChoiceComboSetting(selector: string) {
+    return this.getTypedSettingOrDefault(selector, 'choice_combo', '');
+  }
+
+  @action private setSettingItemNoCheck(item: SettingItem, value: SettingValue, setValueIsSet: boolean) {
+    item.value = value;
+    if (setValueIsSet) {
+      item.valueIsSet = true;
+    }
+  }
+
+  private setSettingItem(item: SettingItem, value: SettingValue, setValueIsSet: boolean) {
     switch (item.type) {
       case "string":
-        item.value = value.toString();
+      case "choice_combo":
+        this.setSettingItemNoCheck(item, value.toString(), setValueIsSet);
         break;
       case "integer": {
         const newValue = Number.parseInt(value.toString());
         if (!isNaN(newValue)) {
-          item.value = newValue;
+          this.setSettingItemNoCheck(item, newValue, setValueIsSet);
         } else {
           console.error(`Invalid integer setting value ${value}`);
         }
@@ -198,7 +215,7 @@ export class GlobalSettings implements ISettings {
       case "float": {
         const newValue = Number.parseFloat(value.toString());
         if (!isNaN(newValue)) {
-          item.value = newValue;
+          this.setSettingItemNoCheck(item, newValue, setValueIsSet);
         } else {
           console.error(`Invalid float setting value ${value}`);
         }
@@ -206,9 +223,9 @@ export class GlobalSettings implements ISettings {
       }
       case "boolean":
         if (value.toString() === "true") {
-          item.value = true;
+          this.setSettingItemNoCheck(item, true, setValueIsSet);
         } else if (value.toString() === "false") {
-          item.value = false;
+          this.setSettingItemNoCheck(item, false, setValueIsSet);
         } else {
           console.error(`Invalid bool setting value ${value}`);
         }
@@ -216,12 +233,20 @@ export class GlobalSettings implements ISettings {
     }
   }
 
-  @action setSetting(selector: string, value: SettingValue) {
+  @action setSettingImpl(selector: string, value: SettingValue, setValueIsSet: boolean) {
     const item = this.getSettingItem(selector);
     if (item === null) {
       return;
     }
-    this.setSettingItem(item, value);
+    this.setSettingItem(item, value, setValueIsSet);
+  }
+
+  setSetting(selector: string, value: SettingValue) {
+    this.setSettingImpl(selector, value, true);
+  }
+
+  setSettingDefaultValue(selector: string, value: SettingValue) {
+    this.setSettingImpl(selector, value, false);
   }
 
   /** Adds a new setting group and its setting items.
@@ -248,8 +273,10 @@ export class GlobalSettings implements ISettings {
           name: item.name,
           type: item.type,
           value: item.defaultValue,
+          valueIsSet: false,
           defaultValue: item.defaultValue,
           caption: item.caption,
+          choices: item.choices,
         };
       }
       return;
@@ -261,8 +288,10 @@ export class GlobalSettings implements ISettings {
         name: item.name,
         type: item.type,
         value: item.defaultValue,
+        valueIsSet: false,
         defaultValue: item.defaultValue,
         caption: item.caption,
+        choices: item.choices,
       };
     }
     this.groups[config.name] = {

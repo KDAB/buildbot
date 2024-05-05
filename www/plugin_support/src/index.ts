@@ -31,12 +31,13 @@ export type RouteConfig = {
 }
 
 export type SettingValue = string | number | boolean;
-export type SettingType = "string" | "integer" | "float" | "boolean";
+export type SettingType = "string" | "integer" | "float" | "boolean" | "choice_combo";
 
 export type SettingItemConfig = {
   name: string;
   type: SettingType;
   caption: string;
+  choices?: string[];
   defaultValue: SettingValue;
 }
 
@@ -56,6 +57,7 @@ export interface ISettings {
   getIntegerSetting(selector: string): number;
   getFloatSetting(selector: string): number;
   getStringSetting(selector: string): string;
+  getChoiceComboSetting(selector: string): string;
   getBooleanSetting(selector: string): boolean;
   setSetting(selector: string, value: SettingValue): void;
   save(): void;
