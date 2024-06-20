@@ -43,7 +43,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             sa.Column('state_string', sa.Text, nullable=False),
             sa.Column('results', sa.Integer),
         )
-        builds.create()
+        builds.create(bind=conn)
 
         conn.execute(
             builds.insert(),
@@ -58,6 +58,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
                 }
             ],
         )
+        conn.commit()
 
     def test_update(self):
         def setup_thd(conn):
@@ -67,7 +68,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             metadata = sa.MetaData()
             metadata.bind = conn
 
-            builds = sautils.Table('builds', metadata, autoload=True)
+            builds = sautils.Table('builds', metadata, autoload_with=conn)
             self.assertIsInstance(builds.c.locks_duration_s.type, sa.Integer)
 
             conn.execute(
@@ -86,7 +87,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             )
 
             durations = []
-            for row in conn.execute(sa.select([builds.c.locks_duration_s])):
+            for row in conn.execute(sa.select(builds.c.locks_duration_s)):
                 durations.append(row.locks_duration_s)
             self.assertEqual(durations, [0, 12])
 

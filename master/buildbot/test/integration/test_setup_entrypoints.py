@@ -65,7 +65,6 @@ class TestSetupPyEntryPoints(unittest.TestCase):
         known_not_exported = {
             'buildbot.changes.gerritchangesource.GerritChangeSourceBase',
             'buildbot.changes.base.ReconfigurablePollingChangeSource',
-            'buildbot.changes.base.PollingChangeSource',
             'buildbot.changes.base.ChangeSource',
         }
         self.verify_plugins_registered(
@@ -90,7 +89,6 @@ class TestSetupPyEntryPoints(unittest.TestCase):
             'buildbot.steps.download_secret_to_worker.RemoveWorkerFileSecret',
             'buildbot.steps.source.base.Source',
             'buildbot.steps.download_secret_to_worker.DownloadSecretsToWorker',
-            'buildbot.steps.shell.SetProperty',
             'buildbot.steps.worker.WorkerBuildStep',
             'buildbot.steps.vstudio.VisualStudio',
         }
@@ -110,7 +108,6 @@ class TestSetupPyEntryPoints(unittest.TestCase):
             'buildbot.util.bbcollections.KeyedSets',
             'buildbot.util.codebase.AbsoluteSourceStampsMixin',
             'buildbot.util.config.ConfiguredMixin',
-            'buildbot.util.croniter.croniter',
             'buildbot.util.debounce.Debouncer',
             'buildbot.util.deferwaiter.DeferWaiter',
             "buildbot.util.deferwaiter.NonRepeatedActionHandler",

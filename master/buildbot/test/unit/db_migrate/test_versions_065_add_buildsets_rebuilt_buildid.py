@@ -47,7 +47,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             sa.Column("results", sa.SmallInteger),
             sa.Column("parent_relationship", sa.Text),
         )
-        buildsets.create()
+        buildsets.create(bind=conn)
 
         conn.execute(
             buildsets.insert(),
@@ -64,9 +64,10 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
                 }
             ],
         )
+        conn.commit()
 
         builds = sautils.Table("builds", metadata, sa.Column("id", sa.Integer, primary_key=True))
-        builds.create()
+        builds.create(bind=conn)
 
         conn.execute(
             builds.insert(),
@@ -76,6 +77,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
                 }
             ],
         )
+        conn.commit()
 
     def test_update(self):
         def setup_thd(conn):
@@ -86,12 +88,12 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             metadata.bind = conn
 
             # check that builsets.rebuilt_buildid has been added
-            buildsets = sautils.Table('buildsets', metadata, autoload=True)
+            buildsets = sautils.Table('buildsets', metadata, autoload_with=conn)
             self.assertIsInstance(buildsets.c.rebuilt_buildid.type, sa.Integer)
 
-            q = sa.select([
+            q = sa.select(
                 buildsets.c.rebuilt_buildid,
-            ])
+            )
 
             all_fk_info = inspect(conn).get_foreign_keys("buildsets")
             fk_in_search = []
@@ -117,6 +119,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
                     }
                 ],
             )
+            conn.commit()
 
             rebuilt_buildid_list = []
             for row in conn.execute(q):

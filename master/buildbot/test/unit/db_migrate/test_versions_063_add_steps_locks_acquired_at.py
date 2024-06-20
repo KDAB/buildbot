@@ -46,7 +46,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             sa.Column('urls_json', sa.Text, nullable=False),
             sa.Column('hidden', sa.SmallInteger, nullable=False, server_default='0'),
         )
-        steps.create()
+        steps.create(bind=conn)
 
         conn.execute(
             steps.insert(),
@@ -65,6 +65,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
                 }
             ],
         )
+        conn.commit()
 
     def test_update(self):
         def setup_thd(conn):
@@ -74,13 +75,13 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             metadata = sa.MetaData()
             metadata.bind = conn
 
-            steps = sautils.Table('steps', metadata, autoload=True)
+            steps = sautils.Table('steps', metadata, autoload_with=conn)
             self.assertIsInstance(steps.c.locks_acquired_at.type, sa.Integer)
 
-            q = sa.select([
+            q = sa.select(
                 steps.c.name,
                 steps.c.locks_acquired_at,
-            ])
+            )
 
             num_rows = 0
             for row in conn.execute(q):

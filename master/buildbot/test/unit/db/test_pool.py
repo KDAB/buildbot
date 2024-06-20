@@ -31,7 +31,7 @@ class Basic(unittest.TestCase):
     # basic tests, just using an in-memory SQL db and one thread
 
     def setUp(self):
-        self.engine = sa.create_engine('sqlite://')
+        self.engine = sa.create_engine('sqlite://', future=True)
         self.engine.should_retry = lambda _: False
         self.engine.optimal_thread_pool_size = 1
         self.pool = pool.DBThreadPool(self.engine, reactor=reactor)
@@ -43,7 +43,7 @@ class Basic(unittest.TestCase):
     @defer.inlineCallbacks
     def test_do(self):
         def add(conn, addend1, addend2):
-            rp = conn.execute(f"SELECT {addend1} + {addend2}")
+            rp = conn.execute(sa.text(f"SELECT {addend1} + {addend2}"))
             return rp.scalar()
 
         res = yield self.pool.do(add, 10, 11)
@@ -64,7 +64,7 @@ class Basic(unittest.TestCase):
 
     def test_do_error(self):
         def fail(conn):
-            rp = conn.execute("EAT COOKIES")
+            rp = conn.execute(sa.text("EAT COOKIES"))
             return rp.scalar()
 
         return self.expect_failure(
@@ -82,7 +82,8 @@ class Basic(unittest.TestCase):
     @defer.inlineCallbacks
     def test_do_with_engine(self):
         def add(engine, addend1, addend2):
-            rp = engine.execute(f"SELECT {addend1} + {addend2}")
+            with engine.connect() as conn:
+                rp = conn.execute(sa.text(f"SELECT {addend1} + {addend2}"))
             return rp.scalar()
 
         res = yield self.pool.do_with_engine(add, 10, 11)
@@ -91,7 +92,8 @@ class Basic(unittest.TestCase):
 
     def test_do_with_engine_exception(self):
         def fail(engine):
-            rp = engine.execute("EAT COOKIES")
+            with engine.connect() as conn:
+                rp = conn.execute(sa.text("EAT COOKIES"))
             return rp.scalar()
 
         return self.expect_failure(self.pool.do_with_engine(fail), sa.exc.OperationalError)
@@ -105,23 +107,27 @@ class Basic(unittest.TestCase):
         # transaction runs.  This is why we set optimal_thread_pool_size in
         # setUp.
         def create_table(engine):
-            engine.execute("CREATE TABLE tmp ( a integer )")
+            with engine.connect() as conn:
+                conn.execute(sa.text("CREATE TABLE tmp ( a integer )"))
+                conn.commit()
 
         yield self.pool.do_with_engine(create_table)
 
         def insert_into_table(engine):
-            engine.execute("INSERT INTO tmp values ( 1 )")
+            with engine.connect() as conn:
+                conn.execute(sa.text("INSERT INTO tmp values ( 1 )"))
+                conn.commit()
 
         yield self.pool.do_with_engine(insert_into_table)
 
 
 class Stress(unittest.TestCase):
     def setUp(self):
-        setup_engine = sa.create_engine('sqlite:///test.sqlite')
+        setup_engine = sa.create_engine('sqlite:///test.sqlite', future=True)
         setup_engine.execute("pragma journal_mode = wal")
         setup_engine.execute("CREATE TABLE test (a integer, b integer)")
 
-        self.engine = sa.create_engine('sqlite:///test.sqlite')
+        self.engine = sa.create_engine('sqlite:///test.sqlite', future=True)
         self.engine.optimal_thread_pool_size = 2
         self.pool = pool.DBThreadPool(self.engine, reactor=reactor)
 
@@ -209,6 +215,6 @@ class Native(unittest.TestCase, db.RealDatabaseMixin):
         yield self.pool.do(ddl)
 
         def access(conn):
-            native_tests.insert(bind=conn).execute([{'name': 'foo'}])
+            conn.execute(native_tests.insert().values({'name': 'foo'}))
 
-        yield self.pool.do(access)
+        yield self.pool.do_with_transaction(access)

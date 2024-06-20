@@ -13,6 +13,7 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
 
 import copy
 import math
@@ -24,12 +25,14 @@ from twisted.python import log
 from twisted.python.failure import Failure
 
 from buildbot.data import resultspec
+from buildbot.db.buildrequests import BuildRequestModel
 from buildbot.process import metrics
 from buildbot.process.buildrequest import BuildRequest
 from buildbot.util import deferwaiter
 from buildbot.util import epoch2datetime
 from buildbot.util import service
 from buildbot.util.async_sort import async_sort
+from buildbot.util.twisted import async_to_deferred
 
 
 class BuildChooserBase:
@@ -91,15 +94,43 @@ class BuildChooserBase:
         return self.unclaimedBrdicts
 
     @defer.inlineCallbacks
-    def _getBuildRequestForBrdict(self, brdict):
+    def _getBuildRequestForBrdict(self, brdict: dict):
         # Turn a brdict into a BuildRequest into a brdict. This is useful
         # for API like 'nextBuild', which operate on BuildRequest objects.
 
         breq = self.breqCache.get(brdict['buildrequestid'])
         if not breq:
-            breq = yield BuildRequest.fromBrdict(self.master, brdict)
+            builder = yield self.master.data.get(
+                ('builders', brdict['builderid']), [resultspec.ResultSpec(fields=['name'])]
+            )
+            if not builder:
+                return None
+
+            model = BuildRequestModel(
+                buildrequestid=brdict['buildrequestid'],
+                buildsetid=brdict['buildsetid'],
+                builderid=brdict['builderid'],
+                buildername=builder['name'],
+                submitted_at=brdict['submitted_at'],
+            )
+            if 'complete_at' in brdict:
+                model.complete_at = brdict['complete_at']
+            if 'complete' in brdict:
+                model.complete = brdict['complete']
+            if 'results' in brdict:
+                model.results = brdict['results']
+            if 'waited_for' in brdict:
+                model.waited_for = brdict['waited_for']
+            if 'priority' in brdict:
+                model.priority = brdict['priority']
+            if 'claimed_at' in brdict:
+                model.claimed_at = brdict['claimed_at']
+            if 'claimed_by_masterid' in brdict:
+                model.claimed_by_masterid = brdict['claimed_by_masterid']
+
+            breq = yield BuildRequest.fromBrdict(self.master, model)
             if breq:
-                self.breqCache[brdict['buildrequestid']] = breq
+                self.breqCache[model.buildrequestid] = breq
         return breq
 
     def _getBrdictForBuildRequest(self, breq):
@@ -179,6 +210,9 @@ class BasicBuildChooser(BuildChooserBase):
             breq = yield self._getNextUnclaimedBuildRequest()
             if not breq:
                 break
+
+            if not self.workerpool and not self.preferredWorkers:
+                self.workerpool = self.bldr.getAvailableWorkers()
 
             #  2. pick a worker
             worker = yield self._popNextWorker(breq)
@@ -297,6 +331,15 @@ class BuildRequestDistributor(service.AsyncMultiService):
         self._deferwaiter = deferwaiter.DeferWaiter()
         self._activity_loop_deferred = None
 
+        # Use in Master clean shutdown
+        # this flag will allow the distributor to still
+        # start new builds if it has a parent waiting on it
+        self.distribute_only_waited_childs = False
+
+    @property
+    def can_distribute(self):
+        return bool(self.running) or self.distribute_only_waited_childs
+
     @defer.inlineCallbacks
     def stopService(self):
         # Lots of stuff happens asynchronously here, so we need to let it all
@@ -311,8 +354,8 @@ class BuildRequestDistributor(service.AsyncMultiService):
         # TEST-TODO: this behavior is not asserted in any way.
         yield self._deferwaiter.wait()
 
-    @defer.inlineCallbacks
-    def maybeStartBuildsOn(self, new_builders):
+    @async_to_deferred
+    async def maybeStartBuildsOn(self, new_builders: list[str]) -> None:
         """
         Try to start any builds that can be started right now.  This function
         returns immediately, and promises to trigger those builders
@@ -321,45 +364,41 @@ class BuildRequestDistributor(service.AsyncMultiService):
         @param new_builders: names of new builders that should be given the
         opportunity to check for new requests.
         """
-        if not self.running:
+        if not self.can_distribute:
             return
 
         try:
-            yield self._deferwaiter.add(self._maybeStartBuildsOn(new_builders))
+            await self._deferwaiter.add(self._maybeStartBuildsOn(new_builders))
         except Exception as e:  # pragma: no cover
             log.err(e, f"while starting builds on {new_builders}")
 
-    @defer.inlineCallbacks
-    def _maybeStartBuildsOn(self, new_builders):
+    @async_to_deferred
+    async def _maybeStartBuildsOn(self, new_builders: list[str]) -> None:
         new_builders = set(new_builders)
         existing_pending = set(self._pending_builders)
 
         # if we won't add any builders, there's nothing to do
         if new_builders < existing_pending:
-            return None
+            return
 
         # reset the list of pending builders
-        @defer.inlineCallbacks
-        def resetPendingBuildersList(new_builders):
-            try:
+        try:
+            async with self.pending_builders_lock:
                 # re-fetch existing_pending, in case it has changed
                 # while acquiring the lock
                 existing_pending = set(self._pending_builders)
 
                 # then sort the new, expanded set of builders
-                self._pending_builders = yield self._sortBuilders(
+                self._pending_builders = await self._sortBuilders(
                     list(existing_pending | new_builders)
                 )
 
                 # start the activity loop, if we aren't already
                 # working on that.
                 if not self.active:
-                    self._activity_loop_deferred = self._activityLoop()
-            except Exception:  # pragma: no cover
-                log.err(Failure(), f"while attempting to start builds on {self.name}")
-
-        yield self.pending_builders_lock.run(resetPendingBuildersList, new_builders)
-        return None
+                    self._activity_loop_deferred = defer.ensureDeferred(self._activityLoop())
+        except Exception:  # pragma: no cover
+            log.err(Failure(), f"while attempting to start builds on {self.name}")
 
     @defer.inlineCallbacks
     def _defaultSorter(self, master, builders):
@@ -414,60 +453,69 @@ class BuildRequestDistributor(service.AsyncMultiService):
         timer.stop()
         return rv
 
-    @defer.inlineCallbacks
-    def _activityLoop(self):
+    @metrics.timeMethod('BuildRequestDistributor._activityLoop()')
+    async def _activityLoop(self) -> None:
         self.active = True
 
-        timer = metrics.Timer('BuildRequestDistributor._activityLoop()')
-        timer.start()
         pending_builders = []
         while True:
-            yield self.activity_lock.acquire()
-            if not self.running:
-                self.activity_lock.release()
-                break
-
-            if not pending_builders:
-                # lock pending_builders, pop an element from it, and release
-                yield self.pending_builders_lock.acquire()
-
-                # bail out if we shouldn't keep looping
-                if not self._pending_builders:
-                    self.pending_builders_lock.release()
-                    self.activity_lock.release()
+            async with self.activity_lock:
+                if not self.can_distribute:
                     break
-                # take that builder list, and run it until the end
-                # we make a copy of it, as it could be modified meanwhile
-                pending_builders = copy.copy(self._pending_builders)
-                self._pending_builders = []
-                self.pending_builders_lock.release()
 
-            bldr_name = pending_builders.pop(0)
+                if not pending_builders:
+                    # lock pending_builders, pop an element from it, and release
+                    async with self.pending_builders_lock:
+                        # bail out if we shouldn't keep looping
+                        if not self._pending_builders:
+                            break
+                        # take that builder list, and run it until the end
+                        # we make a copy of it, as it could be modified meanwhile
+                        pending_builders = copy.copy(self._pending_builders)
+                        self._pending_builders = []
 
-            # get the actual builder object
-            bldr = self.botmaster.builders.get(bldr_name)
-            try:
-                if bldr:
-                    yield self._maybeStartBuildsOnBuilder(bldr)
-            except Exception:
-                log.err(Failure(), f"from maybeStartBuild for builder '{bldr_name}'")
+                bldr_name = pending_builders.pop(0)
 
-            self.activity_lock.release()
-
-        timer.stop()
+                # get the actual builder object
+                bldr = self.botmaster.builders.get(bldr_name)
+                try:
+                    if bldr:
+                        await self._maybeStartBuildsOnBuilder(bldr)
+                except Exception:
+                    log.err(Failure(), f"from maybeStartBuild for builder '{bldr_name}'")
 
         self.active = False
 
-    @defer.inlineCallbacks
-    def _maybeStartBuildsOnBuilder(self, bldr):
+    async def _maybeStartBuildsOnBuilder(self, bldr):
         # create a chooser to give us our next builds
         # this object is temporary and will go away when we're done
         bc = self.createBuildChooser(bldr, self.master)
 
         while True:
-            worker, breqs = yield bc.chooseNextBuild()
+            worker, breqs = await bc.chooseNextBuild()
             if not worker or not breqs:
                 break
+
+            if self.distribute_only_waited_childs:
+                # parenting is a field of Buildset
+                # get the buildsets only for requests
+                # that are waited for
+                buildset_ids = set(br.bsid for br in breqs if br.waitedFor)
+                if not buildset_ids:
+                    continue
+                # get buildsets if they have a parent
+                buildsets_data: list[dict] = await self.master.data.get(
+                    ('buildsets',),
+                    filters=[
+                        resultspec.Filter('bsid', 'in', buildset_ids),
+                        resultspec.Filter('parent_buildid', 'ne', [None]),
+                    ],
+                    fields=['bsid', 'parent_buildid'],
+                )
+                parented_buildset_ids = set(bs['bsid'] for bs in buildsets_data)
+                breqs = [br for br in breqs if br.bsid in parented_buildset_ids]
+                if not breqs:
+                    continue
 
             # claim brid's
             brids = [br.id for br in breqs]
@@ -476,15 +524,15 @@ class BuildRequestDistributor(service.AsyncMultiService):
 
             self._add_in_progress_brids(brids)
             if not (
-                yield self.master.data.updates.claimBuildRequests(brids, claimed_at=claimed_at)
+                await self.master.data.updates.claimBuildRequests(brids, claimed_at=claimed_at)
             ):
                 # some brids were already claimed, so start over
                 bc = self.createBuildChooser(bldr, self.master)
                 continue
 
-            buildStarted = yield bldr.maybeStartBuild(worker, breqs)
+            buildStarted = await bldr.maybeStartBuild(worker, breqs)
             if not buildStarted:
-                yield self.master.data.updates.unclaimBuildRequests(brids)
+                await self.master.data.updates.unclaimBuildRequests(brids)
                 self._remove_in_progress_brids(brids)
 
                 # try starting builds again.  If we still have a working worker,
@@ -503,7 +551,7 @@ class BuildRequestDistributor(service.AsyncMultiService):
         # just instantiate the build chooser requested
         return self.BuildChooser(bldr, master)
 
-    @defer.inlineCallbacks
-    def _waitForFinish(self):
+    @async_to_deferred
+    async def _waitForFinish(self):
         if self._activity_loop_deferred is not None:
-            yield self._activity_loop_deferred
+            await self._activity_loop_deferred

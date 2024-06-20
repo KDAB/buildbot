@@ -81,11 +81,12 @@ class ForceSchedulersEndpoint(base.Endpoint):
     def get(self, resultSpec, kwargs):
         ret = []
         builderid = kwargs.get('builderid', None)
+        bdict = None
         if builderid is not None:
             bdict = yield self.master.db.builders.getBuilder(builderid)
         for sched in self.master.allSchedulers():
             if isinstance(sched, forcesched.ForceScheduler):
-                if builderid is not None and bdict['name'] not in sched.builderNames:
+                if builderid is not None and bdict.name not in sched.builderNames:
                     continue
                 ret.append(forceScheduler2Data(sched))
         return ret

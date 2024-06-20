@@ -13,18 +13,27 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
 
 import itertools
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from twisted.internet import defer
+from twisted.python import deprecate
 from twisted.python import log
+from twisted.python import versions
 
 from buildbot.db import NULL
 from buildbot.db import base
 from buildbot.process.results import RETRY
 from buildbot.util import datetime2epoch
 from buildbot.util import epoch2datetime
+from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    import datetime
 
 
 class AlreadyClaimedError(Exception):
@@ -35,7 +44,46 @@ class NotClaimedError(Exception):
     pass
 
 
-class BrDict(dict):
+@dataclass
+class BuildRequestModel:
+    buildrequestid: int
+    buildsetid: int
+    builderid: int
+    buildername: str
+    submitted_at: datetime.datetime
+    complete_at: datetime.datetime | None = None
+    complete: bool = False
+    results: int | None = None
+    waited_for: bool = False
+    priority: int = 0
+
+    claimed_at: datetime.datetime | None = None
+    claimed_by_masterid: int | None = None
+
+    @property
+    def claimed(self) -> bool:
+        return self.claimed_at is not None
+
+    # For backward compatibility from when SsDict inherited from Dict
+    def __getitem__(self, key: str):
+        warn_deprecated(
+            '4.1.0',
+            (
+                'BuildRequestsConnectorComponent '
+                'getBuildRequest, and getBuildRequests '
+                'no longer return BuildRequest as dictionnaries. '
+                'Usage of [] accessor is deprecated: please access the member directly'
+            ),
+        )
+
+        if hasattr(self, key):
+            return getattr(self, key)
+
+        raise KeyError(key)
+
+
+@deprecate.deprecated(versions.Version("buildbot", 4, 1, 0), BuildRequestModel)
+class BrDict(BuildRequestModel):
     pass
 
 
@@ -54,18 +102,17 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
         from_clause = from_clause.join(sstamps_tbl, bsss_tbl.c.sourcestampid == sstamps_tbl.c.id)
         from_clause = from_clause.join(builder_tbl, reqs_tbl.c.builderid == builder_tbl.c.id)
 
-        return sa.select([
+        return sa.select(
             reqs_tbl,
             claims_tbl,
             sstamps_tbl.c.branch,
             sstamps_tbl.c.repository,
             sstamps_tbl.c.codebase,
             builder_tbl.c.name.label('buildername'),
-        ]).select_from(from_clause)
+        ).select_from(from_clause)
 
-    # returns a Deferred that returns a value
-    def getBuildRequest(self, brid):
-        def thd(conn):
+    def getBuildRequest(self, brid) -> defer.Deferred[BuildRequestModel | None]:
+        def thd(conn) -> BuildRequestModel | None:
             reqs_tbl = self.db.model.buildrequests
             q = self._saSelectQuery()
             q = q.where(reqs_tbl.c.id == brid)
@@ -73,7 +120,7 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
             row = res.fetchone()
             rv = None
             if row:
-                rv = self._brdictFromRow(row, self.db.master.masterid)
+                rv = self._modelFromRow(row)
             res.close()
             return rv
 
@@ -90,10 +137,10 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
         repository=None,
         resultSpec=None,
     ):
-        def deduplicateBrdict(brdicts):
-            return list(({b['buildrequestid']: b for b in brdicts}).values())
+        def deduplicateBrdict(brdicts: list[BuildRequestModel]) -> list[BuildRequestModel]:
+            return list(({b.buildrequestid: b for b in brdicts}).values())
 
-        def thd(conn):
+        def thd(conn) -> list[BuildRequestModel]:
             reqs_tbl = self.db.model.buildrequests
             claims_tbl = self.db.model.buildrequest_claims
             sstamps_tbl = self.db.model.sourcestamps
@@ -122,17 +169,11 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
                 q = q.where(sstamps_tbl.c.repository == repository)
 
             if resultSpec is not None:
-                return deduplicateBrdict(
-                    resultSpec.thd_execute(
-                        conn, q, lambda r: self._brdictFromRow(r, self.db.master.masterid)
-                    )
-                )
+                return deduplicateBrdict(resultSpec.thd_execute(conn, q, self._modelFromRow))
 
             res = conn.execute(q)
 
-            return deduplicateBrdict([
-                self._brdictFromRow(row, self.db.master.masterid) for row in res.fetchall()
-            ])
+            return deduplicateBrdict([self._modelFromRow(row) for row in res.fetchall()])
 
         res = yield self.db.pool.do(thd)
         return res
@@ -165,8 +206,7 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
 
         yield self.db.pool.do(thd)
 
-    # returns a Deferred that returns None
-    def unclaimBuildRequests(self, brids):
+    def unclaimBuildRequests(self, brids) -> defer.Deferred[None]:
         def thd(conn):
             transaction = conn.begin()
             claims_tbl = self.db.model.buildrequest_claims
@@ -181,9 +221,9 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
                     break  # success!
 
                 try:
-                    q = claims_tbl.delete(
-                        (claims_tbl.c.brid.in_(batch))
-                        & (claims_tbl.c.masterid == self.db.master.masterid)
+                    q = claims_tbl.delete().where(
+                        claims_tbl.c.brid.in_(batch),
+                        claims_tbl.c.masterid == self.db.master.masterid,
                     )
                     conn.execute(q)
                 except Exception:
@@ -218,7 +258,7 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
                 q = reqs_tbl.update()
                 q = q.where(reqs_tbl.c.id.in_(batch))
                 q = q.where(reqs_tbl.c.complete != 1)
-                res = conn.execute(q, complete=1, results=results, complete_at=complete_at)
+                res = conn.execute(q.values(complete=1, results=results, complete_at=complete_at))
 
                 # if an incorrect number of rows were updated, then we failed.
                 if res.rowcount != len(batch):
@@ -264,31 +304,18 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
         return self.db.pool.do(thd)
 
     @staticmethod
-    def _brdictFromRow(row, master_masterid):
-        claimed = False
-        claimed_by_masterid = None
-        claimed_at = None
-        if row.claimed_at is not None:
-            claimed_at = row.claimed_at
-            claimed = True
-            claimed_by_masterid = row.masterid
-
-        submitted_at = epoch2datetime(row.submitted_at)
-        complete_at = epoch2datetime(row.complete_at)
-        claimed_at = epoch2datetime(claimed_at)
-
-        return BrDict(
+    def _modelFromRow(row):
+        return BuildRequestModel(
             buildrequestid=row.id,
             buildsetid=row.buildsetid,
             builderid=row.builderid,
             buildername=row.buildername,
-            priority=row.priority,
-            claimed=claimed,
-            claimed_at=claimed_at,
-            claimed_by_masterid=claimed_by_masterid,
+            submitted_at=epoch2datetime(row.submitted_at),
+            complete_at=epoch2datetime(row.complete_at),
             complete=bool(row.complete),
             results=row.results,
-            submitted_at=submitted_at,
-            complete_at=complete_at,
             waited_for=bool(row.waited_for),
+            priority=row.priority,
+            claimed_at=epoch2datetime(row.claimed_at),
+            claimed_by_masterid=row.masterid,
         )

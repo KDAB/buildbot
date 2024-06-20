@@ -14,23 +14,64 @@
 # Copyright Buildbot Team Members
 
 
+from __future__ import annotations
+
+import dataclasses
+from typing import TYPE_CHECKING
+
 import sqlalchemy as sa
-from sqlalchemy.sql.expression import and_
+from twisted.python import deprecate
+from twisted.python import versions
 
 from buildbot.db import base
 from buildbot.util import identifiers
+from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    from twisted.internet import defer
 
 
-class UsDict(dict):
+@dataclasses.dataclass
+class UserModel:
+    uid: int
+    identifier: str
+    bb_username: str | None = None
+    bb_password: str | None = None
+    attributes: dict[str, str] | None = None
+
+    # For backward compatibility
+    def __getitem__(self, key: str):
+        warn_deprecated(
+            '4.1.0',
+            (
+                'UsersConnectorComponent '
+                'getUser, getUserByUsername, and getUsers '
+                'no longer return User as dictionnaries. '
+                'Usage of [] accessor is deprecated: please access the member directly'
+            ),
+        )
+
+        if hasattr(self, key):
+            return getattr(self, key)
+
+        if self.attributes is not None and key in self.attributes:
+            return self.attributes[key]
+
+        raise KeyError(key)
+
+
+@deprecate.deprecated(versions.Version("buildbot", 4, 1, 0), UserModel)
+class UsDict(UserModel):
     pass
 
 
 class UsersConnectorComponent(base.DBConnectorComponent):
-    # returns a Deferred that returns a value
-    def findUserByAttr(self, identifier, attr_type, attr_data, _race_hook=None):
+    def findUserByAttr(
+        self, identifier: str, attr_type: str, attr_data: str, _race_hook=None
+    ) -> defer.Deferred[int]:
         # note that since this involves two tables, self.findSomethingId is not
         # helpful
-        def thd(conn, no_recurse=False, identifier=identifier):
+        def thd(conn, no_recurse=False, identifier=identifier) -> int:
             tbl = self.db.model.users
             tbl_info = self.db.model.users_info
 
@@ -40,11 +81,8 @@ class UsersConnectorComponent(base.DBConnectorComponent):
 
             # try to find the user
             q = sa.select(
-                [tbl_info.c.uid],
-                whereclause=and_(
-                    tbl_info.c.attr_type == attr_type, tbl_info.c.attr_data == attr_data
-                ),
-            )
+                tbl_info.c.uid,
+            ).where(tbl_info.c.attr_type == attr_type, tbl_info.c.attr_data == attr_data)
             rows = conn.execute(q).fetchall()
 
             if rows:
@@ -56,7 +94,7 @@ class UsersConnectorComponent(base.DBConnectorComponent):
             # try to do both of these inserts in a transaction, so that both
             # the new user and the corresponding attributes appear at the same
             # time from the perspective of other masters.
-            transaction = conn.begin()
+            transaction = conn.begin_nested()
             inserted_user = False
             try:
                 r = conn.execute(tbl.insert(), {"identifier": identifier})
@@ -86,94 +124,84 @@ class UsersConnectorComponent(base.DBConnectorComponent):
 
                 return thd(conn, no_recurse=no_recurse, identifier=identifier)
 
+            conn.commit()
             return uid
 
         return self.db.pool.do(thd)
 
-    # returns a Deferred that returns a value
     @base.cached("usdicts")
-    def getUser(self, uid):
-        def thd(conn):
+    def getUser(self, uid: int) -> defer.Deferred[UserModel | None]:
+        def thd(conn) -> UserModel | None:
             tbl = self.db.model.users
             tbl_info = self.db.model.users_info
 
-            q = tbl.select(whereclause=tbl.c.uid == uid)
+            q = tbl.select().where(tbl.c.uid == uid)
             users_row = conn.execute(q).fetchone()
 
             if not users_row:
                 return None
 
             # gather all attr_type and attr_data entries from users_info table
-            q = tbl_info.select(whereclause=tbl_info.c.uid == uid)
+            q = tbl_info.select().where(tbl_info.c.uid == uid)
             rows = conn.execute(q).fetchall()
 
-            return self.thd_createUsDict(users_row, rows)
+            return self._model_from_row(users_row, rows)
 
         return self.db.pool.do(thd)
 
-    def thd_createUsDict(self, users_row, rows):
-        # make UsDict to return
-        usdict = UsDict()
-        for row in rows:
-            usdict[row.attr_type] = row.attr_data
-
-        # add the users_row data *after* the attributes in case attr_type
-        # matches one of these keys.
-        usdict['uid'] = users_row.uid
-        usdict['identifier'] = users_row.identifier
-        usdict['bb_username'] = users_row.bb_username
-        usdict['bb_password'] = users_row.bb_password
-
-        return usdict
+    def _model_from_row(self, users_row, attribute_rows=None):
+        attributes = None
+        if attribute_rows is not None:
+            attributes = {row.attr_type: row.attr_data for row in attribute_rows}
+        return UserModel(
+            uid=users_row.uid,
+            identifier=users_row.identifier,
+            bb_username=users_row.bb_username,
+            bb_password=users_row.bb_password,
+            attributes=attributes,
+        )
 
     # returns a Deferred that returns a value
-    def getUserByUsername(self, username):
-        def thd(conn):
+    def getUserByUsername(self, username: str | None) -> defer.Deferred[UserModel | None]:
+        def thd(conn) -> UserModel | None:
             tbl = self.db.model.users
             tbl_info = self.db.model.users_info
 
-            q = tbl.select(whereclause=tbl.c.bb_username == username)
+            q = tbl.select().where(tbl.c.bb_username == username)
             users_row = conn.execute(q).fetchone()
 
             if not users_row:
                 return None
 
             # gather all attr_type and attr_data entries from users_info table
-            q = tbl_info.select(whereclause=tbl_info.c.uid == users_row.uid)
+            q = tbl_info.select().where(tbl_info.c.uid == users_row.uid)
             rows = conn.execute(q).fetchall()
 
-            return self.thd_createUsDict(users_row, rows)
+            return self._model_from_row(users_row, rows)
 
         return self.db.pool.do(thd)
 
-    # returns a Deferred that returns a value
-    def getUsers(self):
-        def thd(conn):
+    def getUsers(self) -> defer.Deferred[list[UserModel]]:
+        def thd(conn) -> list[UserModel]:
             tbl = self.db.model.users
             rows = conn.execute(tbl.select()).fetchall()
 
-            dicts = []
-            if rows:
-                for row in rows:
-                    ud = {"uid": row.uid, "identifier": row.identifier}
-                    dicts.append(ud)
-            return dicts
+            return [self._model_from_row(row, attribute_rows=None) for row in rows]
 
         return self.db.pool.do(thd)
 
     # returns a Deferred that returns None
     def updateUser(
         self,
-        uid=None,
-        identifier=None,
-        bb_username=None,
-        bb_password=None,
-        attr_type=None,
-        attr_data=None,
+        uid: int | None = None,
+        identifier: str | None = None,
+        bb_username: str | None = None,
+        bb_password: str | None = None,
+        attr_type: str | None = None,
+        attr_data: str | None = None,
         _race_hook=None,
     ):
         def thd(conn):
-            transaction = conn.begin()
             tbl = self.db.model.users
             tbl_info = self.db.model.users_info
             update_dict = {}
@@ -193,8 +221,8 @@ class UsersConnectorComponent(base.DBConnectorComponent):
 
             # update the users table if it needs to be updated
             if update_dict:
-                q = tbl.update(whereclause=tbl.c.uid == uid)
-                res = conn.execute(q, update_dict)
+                q = tbl.update().where(tbl.c.uid == uid)
+                conn.execute(q, update_dict)
 
             # then, update the attributes, carefully handling the potential
             # update-or-insert race condition.
@@ -204,28 +232,24 @@ class UsersConnectorComponent(base.DBConnectorComponent):
                 self.checkLength(tbl_info.c.attr_type, attr_type)
                 self.checkLength(tbl_info.c.attr_data, attr_data)
 
-                # first update, then insert
-                q = tbl_info.update(
-                    whereclause=(tbl_info.c.uid == uid) & (tbl_info.c.attr_type == attr_type)
-                )
-                res = conn.execute(q, attr_data=attr_data)
-                if res.rowcount == 0:
-                    if _race_hook is not None:
-                        _race_hook(conn)
+                try:
+                    self.db.upsert(
+                        conn,
+                        tbl_info,
+                        where_values=(
+                            (tbl_info.c.uid, uid),
+                            (tbl_info.c.attr_type, attr_type),
+                        ),
+                        update_values=((tbl_info.c.attr_data, attr_data),),
+                        _race_hook=_race_hook,
+                    )
+                    conn.commit()
+                except (sa.exc.IntegrityError, sa.exc.ProgrammingError):
+                    # someone else beat us to the punch inserting this row;
+                    # let them win.
+                    conn.rollback()
 
-                    # the update hit 0 rows, so try inserting a new one
-                    try:
-                        q = tbl_info.insert()
-                        res = conn.execute(q, uid=uid, attr_type=attr_type, attr_data=attr_data)
-                    except (sa.exc.IntegrityError, sa.exc.ProgrammingError):
-                        # someone else beat us to the punch inserting this row;
-                        # let them win.
-                        transaction.rollback()
-                        return
-
-            transaction.commit()
-
-        return self.db.pool.do(thd)
+        return self.db.pool.do_with_transaction(thd)
 
     # returns a Deferred that returns None
     def removeUser(self, uid):
@@ -236,16 +260,16 @@ class UsersConnectorComponent(base.DBConnectorComponent):
                 self.db.model.users_info,
                 self.db.model.users,
             ]:
-                conn.execute(tbl.delete(whereclause=tbl.c.uid == uid))
+                conn.execute(tbl.delete().where(tbl.c.uid == uid))
 
-        return self.db.pool.do(thd)
+        return self.db.pool.do_with_transaction(thd)
 
     # returns a Deferred that returns a value
-    def identifierToUid(self, identifier):
-        def thd(conn):
+    def identifierToUid(self, identifier) -> defer.Deferred[int | None]:
+        def thd(conn) -> int | None:
             tbl = self.db.model.users
 
-            q = tbl.select(whereclause=tbl.c.identifier == identifier)
+            q = tbl.select().where(tbl.c.identifier == identifier)
             row = conn.execute(q).fetchone()
             if not row:
                 return None

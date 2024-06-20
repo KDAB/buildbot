@@ -13,6 +13,9 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from twisted.internet import defer
 
@@ -20,6 +23,9 @@ from buildbot.db import buildrequests
 from buildbot.test.fakedb.base import FakeDBComponent
 from buildbot.test.fakedb.row import Row
 from buildbot.util import datetime2epoch
+
+if TYPE_CHECKING:
+    from buildbot.db.sourcestamps import SourceStampModel
 
 
 class BuildRequest(Row):
@@ -35,7 +41,6 @@ class BuildRequest(Row):
         id=None,
         buildsetid=None,
         builderid=None,
-        buildername=None,
         priority=0,
         complete=0,
         results=-1,
@@ -47,7 +52,6 @@ class BuildRequest(Row):
             id=id,
             buildsetid=buildsetid,
             builderid=builderid,
-            buildername=buildername,
             priority=priority,
             complete=complete,
             results=results,
@@ -86,22 +90,23 @@ class FakeBuildRequestsComponent(FakeDBComponent):
 
     # component methods
     @defer.inlineCallbacks
-    def getBuildRequest(self, brid):
+    def getBuildRequest(self, brid: int):
         row = self.reqs.get(brid)
-        if row:
-            claim_row = self.claims.get(brid, None)
-            if claim_row:
-                row.claimed_at = claim_row.claimed_at
-                row.claimed = True
-                row.masterid = claim_row.masterid
-                row.claimed_by_masterid = claim_row.masterid
-            else:
-                row.claimed_at = None
-            builder = yield self.db.builders.getBuilder(row.builderid)
-            row.buildername = builder["name"]
-            return self._brdictFromRow(row)
-        else:
+        if not row:
             return None
+
+        claim_row = self.claims.get(brid, None)
+        if claim_row:
+            row.claimed_at = claim_row.claimed_at
+            row.claimed = True
+            row.masterid = claim_row.masterid
+            row.claimed_by_masterid = claim_row.masterid
+        else:
+            row.claimed_at = None
+            row.masterid = None
+        builder = yield self.db.builders.getBuilder(row.builderid)
+        row.buildername = builder.name
+        return self._modelFromRow(row)
 
     @defer.inlineCallbacks
     def getBuildRequests(
@@ -131,6 +136,7 @@ class FakeBuildRequestsComponent(FakeDBComponent):
                 br.claimed_by_masterid = claim_row.masterid
             else:
                 br.claimed_at = None
+                br.masterid = None
             if claimed is not None:
                 if isinstance(claimed, bool):
                     if claimed:
@@ -148,17 +154,17 @@ class FakeBuildRequestsComponent(FakeDBComponent):
 
             if branch or repository:
                 buildset = yield self.db.buildsets.getBuildset(br.buildsetid)
-                sourcestamps = []
-                for ssid in buildset['sourcestamps']:
+                sourcestamps: list[SourceStampModel] = []
+                for ssid in buildset.sourcestamps:
                     sourcestamps.append((yield self.db.sourcestamps.getSourceStamp(ssid)))
 
-                if branch and not any(branch == s['branch'] for s in sourcestamps):
+                if branch and not any(branch == s.branch for s in sourcestamps):
                     continue
-                if repository and not any(repository == s['repository'] for s in sourcestamps):
+                if repository and not any(repository == s.repository for s in sourcestamps):
                     continue
             builder = yield self.db.builders.getBuilder(br.builderid)
-            br.buildername = builder["name"]
-            rv.append(self._brdictFromRow(br))
+            br.buildername = builder.name
+            rv.append(self._modelFromRow(br))
         if resultSpec is not None:
             rv = self.applyResultSpec(rv, resultSpec)
         return rv
@@ -201,8 +207,8 @@ class FakeBuildRequestsComponent(FakeDBComponent):
             self.reqs[brid].complete_at = complete_at
         return defer.succeed(None)
 
-    def _brdictFromRow(self, row):
-        return buildrequests.BuildRequestsConnectorComponent._brdictFromRow(row, self.MASTER_ID)
+    def _modelFromRow(self, row):
+        return buildrequests.BuildRequestsConnectorComponent._modelFromRow(row)  # noqa pylint: disable=protected-access
 
     # fake methods
 

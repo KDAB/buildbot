@@ -111,17 +111,12 @@ class SVNPoller(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
         category=None,
         project="",
         cachepath=None,
-        pollinterval=-2,
         extra_args=None,
         name=None,
         pollAtLaunch=False,
         pollRandomDelayMin=0,
         pollRandomDelayMax=0,
     ):
-        # for backward compatibility; the parameter used to be spelled with 'i'
-        if pollinterval != -2:
-            pollInterval = pollinterval
-
         if name is None:
             name = repourl
 
@@ -147,17 +142,12 @@ class SVNPoller(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
         category=None,
         project="",
         cachepath=None,
-        pollinterval=-2,
         extra_args=None,
         name=None,
         pollAtLaunch=False,
         pollRandomDelayMin=0,
         pollRandomDelayMax=0,
     ):
-        # for backward compatibility; the parameter used to be spelled with 'i'
-        if pollinterval != -2:
-            pollInterval = pollinterval
-
         if name is None:
             name = repourl
 

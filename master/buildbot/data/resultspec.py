@@ -13,10 +13,17 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import sqlalchemy as sa
 from twisted.python import log
 
 from buildbot.data import base
+
+if TYPE_CHECKING:
+    from typing import Sequence
 
 
 class FieldBase:
@@ -71,10 +78,12 @@ class FieldBase:
         # only support string values, because currently there are no queries against lists in SQL
     }
 
-    def __init__(self, field, op, values):
+    def __init__(self, field: bytes, op: str, values: Sequence):
         self.field = field
         self.op = op
         self.values = values
+        # `str` is a Sequence as well...
+        assert not isinstance(values, str)
 
     def getOperator(self, sqlMode=False):
         v = self.values
@@ -95,7 +104,7 @@ class FieldBase:
         fld = self.field
         v = self.values
         f = self.getOperator()
-        return (d for d in data if f(d[fld], v))
+        return (d for d in data if f((d[fld] if isinstance(d, dict) else getattr(d, fld)), v))
 
     def __repr__(self):
         return f"resultspec.{self.__class__.__name__}('{self.field}','{self.op}',{self.values})"
@@ -335,7 +344,7 @@ class ResultSpec:
             self.filters = unmatched_filters
             self.order = tuple(unmatched_order)
             return query, None
-        count_query = sa.select([sa.func.count()]).select_from(query.alias('query'))
+        count_query = sa.select(sa.func.count()).select_from(query.alias('query'))
         self.order = None
         self.filters = []
         # finally, slice out the limit/offset
@@ -377,6 +386,7 @@ class ResultSpec:
             applyFields = includeFields
         else:
             fields = None
+            applyFields = None
 
         if isinstance(data, dict):
             # item details
@@ -419,8 +429,7 @@ class ResultSpec:
                     Do a multi-level sort by passing in the keys
                     to sort by.
 
-                    @param elem: each item in the list to sort.  It must be
-                              a C{dict}
+                    @param elem: each item in the list to sort.
                     @param order: a list of keys to sort by, such as:
                                 ('lastName', 'firstName', 'age')
                     @return: a key used by sorted(). This will be a
@@ -436,7 +445,8 @@ class ResultSpec:
                             # it means sort by 'lastName' in reverse.
                             k = k[1:]
                             doReverse = True
-                        val = NoneComparator(elem[k])
+                        val = elem[k] if isinstance(elem, dict) else getattr(elem, k)
+                        val = NoneComparator(val)
                         if doReverse:
                             val = ReverseComparator(val)
                         compareKey.append(val)

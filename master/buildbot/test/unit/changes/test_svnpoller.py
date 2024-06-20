@@ -661,8 +661,8 @@ class TestSVNPoller(
         # it should have called log.err once with a ValueError
         self.assertEqual(len(self.flushLoggedErrors(ValueError)), 1)
 
-    def test_constructor_pollinterval(self):
-        return self.attachSVNPoller(sample_base, pollinterval=100)  # just don't fail!
+    def test_constructor_pollInterval(self):
+        return self.attachSVNPoller(sample_base, pollInterval=100)  # just don't fail!
 
     @defer.inlineCallbacks
     def test_extra_args(self):

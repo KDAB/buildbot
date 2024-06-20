@@ -25,7 +25,6 @@ from buildbot.db import sourcestamps
 from buildbot.test import fakedb
 from buildbot.test.util import connector_component
 from buildbot.test.util import interfaces
-from buildbot.test.util import validation
 from buildbot.util import epoch2datetime
 
 SOMETIME = 20398573
@@ -79,24 +78,24 @@ class Tests(interfaces.InterfaceTests):
         fakedb.ChangeFile(changeid=14, filename='master/buildbot/__init__.py'),
     ]
 
-    change14_dict = {
-        'changeid': 14,
-        'parent_changeids': [],
-        'author': 'warner',
-        'committer': 'david',
-        'branch': 'warnerdb',
-        'category': 'devel',
-        'comments': 'fix whitespace',
-        'files': ['master/buildbot/__init__.py'],
-        'project': 'Buildbot',
-        'properties': {},
-        'repository': 'git://warner',
-        'codebase': 'mainapp',
-        'revision': '0e92a098b',
-        'revlink': 'http://warner/0e92a098b',
-        'when_timestamp': epoch2datetime(266738404),
-        'sourcestampid': 233,
-    }
+    change14_dict = changes.ChangeModel(
+        changeid=14,
+        parent_changeids=[],
+        author='warner',
+        committer='david',
+        branch='warnerdb',
+        category='devel',
+        comments='fix whitespace',
+        files=['master/buildbot/__init__.py'],
+        project='Buildbot',
+        properties={},
+        repository='git://warner',
+        codebase='mainapp',
+        revision='0e92a098b',
+        revlink='http://warner/0e92a098b',
+        when_timestamp=epoch2datetime(266738404),
+        sourcestampid=233,
+    )
 
     # tests
 
@@ -146,44 +145,38 @@ class Tests(interfaces.InterfaceTests):
             project='proj',
         )
         chdict = yield self.db.changes.getChange(changeid)
-        validation.verifyDbDict(self, 'chdict', chdict)
-        chdict = chdict.copy()
-        ss = yield self.db.sourcestamps.getSourceStamp(chdict['sourcestampid'])
-        chdict['sourcestampid'] = ss
+        self.assertIsInstance(chdict, changes.ChangeModel)
+        ss = yield self.db.sourcestamps.getSourceStamp(chdict.sourcestampid)
+        chdict.sourcestampid = ss
         self.assertEqual(
             chdict,
-            {
-                'author': 'dustin',
-                'committer': 'justin',
-                'branch': 'master',
-                'category': None,
-                'changeid': changeid,
-                'parent_changeids': [],
-                'codebase': 'cb',
-                'comments': 'fix spelling',
-                'files': [],
-                'project': 'proj',
-                'properties': {},
-                'repository': 'repo://',
-                'revision': '2d6caa52',
-                'revlink': None,
-                'sourcestampid': {
-                    'branch': 'master',
-                    'codebase': 'cb',
-                    'patch_author': None,
-                    'patch_body': None,
-                    'patch_comment': None,
-                    'patch_level': None,
-                    'patch_subdir': None,
-                    'patchid': None,
-                    'project': 'proj',
-                    'repository': 'repo://',
-                    'revision': '2d6caa52',
-                    'created_at': epoch2datetime(SOMETIME),
-                    'ssid': ss['ssid'],
-                },
-                'when_timestamp': epoch2datetime(OTHERTIME),
-            },
+            changes.ChangeModel(
+                author='dustin',
+                committer='justin',
+                branch='master',
+                category=None,
+                changeid=changeid,
+                parent_changeids=[],
+                codebase='cb',
+                comments='fix spelling',
+                files=[],
+                project='proj',
+                properties={},
+                repository='repo://',
+                revision='2d6caa52',
+                revlink=None,
+                sourcestampid=sourcestamps.SourceStampModel(
+                    branch='master',
+                    codebase='cb',
+                    patch=None,
+                    project='proj',
+                    repository='repo://',
+                    revision='2d6caa52',
+                    created_at=epoch2datetime(SOMETIME),
+                    ssid=ss.ssid,
+                ),
+                when_timestamp=epoch2datetime(OTHERTIME),
+            ),
         )
 
     @defer.inlineCallbacks
@@ -207,44 +200,38 @@ class Tests(interfaces.InterfaceTests):
             project='Buildbot',
         )
         chdict = yield self.db.changes.getChange(changeid)
-        validation.verifyDbDict(self, 'chdict', chdict)
-        chdict = chdict.copy()
-        ss = yield self.db.sourcestamps.getSourceStamp(chdict['sourcestampid'])
-        chdict['sourcestampid'] = ss
+        self.assertIsInstance(chdict, changes.ChangeModel)
+        ss = yield self.db.sourcestamps.getSourceStamp(chdict.sourcestampid)
+        chdict.sourcestampid = ss
         self.assertEqual(
             chdict,
-            {
-                'author': 'delanne',
-                'committer': 'melanne',
-                'branch': 'warnerdb',
-                'category': 'devel',
-                'changeid': changeid,
-                'parent_changeids': [14],
-                'codebase': 'mainapp',
-                'comments': 'child of changeid14',
-                'files': [],
-                'project': 'Buildbot',
-                'properties': {},
-                'repository': 'git://warner',
-                'revision': '50adad56',
-                'revlink': None,
-                'sourcestampid': {
-                    'branch': 'warnerdb',
-                    'codebase': 'mainapp',
-                    'created_at': epoch2datetime(SOMETIME),
-                    'patch_author': None,
-                    'patch_body': None,
-                    'patch_comment': None,
-                    'patch_level': None,
-                    'patch_subdir': None,
-                    'patchid': None,
-                    'project': 'Buildbot',
-                    'repository': 'git://warner',
-                    'revision': '50adad56',
-                    'ssid': ss['ssid'],
-                },
-                'when_timestamp': epoch2datetime(OTHERTIME),
-            },
+            changes.ChangeModel(
+                author='delanne',
+                committer='melanne',
+                branch='warnerdb',
+                category='devel',
+                changeid=changeid,
+                parent_changeids=[14],
+                codebase='mainapp',
+                comments='child of changeid14',
+                files=[],
+                project='Buildbot',
+                properties={},
+                repository='git://warner',
+                revision='50adad56',
+                revlink=None,
+                sourcestampid=sourcestamps.SourceStampModel(
+                    branch='warnerdb',
+                    codebase='mainapp',
+                    created_at=epoch2datetime(SOMETIME),
+                    patch=None,
+                    project='Buildbot',
+                    repository='git://warner',
+                    revision='50adad56',
+                    ssid=ss.ssid,
+                ),
+                when_timestamp=epoch2datetime(OTHERTIME),
+            ),
         )
 
     @defer.inlineCallbacks
@@ -253,7 +240,7 @@ class Tests(interfaces.InterfaceTests):
 
         chdict = yield self.db.changes.getChange(14)
 
-        validation.verifyDbDict(self, 'chdict', chdict)
+        self.assertIsInstance(chdict, changes.ChangeModel)
         self.assertEqual(chdict, self.change14_dict)
 
     @defer.inlineCallbacks
@@ -330,7 +317,7 @@ class Tests(interfaces.InterfaceTests):
         rs = resultspec.ResultSpec(order=['-changeid'], limit=5)
         rs.fieldMapping = FixerMixin.fieldMapping
         changes = yield self.db.changes.getChanges(resultSpec=rs)
-        changeids = [c['changeid'] for c in changes]
+        changeids = [c.changeid for c in changes]
         self.assertEqual(changeids, [10, 11, 12, 13, 14])
 
     @defer.inlineCallbacks
@@ -371,14 +358,14 @@ class Tests(interfaces.InterfaceTests):
         def check(changes):
             # requested all, but only got 2
             # sort by changeid, since we assert on change 13 at index 0
-            changes.sort(key=lambda c: c['changeid'])
-            changeids = [c['changeid'] for c in changes]
+            changes.sort(key=lambda c: c.changeid)
+            changeids = [c.changeid for c in changes]
             self.assertEqual(changeids, [13, 14])
             # double-check that they have .files, etc.
             self.assertEqual(
-                sorted(changes[0]['files']), sorted(['master/README.txt', 'worker/README.txt'])
+                sorted(changes[0].files), sorted(['master/README.txt', 'worker/README.txt'])
             )
-            self.assertEqual(changes[0]['properties'], {'notest': ('no', 'Change')})
+            self.assertEqual(changes[0].properties, {'notest': ('no', 'Change')})
 
         rs = resultspec.ResultSpec(order=['-changeid'], limit=5)
         changes = yield self.db.changes.getChanges(resultSpec=rs)
@@ -498,7 +485,7 @@ class RealTests(Tests):
 
         def thd_change_sourcestamps(conn):
             query = self.db.model.sourcestamps.select()
-            r = conn.execute(query)
+            r = conn.execute(query).mappings()
             self.assertEqual(
                 [dict(row) for row in r.fetchall()],
                 [
@@ -658,7 +645,7 @@ class RealTests(Tests):
             results = {}
             for tbl_name in ('scheduler_changes', 'change_files', 'change_properties', 'changes'):
                 tbl = self.db.model.metadata.tables[tbl_name]
-                res = conn.execute(sa.select([tbl.c.changeid]))
+                res = conn.execute(sa.select(tbl.c.changeid))
                 results[tbl_name] = sorted([row[0] for row in res.fetchall()])
             self.assertEqual(
                 results,
@@ -687,7 +674,7 @@ class RealTests(Tests):
             results = {}
             for tbl_name in ('scheduler_changes', 'change_files', 'change_properties', 'changes'):
                 tbl = self.db.model.metadata.tables[tbl_name]
-                res = conn.execute(sa.select([sa.func.count()]).select_from(tbl))
+                res = conn.execute(sa.select(sa.func.count()).select_from(tbl))
                 results[tbl_name] = res.fetchone()[0]
                 res.close()
             self.assertEqual(
@@ -732,6 +719,7 @@ class RealTests(Tests):
         }
 
         codebase_ss = {}  # shared state between addChange and addBuild
+        codebase_prev_change = {}
 
         def addChange(
             codebase,
@@ -746,9 +734,10 @@ class RealTests(Tests):
         ):
             lastID["sourcestampid"] += 1
             lastID["changeid"] += 1
-            parent_changeids = codebase_ss.get(codebase, None)
+            parent_changeids = codebase_prev_change.get(codebase)
 
-            codebase_ss[codebase] = lastID["sourcestampid"]
+            codebase_prev_change[codebase] = lastID["changeid"]
+            codebase_ss[codebase] = lastID["changeid"]
 
             changeRows = [
                 fakedb.SourceStamp(
@@ -839,21 +828,50 @@ class RealTests(Tests):
         # Build 7 has only one change for codebase C
         rows.extend(addChange('C', 3, 'bob', 'bob', '11th commit'))
         rows.extend(addBuild(codebase_ss, 2))
+        # Build 8 has only one change for codebase C, and succeed
+        rows.extend(addChange('C', 4, 'bob', 'bob', '12th commit'))
+        rows.extend(addBuild(codebase_ss))
+        # Build 9 has only one change for codebase C, and fails
+        rows.extend(addChange('C', 5, 'bob', 'bob', '13th commit'))
+        rows.extend(addBuild(codebase_ss, 2))
+        # Build 10 has only one change for codebase C, and fails
+        rows.extend(addChange('C', 6, 'bob', 'bob', '14th commit'))
+        rows.extend(addBuild(codebase_ss, 2))
         yield self.insert_test_data(rows)
 
         @defer.inlineCallbacks
         def expect(buildid, commits):
             got = yield self.db.changes.getChangesForBuild(buildid)
-            got_commits = [c['comments'] for c in got]
+            got_commits = [c.comments for c in got]
             self.assertEqual(sorted(got_commits), sorted(commits))
 
         yield expect(1, ['2nd commit', '3rd commit', '1st commit'])
-        yield expect(2, ['4th commit'])
-        yield expect(3, ['6th commit'])
+        yield expect(2, ['1st commit', '4th commit'])
+        yield expect(
+            3,
+            [
+                '2nd commit',
+                '6th commit',
+            ],
+        )
         yield expect(4, [])
-        yield expect(5, ['8th commit', '9th commit', '7th commit'])
-        yield expect(6, ['10th commit'])
-        yield expect(7, ['11th commit'])
+        yield expect(
+            5,
+            [
+                '1st commit',
+                '2nd commit',
+                '4th commit',
+                '6th commit',
+                '7th commit',
+                '8th commit',
+                '9th commit',
+            ],
+        )
+        yield expect(6, ['3rd commit', '10th commit'])
+        yield expect(7, ['3rd commit', '10th commit', '11th commit'])
+        yield expect(8, ['3rd commit', '10th commit', '11th commit', '12th commit'])
+        yield expect(9, ['13th commit'])
+        yield expect(10, ['13th commit', '14th commit'])
 
 
 class TestFakeDB(unittest.TestCase, connector_component.FakeConnectorComponentMixin, Tests):

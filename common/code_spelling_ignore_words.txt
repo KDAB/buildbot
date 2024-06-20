@@ -204,6 +204,7 @@ buildrequestid
 buildrequestresults
 buildrequests
 buildrequestsconnectorcomponent
+buildrequestmodel
 buildresult
 buildroot
 build's
@@ -264,6 +265,7 @@ changehorizon
 changeid
 changeids
 changemaster
+ChangeModel
 change's
 changesconnectorcomponent
 changeset
@@ -400,7 +402,6 @@ defertothread
 delayedcall
 denormalized
 dependabot
-deprecatedmoduleattribute
 descriptionsuffix
 desynchronization
 dev
@@ -1063,8 +1064,6 @@ pollatlaunch
 pollatreconfigure
 poller
 pollers
-pollingchangesource
-pollinterval
 popnextbuild
 portstr
 portstrs
@@ -1436,6 +1435,7 @@ svnversion
 sw
 swartz
 symlink
+symref
 syncallbranches
 syncmail
 syncQuietly

@@ -13,16 +13,45 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 
 import sqlalchemy as sa
 from twisted.internet import defer
 
 from buildbot.db import NULL
 from buildbot.db import base
+from buildbot.warnings import warn_deprecated
 
 
 class ChangeSourceAlreadyClaimedError(Exception):
     pass
+
+
+@dataclass
+class ChangeSourceModel:
+    id: int
+    name: str
+
+    masterid: int | None = None
+
+    # For backward compatibility
+    def __getitem__(self, key: str):
+        warn_deprecated(
+            '4.1.0',
+            (
+                'ChangeSourcesConnectorComponent '
+                'getChangeSource, and getChangeSources '
+                'no longer return ChangeSource as dictionnaries. '
+                'Usage of [] accessor is deprecated: please access the member directly'
+            ),
+        )
+
+        if hasattr(self, key):
+            return getattr(self, key)
+
+        raise KeyError(key)
 
 
 class ChangeSourcesConnectorComponent(base.DBConnectorComponent):
@@ -42,15 +71,18 @@ class ChangeSourcesConnectorComponent(base.DBConnectorComponent):
 
             # handle the masterid=None case to get it out of the way
             if masterid is None:
-                q = cs_mst_tbl.delete(whereclause=cs_mst_tbl.c.changesourceid == changesourceid)
+                q = cs_mst_tbl.delete().where(cs_mst_tbl.c.changesourceid == changesourceid)
                 conn.execute(q)
+                conn.commit()
                 return
 
             # try a blind insert..
             try:
                 q = cs_mst_tbl.insert()
                 conn.execute(q, {"changesourceid": changesourceid, "masterid": masterid})
+                conn.commit()
             except (sa.exc.IntegrityError, sa.exc.ProgrammingError) as e:
+                conn.rollback()
                 # someone already owns this changesource.
                 raise ChangeSourceAlreadyClaimedError from e
 
@@ -89,12 +121,16 @@ class ChangeSourcesConnectorComponent(base.DBConnectorComponent):
                     wc = cs_mst_tbl.c.masterid == NULL
 
             q = sa.select(
-                [cs_tbl.c.id, cs_tbl.c.name, cs_mst_tbl.c.masterid], from_obj=join, whereclause=wc
-            )
+                cs_tbl.c.id,
+                cs_tbl.c.name,
+                cs_mst_tbl.c.masterid,
+            ).select_from(join)
+            if wc is not None:
+                q = q.where(wc)
 
-            return [
-                {"id": row.id, "name": row.name, "masterid": row.masterid}
-                for row in conn.execute(q).fetchall()
-            ]
+            return [self._model_from_row(row) for row in conn.execute(q).fetchall()]
 
         return self.db.pool.do(thd)
+
+    def _model_from_row(self, row):
+        return ChangeSourceModel(id=row.id, name=row.name, masterid=row.masterid)

@@ -13,14 +13,25 @@
 #
 # Copyright Buildbot Team Members
 
+
+from __future__ import annotations
+
 import bz2
+import dataclasses
 import zlib
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from twisted.internet import defer
 from twisted.python import log
 
 from buildbot.db import base
+from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    from typing import Literal
+
+    LogType = Literal['s', 't', 'h', 'd']
 
 try:
     from lz4.block import compress as dumps_lz4
@@ -32,6 +43,34 @@ except ImportError:
 
     def read_lz4(data):
         return data
+
+
+@dataclasses.dataclass
+class LogModel:
+    id: int
+    name: str
+    slug: str
+    stepid: int
+    complete: bool
+    num_lines: int
+    type: LogType
+
+    # For backward compatibility
+    def __getitem__(self, key: str):
+        warn_deprecated(
+            '4.1.0',
+            (
+                'LogsConnectorComponent '
+                'getLog, getLogBySlug, and getLogs '
+                'no longer return Log as dictionnaries. '
+                'Usage of [] accessor is deprecated: please access the member directly'
+            ),
+        )
+
+        if hasattr(self, key):
+            return getattr(self, key)
+
+        raise KeyError(key)
 
 
 def dumps_gzip(data):
@@ -66,47 +105,46 @@ class LogsConnectorComponent(base.DBConnectorComponent):
     total_raw_bytes = 0
     total_compressed_bytes = 0
 
-    # returns a Deferred that returns a value
-    def _getLog(self, whereclause):
-        def thd_getLog(conn):
-            q = self.db.model.logs.select(whereclause=whereclause)
-            res = conn.execute(q)
+    def _getLog(self, whereclause) -> defer.Deferred[LogModel | None]:
+        def thd_getLog(conn) -> LogModel | None:
+            q = self.db.model.logs.select()
+            if whereclause is not None:
+                q = q.where(whereclause)
+            res = conn.execute(q).mappings()
             row = res.fetchone()
 
             rv = None
             if row:
-                rv = self._logdictFromRow(row)
+                rv = self._model_from_row(row)
             res.close()
             return rv
 
         return self.db.pool.do(thd_getLog)
 
-    def getLog(self, logid):
+    def getLog(self, logid: int) -> defer.Deferred[LogModel | None]:
         return self._getLog(self.db.model.logs.c.id == logid)
 
-    def getLogBySlug(self, stepid, slug):
+    def getLogBySlug(self, stepid: int, slug: str) -> defer.Deferred[LogModel | None]:
         tbl = self.db.model.logs
         return self._getLog((tbl.c.slug == slug) & (tbl.c.stepid == stepid))
 
-    # returns a Deferred that returns a value
-    def getLogs(self, stepid=None):
-        def thdGetLogs(conn):
+    def getLogs(self, stepid: int | None = None) -> defer.Deferred[list[LogModel]]:
+        def thdGetLogs(conn) -> list[LogModel]:
             tbl = self.db.model.logs
             q = tbl.select()
             if stepid is not None:
                 q = q.where(tbl.c.stepid == stepid)
             q = q.order_by(tbl.c.id)
-            res = conn.execute(q)
-            return [self._logdictFromRow(row) for row in res.fetchall()]
+            res = conn.execute(q).mappings()
+            return [self._model_from_row(row) for row in res.fetchall()]
 
         return self.db.pool.do(thdGetLogs)
 
-    # returns a Deferred that returns a value
-    def getLogLines(self, logid, first_line, last_line):
-        def thdGetLogLines(conn):
+    def getLogLines(self, logid: int, first_line: int, last_line: int) -> defer.Deferred[str]:
+        def thdGetLogLines(conn) -> str:
             # get a set of chunks that completely cover the requested range
             tbl = self.db.model.logchunks
-            q = sa.select([tbl.c.first_line, tbl.c.last_line, tbl.c.content, tbl.c.compressed])
+            q = sa.select(tbl.c.first_line, tbl.c.last_line, tbl.c.content, tbl.c.compressed)
             q = q.where(tbl.c.logid == logid)
             q = q.where(tbl.c.first_line <= last_line)
             q = q.where(tbl.c.last_line >= first_line)
@@ -135,11 +173,10 @@ class LogsConnectorComponent(base.DBConnectorComponent):
 
         return self.db.pool.do(thdGetLogLines)
 
-    # returns a Deferred that returns a value
-    def addLog(self, stepid, name, slug, type):
+    def addLog(self, stepid: int, name: str, slug: str, type: LogType) -> defer.Deferred[int]:
         assert type in 'tsh', "Log type must be one of t, s, or h"
 
-        def thdAddLog(conn):
+        def thdAddLog(conn) -> int:
             try:
                 r = conn.execute(
                     self.db.model.logs.insert(),
@@ -152,13 +189,15 @@ class LogsConnectorComponent(base.DBConnectorComponent):
                         "type": type,
                     },
                 )
+                conn.commit()
                 return r.inserted_primary_key[0]
             except (sa.exc.IntegrityError, sa.exc.ProgrammingError) as e:
+                conn.rollback()
                 raise KeyError(f"log with slug '{slug!r}' already exists in this step") from e
 
         return self.db.pool.do(thdAddLog)
 
-    def thdCompressChunk(self, chunk):
+    def thdCompressChunk(self, chunk: bytes) -> tuple[bytes, int]:
         # Set the default compressed mode to "raw" id
         compressed_id = self.COMPRESSION_MODE["raw"]["id"]
         self.total_raw_bytes += len(chunk)
@@ -173,7 +212,9 @@ class LogsConnectorComponent(base.DBConnectorComponent):
         self.total_compressed_bytes += len(chunk)
         return chunk, compressed_id
 
-    def thdSplitAndAppendChunk(self, conn, logid, content, first_line):
+    def thdSplitAndAppendChunk(
+        self, conn, logid: int, content: bytes, first_line: int
+    ) -> tuple[int, int]:
         # Break the content up into chunks.  This takes advantage of the
         # fact that no character but u'\n' maps to b'\n' in UTF-8.
         remaining = content
@@ -183,7 +224,7 @@ class LogsConnectorComponent(base.DBConnectorComponent):
             last_line = chunk_first_line + chunk.count(b'\n')
 
             chunk, compressed_id = self.thdCompressChunk(chunk)
-            conn.execute(
+            res = conn.execute(
                 self.db.model.logchunks.insert(),
                 {
                     "logid": logid,
@@ -192,21 +233,26 @@ class LogsConnectorComponent(base.DBConnectorComponent):
                     "content": chunk,
                     "compressed": compressed_id,
                 },
-            ).close()
+            )
+            conn.commit()
+            res.close()
             chunk_first_line = last_line + 1
-        conn.execute(
-            self.db.model.logs.update(whereclause=self.db.model.logs.c.id == logid),
-            num_lines=last_line + 1,
-        ).close()
+        res = conn.execute(
+            self.db.model.logs.update()
+            .where(self.db.model.logs.c.id == logid)
+            .values(num_lines=last_line + 1)
+        )
+        conn.commit()
+        res.close()
         return first_line, last_line
 
-    def thdAppendLog(self, conn, logid, content):
+    def thdAppendLog(self, conn, logid: int, content: str) -> tuple[int, int] | None:
         # check for trailing newline and strip it for storage -- chunks omit
         # the trailing newline
         assert content[-1] == '\n'
         # Note that row.content is stored as bytes, and our caller is sending unicode
         content = content[:-1].encode('utf-8')
-        q = sa.select([self.db.model.logs.c.num_lines])
+        q = sa.select(self.db.model.logs.c.num_lines)
         q = q.where(self.db.model.logs.c.id == logid)
         res = conn.execute(q)
         num_lines = res.fetchone()
@@ -218,14 +264,13 @@ class LogsConnectorComponent(base.DBConnectorComponent):
             conn=conn, logid=logid, content=content, first_line=num_lines[0]
         )
 
-    # returns a Deferred that returns a value
-    def appendLog(self, logid, content):
-        def thdappendLog(conn):
+    def appendLog(self, logid, content) -> defer.Deferred[tuple[int, int] | None]:
+        def thdappendLog(conn) -> tuple[int, int] | None:
             return self.thdAppendLog(conn, logid, content)
 
         return self.db.pool.do(thdappendLog)
 
-    def _splitBigChunk(self, content, logid):
+    def _splitBigChunk(self, content: bytes, logid: int) -> tuple[bytes, bytes | None]:
         """
         Split CONTENT on a line boundary into a prefix smaller than 64k and
         a suffix containing the remainder, omitting the splitting newline.
@@ -256,25 +301,23 @@ class LogsConnectorComponent(base.DBConnectorComponent):
             return truncline, None
         return truncline, content[i + 1 :]
 
-    # returns a Deferred that returns None
-    def finishLog(self, logid):
-        def thdfinishLog(conn):
+    def finishLog(self, logid: int) -> defer.Deferred[None]:
+        def thdfinishLog(conn) -> None:
             tbl = self.db.model.logs
-            q = tbl.update(whereclause=tbl.c.id == logid)
-            conn.execute(q, complete=1)
+            q = tbl.update().where(tbl.c.id == logid)
+            conn.execute(q.values(complete=1))
 
-        return self.db.pool.do(thdfinishLog)
+        return self.db.pool.do_with_transaction(thdfinishLog)
 
-    @defer.inlineCallbacks
-    def compressLog(self, logid, force=False):
-        def thdcompressLog(conn):
+    def compressLog(self, logid: int, force: bool = False) -> defer.Deferred[int]:
+        def thdcompressLog(conn) -> int:
             tbl = self.db.model.logchunks
-            q = sa.select([
+            q = sa.select(
                 tbl.c.first_line,
                 tbl.c.last_line,
                 sa.func.length(tbl.c.content),
                 tbl.c.compressed,
-            ])
+            )
             q = q.where(tbl.c.logid == logid)
             q = q.order_by(tbl.c.first_line)
 
@@ -319,7 +362,7 @@ class LogsConnectorComponent(base.DBConnectorComponent):
             for todo_first_line, todo_last_line in todo_gather_list:
                 # decompress this group of chunks. Note that the content is binary bytes.
                 # no need to decode anything as we are going to put in back stored as bytes anyway
-                q = sa.select([tbl.c.first_line, tbl.c.last_line, tbl.c.content, tbl.c.compressed])
+                q = sa.select(tbl.c.first_line, tbl.c.last_line, tbl.c.content, tbl.c.compressed)
                 q = q.where(tbl.c.logid == logid)
                 q = q.where(tbl.c.first_line >= todo_first_line)
                 q = q.where(tbl.c.last_line <= todo_last_line)
@@ -332,44 +375,43 @@ class LogsConnectorComponent(base.DBConnectorComponent):
                     chunk += self.COMPRESSION_BYID[row.compressed]["read"](row.content)
                 rows.close()
 
-                # Transaction is necessary so that readers don't see disappeared chunks
-                transaction = conn.begin()
-
                 # we remove the chunks that we are compressing
                 d = tbl.delete()
                 d = d.where(tbl.c.logid == logid)
                 d = d.where(tbl.c.first_line >= todo_first_line)
                 d = d.where(tbl.c.last_line <= todo_last_line)
-                conn.execute(d).close()
 
-                # and we recompress them in one big chunk
-                chunk, compressed_id = self.thdCompressChunk(chunk)
-                conn.execute(
-                    tbl.insert(),
-                    {
-                        "logid": logid,
-                        "first_line": todo_first_line,
-                        "last_line": todo_last_line,
-                        "content": chunk,
-                        "compressed": compressed_id,
-                    },
-                ).close()
-                transaction.commit()
+                # Transaction is necessary so that readers don't see disappeared chunks
+                with conn.begin_nested():
+                    conn.execute(d).close()
+
+                    # and we recompress them in one big chunk
+                    chunk, compressed_id = self.thdCompressChunk(chunk)
+                    conn.execute(
+                        tbl.insert(),
+                        {
+                            "logid": logid,
+                            "first_line": todo_first_line,
+                            "last_line": todo_last_line,
+                            "content": chunk,
+                            "compressed": compressed_id,
+                        },
+                    ).close()
+
+                conn.commit()
 
             # calculate how many bytes we saved
-            q = sa.select([sa.func.sum(sa.func.length(tbl.c.content))])
+            q = sa.select(sa.func.sum(sa.func.length(tbl.c.content)))
             q = q.where(tbl.c.logid == logid)
             newsize = conn.execute(q).fetchone()[0]
             return totlength - newsize
 
-        saved = yield self.db.pool.do(thdcompressLog)
-        return saved
+        return self.db.pool.do(thdcompressLog)
 
-    # returns a Deferred that returns a value
-    def deleteOldLogChunks(self, older_than_timestamp):
-        def thddeleteOldLogs(conn):
+    def deleteOldLogChunks(self, older_than_timestamp: int) -> defer.Deferred[int]:
+        def thddeleteOldLogs(conn) -> int:
             model = self.db.model
-            res = conn.execute(sa.select([sa.func.count(model.logchunks.c.logid)]))
+            res = conn.execute(sa.select(sa.func.count(model.logchunks.c.logid)))
             count1 = res.fetchone()[0]
             res.close()
 
@@ -383,7 +425,7 @@ class LogsConnectorComponent(base.DBConnectorComponent):
             # SELECT steps.id from steps WHERE steps.started_at < older_than_timestamp ORDER BY
             # steps.id DESC LIMIT 1;
             res = conn.execute(
-                sa.select([model.steps.c.id])
+                sa.select(model.steps.c.id)
                 .where(model.steps.c.started_at < older_than_timestamp)
                 .order_by(model.steps.c.id.desc())
                 .limit(1)
@@ -401,13 +443,14 @@ class LogsConnectorComponent(base.DBConnectorComponent):
                     .where(sa.and_(model.logs.c.stepid <= stepid_max, model.logs.c.type != 'd'))
                     .values(type='d')
                 )
+                conn.commit()
                 res.close()
 
             # query all logs with type 'd' and delete their chunks.
             if self.db._engine.dialect.name == 'sqlite':
                 # sqlite does not support delete with a join, so for this case we use a subquery,
                 # which is much slower
-                q = sa.select([model.logs.c.id])
+                q = sa.select(model.logs.c.id)
                 q = q.select_from(model.logs)
                 q = q.where(model.logs.c.type == 'd')
 
@@ -419,15 +462,22 @@ class LogsConnectorComponent(base.DBConnectorComponent):
                 q = q.where(model.logs.c.type == 'd')
 
             res = conn.execute(q)
+            conn.commit()
             res.close()
-            res = conn.execute(sa.select([sa.func.count(model.logchunks.c.logid)]))
+            res = conn.execute(sa.select(sa.func.count(model.logchunks.c.logid)))
             count2 = res.fetchone()[0]
             res.close()
             return count1 - count2
 
         return self.db.pool.do(thddeleteOldLogs)
 
-    def _logdictFromRow(self, row):
-        rv = dict(row)
-        rv['complete'] = bool(rv['complete'])
-        return rv
+    def _model_from_row(self, row):
+        return LogModel(
+            id=row.id,
+            name=row.name,
+            slug=row.slug,
+            stepid=row.stepid,
+            complete=bool(row.complete),
+            num_lines=row.num_lines,
+            type=row.type,
+        )

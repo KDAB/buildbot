@@ -33,6 +33,9 @@ from buildbot.reporters.generators.build import BuildStartEndStatusGenerator
 from buildbot.reporters.generators.buildset import BuildSetStatusGenerator
 from buildbot.reporters.gerrit import GERRIT_LABEL_REVIEWED
 from buildbot.reporters.gerrit import GERRIT_LABEL_VERIFIED
+from buildbot.reporters.gerrit import GerritBuildEndStatusGenerator
+from buildbot.reporters.gerrit import GerritBuildSetStatusGenerator
+from buildbot.reporters.gerrit import GerritBuildStartStatusGenerator
 from buildbot.reporters.gerrit import GerritStatusPush
 from buildbot.reporters.gerrit import defaultReviewCB
 from buildbot.reporters.gerrit import defaultSummaryCB
@@ -44,8 +47,6 @@ from buildbot.test import fakedb
 from buildbot.test.fake import fakemaster
 from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.util.reporter import ReporterTestMixin
-from buildbot.test.util.warnings import assertProducesWarnings
-from buildbot.warnings import DeprecatedApiWarning
 
 warnings.filterwarnings('error', message='.*Gerrit status')
 
@@ -118,31 +119,6 @@ def sampleSummaryCBDeferred(buildInfoList, results, master, arg):
     return result
 
 
-def legacyTestReviewCB(builderName, build, result, status, arg):
-    msg = str({'name': builderName, 'result': result})
-    return (msg, 1 if result == SUCCESS else -1, 0)
-
-
-def legacyTestSummaryCB(buildInfoList, results, status, arg):
-    success = False
-    failure = False
-
-    for buildInfo in buildInfoList:
-        if buildInfo['result'] == SUCCESS:  # pylint: disable=simplifiable-if-statement
-            success = True
-        else:
-            failure = True
-
-    if failure:
-        verified = -1
-    elif success:
-        verified = 1
-    else:
-        verified = 0
-
-    return (str(buildInfoList), verified, 0)
-
-
 class TestGerritStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixin):
     def setUp(self):
         self.setup_test_reactor()
@@ -210,14 +186,19 @@ class TestGerritStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixi
             )
         return str(info)
 
-    # check_summary_build and check_summary_build_legacy differ in two things:
-    #   * the callback used
-    #   * the expected result
-
     @defer.inlineCallbacks
     def check_summary_build_deferred(self, buildResults, finalResult, resultText, verifiedScore):
-        with assertProducesWarnings(DeprecatedApiWarning, message_pattern="Use generators instead"):
-            gsp = yield self.setupGerritStatusPush(summaryCB=sampleSummaryCBDeferred)
+        gsp = yield self.setupGerritStatusPush(
+            generators=[
+                GerritBuildSetStatusGenerator(
+                    callback=sampleSummaryCBDeferred,
+                    callback_arg=None,
+                    builders=None,
+                    want_steps=False,
+                    want_logs=False,
+                )
+            ]
+        )
 
         msg = yield self.run_fake_summary_build(gsp, buildResults, finalResult, resultText)
 
@@ -230,8 +211,17 @@ class TestGerritStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixi
 
     @defer.inlineCallbacks
     def check_summary_build(self, buildResults, finalResult, resultText, verifiedScore):
-        with assertProducesWarnings(DeprecatedApiWarning, message_pattern="Use generators instead"):
-            gsp = yield self.setupGerritStatusPush(summaryCB=sampleSummaryCB)
+        gsp = yield self.setupGerritStatusPush(
+            generators=[
+                GerritBuildSetStatusGenerator(
+                    callback=sampleSummaryCB,
+                    callback_arg=None,
+                    builders=None,
+                    want_steps=False,
+                    want_logs=False,
+                )
+            ]
+        )
 
         msg = yield self.run_fake_summary_build(gsp, buildResults, finalResult, resultText)
 
@@ -240,22 +230,6 @@ class TestGerritStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixi
             self.reporter_test_revision,
             msg,
             {GERRIT_LABEL_VERIFIED: verifiedScore},
-        )
-
-    @defer.inlineCallbacks
-    def check_summary_build_legacy(self, buildResults, finalResult, resultText, verifiedScore):
-        with assertProducesWarnings(DeprecatedApiWarning, message_pattern="Use generators instead"):
-            gsp = yield self.setupGerritStatusPush(summaryCB=legacyTestSummaryCB)
-
-        msg = yield self.run_fake_summary_build(
-            gsp, buildResults, finalResult, resultText, expWarning=True
-        )
-
-        gsp.send_code_review.assert_called_once_with(
-            self.reporter_test_project,
-            self.reporter_test_revision,
-            msg,
-            {GERRIT_LABEL_VERIFIED: verifiedScore, GERRIT_LABEL_REVIEWED: 0},
         )
 
     @defer.inlineCallbacks
@@ -329,42 +303,23 @@ class TestGerritStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixi
         )
         return d
 
-    def test_buildsetComplete_success_sends_summary_review_legacy(self):
-        d = self.check_summary_build_legacy(
-            buildResults=[SUCCESS, SUCCESS],
-            finalResult=SUCCESS,
-            resultText=["succeeded", "succeeded"],
-            verifiedScore=1,
-        )
-        return d
-
-    def test_buildsetComplete_failure_sends_summary_review_legacy(self):
-        d = self.check_summary_build_legacy(
-            buildResults=[FAILURE, FAILURE],
-            finalResult=FAILURE,
-            resultText=["failed", "failed"],
-            verifiedScore=-1,
-        )
-        return d
-
-    def test_buildsetComplete_mixed_sends_summary_review_legacy(self):
-        d = self.check_summary_build_legacy(
-            buildResults=[SUCCESS, FAILURE],
-            finalResult=FAILURE,
-            resultText=["succeeded", "failed"],
-            verifiedScore=-1,
-        )
-        return d
-
     @parameterized.expand([
         ("matched", ["Builder1"], True),
         ("not_matched", ["foo"], False),
     ])
     @defer.inlineCallbacks
     def test_buildset_complete_filtered_builder(self, name, builders, should_call):
-        with assertProducesWarnings(DeprecatedApiWarning, message_pattern="Use generators instead"):
-            gsp = yield self.setupGerritStatusPush(summaryCB=sampleSummaryCB, builders=builders)
-
+        gsp = yield self.setupGerritStatusPush(
+            generators=[
+                GerritBuildSetStatusGenerator(
+                    callback=sampleSummaryCB,
+                    callback_arg=None,
+                    builders=builders,
+                    want_steps=False,
+                    want_logs=False,
+                )
+            ]
+        )
         yield self.run_fake_summary_build(gsp, [FAILURE, FAILURE], FAILURE, ["failed", "failed"])
 
         self.assertEqual(gsp.send_code_review.called, should_call)
@@ -395,11 +350,27 @@ class TestGerritStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixi
 
         return str({'name': 'Builder0', 'result': buildResult})
 
-    # same goes for check_single_build and check_single_build_legacy
+    # same goes for check_single_build
     @defer.inlineCallbacks
     def check_single_build(self, buildResult, verifiedScore):
-        with assertProducesWarnings(DeprecatedApiWarning, message_pattern="Use generators instead"):
-            gsp = yield self.setupGerritStatusPush(reviewCB=sampleReviewCB, startCB=sampleStartCB)
+        gsp = yield self.setupGerritStatusPush(
+            generators=[
+                GerritBuildEndStatusGenerator(
+                    callback=sampleReviewCB,
+                    callback_arg=None,
+                    builders=None,
+                    want_steps=False,
+                    want_logs=False,
+                ),
+                GerritBuildStartStatusGenerator(
+                    callback=sampleStartCB,
+                    callback_arg=None,
+                    builders=None,
+                    want_steps=False,
+                    want_logs=False,
+                ),
+            ]
+        )
 
         msg = yield self.run_fake_single_build(gsp, buildResult)
         calls = [
@@ -414,55 +385,6 @@ class TestGerritStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixi
                 self.reporter_test_revision,
                 msg,
                 {GERRIT_LABEL_VERIFIED: verifiedScore},
-            ),
-        ]
-        gsp.send_code_review.assert_has_calls(calls)
-
-    # same goes for check_single_build and check_single_build_legacy
-    @defer.inlineCallbacks
-    def check_single_build_deferred(self, buildResult, verifiedScore):
-        with assertProducesWarnings(DeprecatedApiWarning, message_pattern="Use generators instead"):
-            gsp = yield self.setupGerritStatusPush(
-                reviewCB=sampleReviewCBDeferred, startCB=sampleStartCBDeferred
-            )
-
-        msg = yield self.run_fake_single_build(gsp, buildResult)
-        calls = [
-            call(
-                self.reporter_test_project,
-                self.reporter_test_revision,
-                str({'name': self.reporter_test_builder_name}),
-                {GERRIT_LABEL_REVIEWED: 0},
-            ),
-            call(
-                self.reporter_test_project,
-                self.reporter_test_revision,
-                msg,
-                {GERRIT_LABEL_VERIFIED: verifiedScore},
-            ),
-        ]
-        gsp.send_code_review.assert_has_calls(calls)
-
-    @defer.inlineCallbacks
-    def check_single_build_legacy(self, buildResult, verifiedScore):
-        with assertProducesWarnings(DeprecatedApiWarning, message_pattern="Use generators instead"):
-            gsp = yield self.setupGerritStatusPush(
-                reviewCB=legacyTestReviewCB, startCB=sampleStartCB
-            )
-
-        msg = yield self.run_fake_single_build(gsp, buildResult, expWarning=True)
-        calls = [
-            call(
-                self.reporter_test_project,
-                self.reporter_test_revision,
-                str({'name': self.reporter_test_builder_name}),
-                {GERRIT_LABEL_REVIEWED: 0},
-            ),
-            call(
-                self.reporter_test_project,
-                self.reporter_test_revision,
-                msg,
-                {GERRIT_LABEL_VERIFIED: verifiedScore, GERRIT_LABEL_REVIEWED: 0},
             ),
         ]
         gsp.send_code_review.assert_has_calls(calls)
@@ -473,23 +395,31 @@ class TestGerritStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixi
     def test_buildComplete_failure_sends_review(self):
         return self.check_single_build(FAILURE, -1)
 
-    def test_buildComplete_success_sends_review_legacy(self):
-        return self.check_single_build_legacy(SUCCESS, 1)
-
-    def test_buildComplete_failure_sends_review_legacy(self):
-        return self.check_single_build_legacy(FAILURE, -1)
-
-    # same goes for check_single_build and check_single_build_legacy
+    # same goes for check_single_build
     @parameterized.expand([
         ("matched", ["Builder0"], True),
         ("not_matched", ["foo"], False),
     ])
     @defer.inlineCallbacks
     def test_single_build_filtered(self, name, builders, should_call):
-        with assertProducesWarnings(DeprecatedApiWarning, message_pattern="Use generators instead"):
-            gsp = yield self.setupGerritStatusPush(
-                reviewCB=sampleReviewCB, startCB=sampleStartCB, builders=builders
-            )
+        gsp = yield self.setupGerritStatusPush(
+            generators=[
+                GerritBuildEndStatusGenerator(
+                    callback=sampleReviewCB,
+                    callback_arg=None,
+                    builders=builders,
+                    want_steps=False,
+                    want_logs=False,
+                ),
+                GerritBuildStartStatusGenerator(
+                    callback=sampleStartCB,
+                    callback_arg=None,
+                    builders=builders,
+                    want_steps=False,
+                    want_logs=False,
+                ),
+            ]
+        )
 
         yield self.run_fake_single_build(gsp, SUCCESS)
         self.assertEqual(gsp.send_code_review.called, should_call)

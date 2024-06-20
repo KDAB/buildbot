@@ -20,6 +20,7 @@ from twisted.application import internet
 from twisted.internet import defer
 from twisted.python import log
 
+from buildbot import config
 from buildbot import util
 from buildbot.db import build_data
 from buildbot.db import builders
@@ -45,6 +46,7 @@ from buildbot.db import test_results
 from buildbot.db import users
 from buildbot.db import workers
 from buildbot.util import service
+from buildbot.util.sautils import get_upsert_method
 
 upgrade_message = textwrap.dedent("""\
 
@@ -58,7 +60,29 @@ upgrade_message = textwrap.dedent("""\
     """).strip()
 
 
-class DBConnector(service.ReconfigurableServiceMixin, service.AsyncMultiService):
+class AbstractDBConnector(service.ReconfigurableServiceMixin, service.AsyncMultiService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.configured_url = None
+
+    @defer.inlineCallbacks
+    def setup(self):
+        self.configured_url = yield self.master.get_db_url(self.master.config)
+
+    @defer.inlineCallbacks
+    def reconfigServiceWithBuildbotConfig(self, new_config):
+        new_db_url = yield self.master.get_db_url(new_config)
+        if self.configured_url is None:
+            self.configured_url = new_db_url
+        elif self.configured_url != new_db_url:
+            config.error(
+                "Cannot change c['db']['db_url'] after the master has started",
+            )
+
+        return (yield super().reconfigServiceWithBuildbotConfig(new_config))
+
+
+class DBConnector(AbstractDBConnector):
     # The connection between Buildbot and its backend database.  This is
     # generally accessible as master.db, but is also used during upgrades.
     #
@@ -82,6 +106,7 @@ class DBConnector(service.ReconfigurableServiceMixin, service.AsyncMultiService)
         # set up components
         self._engine = None  # set up in reconfigService
         self.pool = None  # set up in reconfigService
+        self.upsert = get_upsert_method(None)  # set up in reconfigService
 
     @defer.inlineCallbacks
     def setServiceParent(self, p):
@@ -113,12 +138,14 @@ class DBConnector(service.ReconfigurableServiceMixin, service.AsyncMultiService)
 
     @defer.inlineCallbacks
     def setup(self, check_version=True, verbose=True):
-        db_url = self.configured_url = self.master.config.db['db_url']
+        super().setup()
+        db_url = self.configured_url
 
         log.msg(f"Setting up database with URL {repr(util.stripUrlPassword(db_url))}")
 
         # set up the engine and pool
         self._engine = enginestrategy.create_engine(db_url, basedir=self.basedir)
+        self.upsert = get_upsert_method(self._engine)
         self.pool = pool.DBThreadPool(self._engine, reactor=self.master.reactor, verbose=verbose)
 
         # make sure the db is up to date, unless specifically asked not to
@@ -133,12 +160,6 @@ class DBConnector(service.ReconfigurableServiceMixin, service.AsyncMultiService)
                 for l in upgrade_message.format(basedir=self.master.basedir).split('\n'):
                     log.msg(l)
                 raise exceptions.DatabaseNotReadyError()
-
-    def reconfigServiceWithBuildbotConfig(self, new_config):
-        # double-check -- the master ensures this in config checks
-        assert self.configured_url == new_config.db['db_url']
-
-        return super().reconfigServiceWithBuildbotConfig(new_config)
 
     def _doCleanup(self):
         """

@@ -13,11 +13,12 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
 
 import inspect
-import sqlite3
 import time
 import traceback
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from twisted.internet import defer
@@ -30,6 +31,18 @@ from buildbot.db.buildsets import AlreadyCompleteError
 from buildbot.db.changesources import ChangeSourceAlreadyClaimedError
 from buildbot.db.schedulers import SchedulerAlreadyClaimedError
 from buildbot.process import metrics
+from buildbot.util.sautils import get_sqlite_version
+
+if TYPE_CHECKING:
+    from typing import Any
+    from typing import Callable
+    from typing import TypeVar
+
+    from typing_extensions import Concatenate
+    from typing_extensions import ParamSpec
+
+    _T = TypeVar('_T')
+    _P = ParamSpec('_P')
 
 # set this to True for *very* verbose query debugging output; this can
 # be monkey-patched from master.cfg, too:
@@ -121,7 +134,7 @@ class DBThreadPool:
 
         self.engine = engine
         if engine.dialect.name == 'sqlite':
-            vers = self.get_sqlite_version()
+            vers = get_sqlite_version()
             if vers < (3, 7):
                 log_msg(f"Using SQLite Version {vers}")
                 log_msg(
@@ -198,7 +211,13 @@ class DBThreadPool:
     BACKOFF_MULT = 1.05
     MAX_OPERATIONALERROR_TIME = 3600 * 24  # one day
 
-    def __thd(self, with_engine, callable, args, kwargs):
+    def __thd(
+        self,
+        with_engine,
+        callable: Callable[Concatenate[sa.engine.Engine | sa.engine.Connection, _P], _T],
+        args: list[Any],
+        kwargs: dict[str, Any],
+    ) -> _T:
         # try to call callable(arg, *args, **kwargs) repeatedly until no
         # OperationalErrors occur, where arg is either the engine (with_engine)
         # or a connection (not with_engine)
@@ -255,19 +274,41 @@ class DBThreadPool:
             break
         return rv
 
-    @defer.inlineCallbacks
-    def do(self, callable, *args, **kwargs):
-        ret = yield threads.deferToThreadPool(
+    def do_with_transaction(
+        self,
+        callable: Callable[Concatenate[sa.engine.Connection, _P], _T],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> defer.Deferred[_T]:
+        """Same as `do`, but will wrap callable with `with conn.begin():`"""
+
+        def _transaction(
+            conn: sa.engine.Connection,
+            callable: Callable[Concatenate[sa.engine.Connection, _P], _T],
+            *args: _P.args,
+            **kwargs: _P.kwargs,
+        ) -> defer.Deferred[_T]:
+            with conn.begin():
+                return callable(conn, *args, **kwargs)
+
+        return self.do(_transaction, callable, *args, **kwargs)
+
+    def do(
+        self,
+        callable: Callable[Concatenate[sa.engine.Connection, _P], _T],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> defer.Deferred[_T]:
+        return threads.deferToThreadPool(
             self.reactor, self._pool, self.__thd, False, callable, args, kwargs
         )
-        return ret
 
-    @defer.inlineCallbacks
-    def do_with_engine(self, callable, *args, **kwargs):
-        ret = yield threads.deferToThreadPool(
+    def do_with_engine(
+        self,
+        callable: Callable[Concatenate[sa.engine.Engine, _P], _T],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> defer.Deferred[_T]:
+        return threads.deferToThreadPool(
             self.reactor, self._pool, self.__thd, True, callable, args, kwargs
         )
-        return ret
-
-    def get_sqlite_version(self):
-        return sqlite3.sqlite_version_info

@@ -26,6 +26,7 @@ from twisted.python import log
 from buildbot import config
 from buildbot.changes import base
 from buildbot.util import bytes2unicode
+from buildbot.util import giturlparse
 from buildbot.util import private_tempdir
 from buildbot.util import runprocess
 from buildbot.util.git import GitMixin
@@ -66,6 +67,8 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
     def __init__(self, repourl, **kwargs) -> None:
         self._git_auth = GitServiceAuth(self)
 
+        self.lastRev: dict[str, str] | None = None
+
         name = kwargs.get("name", None)
         if name is None:
             kwargs["name"] = repourl
@@ -82,7 +85,6 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         usetimestamps=True,
         category=None,
         project=None,
-        pollinterval=-2,
         fetch_refspec=None,
         encoding="utf-8",
         name=None,
@@ -95,10 +97,6 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         pollRandomDelayMin=0,
         pollRandomDelayMax=0,
     ):
-        # for backward compatibility; the parameter used to be spelled with 'i'
-        if pollinterval != -2:
-            pollInterval = pollinterval
-
         if only_tags and (branch or branches):
             config.error("GitPoller: can't specify only_tags and branch/branches")
         if branch and branches:
@@ -146,7 +144,6 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         usetimestamps=True,
         category=None,
         project=None,
-        pollinterval=-2,
         fetch_refspec=None,
         encoding="utf-8",
         name=None,
@@ -159,10 +156,6 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         pollRandomDelayMin=0,
         pollRandomDelayMax=0,
     ):
-        # for backward compatibility; the parameter used to be spelled with 'i'
-        if pollinterval != -2:
-            pollInterval = pollinterval
-
         if name is None:
             name = repourl
 
@@ -175,7 +168,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             if only_tags:
                 branches = lambda ref: ref.startswith('refs/tags/')  # noqa: E731
             else:
-                branches = ['master']
+                branches = None
 
         self.repourl = repourl
         self.branches = branches
@@ -189,7 +182,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         )
         self.project = bytes2unicode(project, encoding=self.encoding)
         self.changeCount = 0
-        self.lastRev = {}
+        self.lastRev = None
 
         self.setupGit()
         self._git_auth = GitServiceAuth(self, sshPrivateKey, sshHostKey, sshKnownHosts)
@@ -226,10 +219,9 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             if has_ssh_private_key:
                 raise EnvironmentError('SSH private keys require Git 2.3.0 or newer')
 
-    @defer.inlineCallbacks
     def activate(self):
         try:
-            self.lastRev = yield self.getState('lastRev', {})
+            self.lastRev = None
 
             super().activate()
         except Exception as e:
@@ -250,6 +242,37 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             str += " [STOPPED - check log]"
 
         return str
+
+    @async_to_deferred
+    async def _resolve_head_ref(self) -> str | None:
+        if self.supports_lsremote_symref:
+            rows: str = await self._dovccmd('ls-remote', ['--symref', self.repourl, 'HEAD'])
+            # simple parse of output which should have format:
+            # ref: refs/heads/{branch}	HEAD
+            # {hash}	HEAD
+            parts = rows.split(maxsplit=3)
+            # sanity just in case
+            if len(parts) >= 3 and parts[0] == 'ref:' and parts[2] == 'HEAD':
+                return parts[1]
+            return None
+
+        # naive fallback if git version does not support --symref
+        rows = await self._dovccmd('ls-remote', [self.repourl, 'HEAD', 'refs/heads/*'])
+        refs = [row.split('\t') for row in rows.splitlines() if '\t' in row]
+        # retrieve hash that HEAD points to
+        head_hash = next((hash for hash, ref in refs if ref == 'HEAD'), None)
+        if head_hash is None:
+            return None
+
+        # get refs that points to the same hash as HEAD
+        candidates = [ref for hash, ref in refs if ref != 'HEAD' and hash == head_hash]
+        # Found default branch
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # If multiple ref points to the same hash as HEAD,
+        # we have no way to know which one is the default
+        return None
 
     @async_to_deferred
     async def _get_refs(self, refs: list[str] | None = None) -> list[str]:
@@ -280,9 +303,30 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             branch = branch[11:]
         return branch
 
-    def _trackerBranch(self, branch):
-        url = urlquote(self.repourl, '').replace('~', '%7E')
-        return f"refs/buildbot/{url}/{self._trim_prefix(branch, 'refs/')}"
+    @staticmethod
+    def _tracker_ref(repourl: str, ref: str) -> str:
+        def _sanitize(value: str) -> str:
+            return urlquote(value, '').replace('~', '%7E')
+
+        tracker_prefix = "refs/buildbot"
+        # if ref is not a Git ref, store under a different path to avoid collision
+        if not ref.startswith('refs/'):
+            tracker_prefix += "/raw"
+
+        git_url = giturlparse(repourl)
+        if git_url is None:
+            # fallback to using the whole repourl
+            url_identifier = _sanitize(repourl)
+        else:
+            url_identifier = f"{git_url.proto}/{_sanitize(git_url.domain)}"
+            if git_url.port is not None:
+                url_identifier += f":{git_url.port}"
+
+            if git_url.owner is not None:
+                url_identifier += f"/{_sanitize(git_url.owner)}"
+            url_identifier += f"/{_sanitize(git_url.repo)}"
+
+        return f"{tracker_prefix}/{url_identifier}/{GitPoller._trim_prefix(ref, 'refs/')}"
 
     def poll_should_exit(self):
         # A single gitpoller loop may take a while on a loaded master, which would block
@@ -311,6 +355,14 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         elif self.branches:
             refs = yield self._get_refs([f"refs/heads/{b}" for b in self.branches])
             trim_ref_head = True
+        else:
+            head_ref = yield self._resolve_head_ref()
+            if head_ref is not None:
+                refs = [head_ref]
+            else:
+                # unlikely, but if we can't find HEAD here, something weird happen,
+                # but not a critical error. Just use HEAD as the ref to use
+                refs = ['HEAD']
 
         # Nothing to fetch and process.
         if not refs:
@@ -319,7 +371,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         if self.poll_should_exit():
             return
 
-        refspecs = [f'+{ref}:{self._trackerBranch(ref)}' for ref in refs]
+        refspecs = [f'+{ref}:{self._tracker_ref(self.repourl, ref)}' for ref in refs]
 
         try:
             yield self._dovccmd(
@@ -328,6 +380,9 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         except GitError as e:
             log.msg(e.args[0])
             return
+
+        if self.lastRev is None:
+            self.lastRev = yield self.getState('lastRev', {})
 
         revs = {}
         log.msg(f'gitpoller: processing changes from "{self.repourl}"')
@@ -340,7 +395,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
                     break
 
                 rev = yield self._dovccmd(
-                    'rev-parse', [self._trackerBranch(ref), '--'], path=self.workdir
+                    'rev-parse', [self._tracker_ref(self.repourl, ref)], path=self.workdir
                 )
                 revs[branch] = rev
                 yield self._process_changes(rev, branch)
@@ -485,7 +540,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             failures = [r[1] for r in results if not r[0]]
             if failures:
                 for failure in failures:
-                    log.err(failure, f"while processing changes for {newRev} {branch}")
+                    log.err(failure, f"while processing changes for {rev} {branch}")
                 # just fail on the first error; they're probably all related!
                 failures[0].raiseException()
 

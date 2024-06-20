@@ -16,6 +16,7 @@
 
 import os
 
+import sqlalchemy as sa
 from sqlalchemy.schema import MetaData
 from twisted.internet import defer
 from twisted.internet import reactor
@@ -154,11 +155,11 @@ class RealDatabaseMixin:
         # pylint: disable=too-many-nested-blocks
 
         try:
-            meta = MetaData(bind=conn)
+            meta = MetaData()
 
             # Reflect database contents. May fail, e.g. if table references
             # non-existent table in SQLite.
-            meta.reflect()
+            meta.reflect(bind=conn)
 
             # Restore `use_alter` settings to break known reference cycles.
             # Main goal of this part is to remove SQLAlchemy warning
@@ -178,14 +179,15 @@ class RealDatabaseMixin:
             # SQLAlchemy wouldn't be able to break circular references.
             # Sqlalchemy fk support with sqlite is not yet perfect, so we must deactivate fk during
             # that operation, even though we made our possible to use use_alter
-            with withoutSqliteForeignKeys(conn.engine, conn):
-                meta.drop_all()
+            with withoutSqliteForeignKeys(conn):
+                meta.drop_all(bind=conn)
+                conn.commit()
 
         except Exception:
             # sometimes this goes badly wrong; being able to see the schema
             # can be a big help
             if conn.engine.dialect.name == 'sqlite':
-                r = conn.execute("select sql from sqlite_master where type='table'")
+                r = conn.execute(sa.text("select sql from sqlite_master where type='table'"))
                 log.msg("Current schema:")
                 for row in r.fetchall():
                     log.msg(row.sql)
@@ -198,6 +200,7 @@ class RealDatabaseMixin:
         # and direct indices are created, but also deferred references
         # (that use use_alter=True in definition).
         model.Model.metadata.create_all(bind=conn, tables=tables, checkfirst=True)
+        conn.commit()
 
     @defer.inlineCallbacks
     def setUpRealDatabase(
@@ -248,6 +251,8 @@ class RealDatabaseMixin:
         if self.__want_pool:
             yield self.db_pool.do(self.__thd_clean_database)
             yield self.db_pool.shutdown()
+        else:
+            self.db_engine.engine.dispose()
 
     @defer.inlineCallbacks
     def insert_test_data(self, rows):
@@ -270,7 +275,8 @@ class RealDatabaseMixin:
                 for row in [r for r in rows if r.table == tbl.name]:
                     tbl = model.Model.metadata.tables[row.table]
                     try:
-                        tbl.insert(bind=conn).execute(row.values)
+                        conn.execute(tbl.insert().values(row.values))
+                        conn.commit()
                     except Exception:
                         log.msg(f"while inserting {row} - {row.values}")
                         raise

@@ -13,6 +13,9 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import json
 
@@ -23,26 +26,31 @@ from buildbot.data import patches
 from buildbot.data import types
 from buildbot.util import bytes2unicode
 
+if TYPE_CHECKING:
+    from typing import Any
 
-def _db2data(ss):
-    data = {
-        'ssid': ss['ssid'],
-        'branch': ss['branch'],
-        'revision': ss['revision'],
-        'project': ss['project'],
-        'repository': ss['repository'],
-        'codebase': ss['codebase'],
-        'created_at': ss['created_at'],
+    from buildbot.db.sourcestamps import SourceStampModel
+
+
+def _db2data(ss: SourceStampModel):
+    data: dict[str, Any] = {
+        'ssid': ss.ssid,
+        'branch': ss.branch,
+        'revision': ss.revision,
+        'project': ss.project,
+        'repository': ss.repository,
+        'codebase': ss.codebase,
+        'created_at': ss.created_at,
         'patch': None,
     }
-    if ss['patch_body']:
+    if ss.patch is not None:
         data['patch'] = {
-            'patchid': ss['patchid'],
-            'level': ss['patch_level'],
-            'subdir': ss['patch_subdir'],
-            'author': ss['patch_author'],
-            'comment': ss['patch_comment'],
-            'body': ss['patch_body'],
+            'patchid': ss.patch.patchid,
+            'level': ss.patch.level,
+            'subdir': ss.patch.subdir,
+            'author': ss.patch.author,
+            'comment': ss.patch.comment,
+            'body': ss.patch.body,
         }
     return data
 

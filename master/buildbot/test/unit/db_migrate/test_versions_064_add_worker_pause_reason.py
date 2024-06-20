@@ -41,7 +41,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             sa.Column("paused", sa.SmallInteger, nullable=False, server_default="0"),
             sa.Column("graceful", sa.SmallInteger, nullable=False, server_default="0"),
         )
-        workers.create()
+        workers.create(bind=conn)
 
         conn.execute(
             workers.insert(),
@@ -55,6 +55,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
                 }
             ],
         )
+        conn.commit()
 
     def test_update(self):
         def setup_thd(conn):
@@ -64,13 +65,13 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             metadata = sa.MetaData()
             metadata.bind = conn
 
-            workers = sautils.Table('workers', metadata, autoload=True)
+            workers = sautils.Table('workers', metadata, autoload_with=conn)
             self.assertIsInstance(workers.c.pause_reason.type, sa.Text)
 
-            q = sa.select([
+            q = sa.select(
                 workers.c.name,
                 workers.c.pause_reason,
-            ])
+            )
 
             num_rows = 0
             for row in conn.execute(q):

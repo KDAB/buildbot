@@ -143,7 +143,6 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
         split_file=lambda branchfile: (None, branchfile),
         pollInterval=60 * 10,
         histmax=None,
-        pollinterval=-2,
         encoding="utf8",
         project=None,
         name=None,
@@ -156,10 +155,6 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
         pollRandomDelayMin=0,
         pollRandomDelayMax=0,
     ):
-        # for backward compatibility; the parameter used to be spelled with 'i'
-        if pollinterval != -2:
-            pollInterval = pollinterval
-
         name = self.build_name(name, p4port, p4base)
 
         if use_tickets and not p4passwd:
@@ -193,7 +188,6 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
         split_file=lambda branchfile: (None, branchfile),
         pollInterval=60 * 10,
         histmax=None,
-        pollinterval=-2,
         encoding="utf8",
         project=None,
         name=None,
@@ -206,10 +200,6 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
         pollRandomDelayMin=0,
         pollRandomDelayMax=0,
     ):
-        # for backward compatibility; the parameter used to be spelled with 'i'
-        if pollinterval != -2:
-            pollInterval = pollinterval
-
         name = self.build_name(name, p4port, p4base)
 
         if project is None:

@@ -112,7 +112,7 @@ class RunFakeMasterTestCase(unittest.TestCase, TestReactorMixin, DebugIntegratio
     @defer.inlineCallbacks
     def assertBuildResults(self, build_id, result):
         dbdict = yield self.master.db.builds.getBuild(build_id)
-        self.assertEqual(result, dbdict['results'])
+        self.assertEqual(result, dbdict.results)
 
     @defer.inlineCallbacks
     def assertStepStateString(self, step_id, state_string):
@@ -181,7 +181,7 @@ class RunMasterBase(unittest.TestCase):
 
     # All tests that start master need higher timeout due to test runtime variability on
     # oversubscribed hosts.
-    timeout = 20
+    timeout = 40
 
     if Worker is None:
         skip = "buildbot-worker package is not installed"

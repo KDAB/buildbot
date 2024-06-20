@@ -13,6 +13,9 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from twisted.internet import defer
 
@@ -20,22 +23,23 @@ from buildbot.data import base
 from buildbot.data import exceptions
 from buildbot.data import types
 from buildbot.util import identifiers
-from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    from buildbot.db.workers import WorkerModel
 
 
 class Db2DataMixin:
-    def db2data(self, dbdict):
+    def db2data(self, model: WorkerModel):
         return {
-            'workerid': dbdict['id'],
-            'name': dbdict['name'],
-            'workerinfo': dbdict['workerinfo'],
-            'paused': dbdict['paused'],
-            "pause_reason": dbdict["pause_reason"],
-            'graceful': dbdict['graceful'],
-            'connected_to': [{'masterid': id} for id in dbdict['connected_to']],
+            'workerid': model.id,
+            'name': model.name,
+            'workerinfo': model.workerinfo,
+            'paused': model.paused,
+            "pause_reason": model.pause_reason,
+            'graceful': model.graceful,
+            'connected_to': [{'masterid': id} for id in model.connected_to],
             'configured_on': [
-                {'masterid': c['masterid'], 'builderid': c['builderid']}
-                for c in dbdict['configured_on']
+                {'masterid': c.masterid, 'builderid': c.builderid} for c in model.configured_on
             ],
         }
 
@@ -170,19 +174,6 @@ class Worker(base.ResourceType):
         bs['last_connection'] = last_connection
         bs['notify'] = notify
         self.produceEvent(bs, 'missing')
-
-    @base.updateMethod
-    @defer.inlineCallbacks
-    def setWorkerState(self, workerid, paused, graceful):
-        warn_deprecated(
-            "3.10.0",
-            "setWorkerState() has been deprecated, "
-            "please use set_worker_paused() and/or set_worker_graceful()",
-        )
-        yield self.master.db.workers.set_worker_paused(workerid=workerid, paused=paused)
-        yield self.master.db.workers.set_worker_graceful(workerid=workerid, graceful=graceful)
-        bs = yield self.master.data.get(('workers', workerid))
-        self.produceEvent(bs, 'state_updated')
 
     @base.updateMethod
     @defer.inlineCallbacks

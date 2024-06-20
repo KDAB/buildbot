@@ -13,12 +13,18 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
 import hashlib
 import itertools
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 
 from buildbot.util import unicode2bytes
+
+if TYPE_CHECKING:
+    from buildbot.db.connector import DBConnector
 
 
 class DBConnectorComponent:
@@ -31,7 +37,7 @@ class DBConnectorComponent:
     connector = None
     data2db = {}
 
-    def __init__(self, connector):
+    def __init__(self, connector: DBConnector):
         self.db = connector
 
         # set up caches
@@ -89,7 +95,9 @@ class DBConnectorComponent:
 
         def thd(conn, no_recurse=False):
             # try to find the master
-            q = sa.select([tbl.c.id], whereclause=whereclause)
+            q = sa.select(tbl.c.id)
+            if whereclause is not None:
+                q = q.where(whereclause)
             r = conn.execute(q)
             row = r.fetchone()
             r.close()
@@ -106,8 +114,10 @@ class DBConnectorComponent:
 
             try:
                 r = conn.execute(tbl.insert(), [insert_values])
+                conn.commit()
                 return r.inserted_primary_key[0], False
             except (sa.exc.IntegrityError, sa.exc.ProgrammingError):
+                conn.rollback()
                 # try it all over again, in case there was an overlapping,
                 # identical call, but only retry once.
                 if no_recurse:

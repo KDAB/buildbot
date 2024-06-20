@@ -51,7 +51,7 @@ class Strategy:
 
 
 class SqlLiteStrategy(Strategy):
-    def set_up(self, u, engine):
+    def set_up(self, u, engine: sa.engine.base.Engine):
         """Special setup for sqlite engines"""
 
         def connect_listener_enable_fk(connection, record):
@@ -71,7 +71,8 @@ class SqlLiteStrategy(Strategy):
 
             log.msg("setting database journal mode to 'wal'")
             try:
-                engine.execute("pragma journal_mode = wal")
+                with engine.connect() as conn:
+                    conn.exec_driver_sql("pragma journal_mode = wal")
             except Exception:
                 log.msg("failed to set journal mode - database may fail")
 
@@ -229,7 +230,7 @@ def create_engine(name_or_url, **kwargs):
     if max_conns is None:
         max_conns = kwargs.get('pool_size', 5) + kwargs.get('max_overflow', 10)
     driver_strategy = get_drivers_strategy(u.drivername)
-    engine = sa.create_engine(u, **kwargs)
+    engine = sa.create_engine(u, **kwargs, future=True)
     driver_strategy.set_up(u, engine)
     engine.should_retry = driver_strategy.should_retry
     # annotate the engine with the optimal thread pool size; this is used

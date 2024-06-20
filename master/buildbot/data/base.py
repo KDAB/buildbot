@@ -13,17 +13,28 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
 import copy
 import enum
 import functools
 import re
 from collections import UserList
+from typing import TYPE_CHECKING
 
 from twisted.internet import defer
 
 from buildbot.data import exceptions
 from buildbot.util.twisted import async_to_deferred
-from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    from typing import Literal
+
+    from buildbot.db.builders import BuilderModel
+    from buildbot.db.builds import BuildModel
+    from buildbot.db.logs import LogModel
+    from buildbot.db.steps import StepModel
+    from buildbot.db.workers import WorkerModel
 
 
 class EndpointKind(enum.Enum):
@@ -117,24 +128,6 @@ class Endpoint:
     def __init__(self, rtype, master):
         self.rtype = rtype
         self.master = master
-        if hasattr(self, "isRaw"):
-            warn_deprecated(
-                "3.10.0",
-                "Endpoint.isRaw has been deprecated, "
-                "please set \"kind\" attribute instead. "
-                "isRaw = True is equivalent to kind = EndpointKind.RAW",
-            )
-            if self.isRaw:
-                self.kind = EndpointKind.RAW
-        if hasattr(self, "isCollection"):
-            warn_deprecated(
-                "3.10.0",
-                "Endpoint.isCollection has been deprecated, "
-                "please set \"kind\" attribute instead. "
-                "isCollection = True is equivalent to kind = EndpointKind.COLLECTION",
-            )
-            if self.isCollection:
-                self.kind = EndpointKind.COLLECTION
 
     def get(self, resultSpec, kwargs):
         raise NotImplementedError
@@ -203,19 +196,19 @@ class NestedBuildDataRetriever:
         'worker_dict',
     )
 
-    def __init__(self, master, args):
+    def __init__(self, master, args) -> None:
         self.master = master
         self.args = args
         # False is used as special value as "not set". None is used as "not exists". This solves
         # the problem of multiple database queries in case entity does not exist.
-        self.step_dict = False
-        self.build_dict = False
-        self.builder_dict = False
-        self.log_dict = False
-        self.worker_dict = False
+        self.step_dict: StepModel | None | Literal[False] = False
+        self.build_dict: BuildModel | None | Literal[False] = False
+        self.builder_dict: BuilderModel | None | Literal[False] = False
+        self.log_dict: LogModel | None | Literal[False] = False
+        self.worker_dict: WorkerModel | None | Literal[False] = False
 
     @async_to_deferred
-    async def get_step_dict(self):
+    async def get_step_dict(self) -> StepModel | None:
         if self.step_dict is not False:
             return self.step_dict
 
@@ -230,7 +223,7 @@ class NestedBuildDataRetriever:
                 return None
 
             self.step_dict = await self.master.db.steps.getStep(
-                buildid=build_dict['id'],
+                buildid=build_dict.id,
                 number=self.args.get('step_number'),
                 name=self.args.get('step_name'),
             )
@@ -240,14 +233,14 @@ class NestedBuildDataRetriever:
         if 'logid' in self.args:
             log_dict = await self.get_log_dict()
             if log_dict is not None:
-                self.step_dict = await self.master.db.steps.getStep(stepid=log_dict['stepid'])
+                self.step_dict = await self.master.db.steps.getStep(stepid=log_dict.stepid)
                 return self.step_dict
 
         self.step_dict = None
         return self.step_dict
 
     @async_to_deferred
-    async def get_build_dict(self):
+    async def get_build_dict(self) -> BuildModel | None:
         if self.build_dict is not False:
             return self.build_dict
 
@@ -263,14 +256,14 @@ class NestedBuildDataRetriever:
                 return None
 
             self.build_dict = await self.master.db.builds.getBuildByNumber(
-                builderid=builder_dict['id'], number=self.args['build_number']
+                builderid=builder_dict.id, number=self.args['build_number']
             )
             return self.build_dict
 
         # fallback when there's only indirect information
         step_dict = await self.get_step_dict()
         if step_dict is not None:
-            self.build_dict = await self.master.db.builds.getBuild(step_dict['buildid'])
+            self.build_dict = await self.master.db.builds.getBuild(step_dict.buildid)
             return self.build_dict
 
         self.build_dict = None
@@ -284,10 +277,10 @@ class NestedBuildDataRetriever:
         build_dict = await self.get_build_dict()
         if build_dict is None:
             return None
-        return build_dict['id']
+        return build_dict.id
 
     @async_to_deferred
-    async def get_builder_dict(self):
+    async def get_builder_dict(self) -> BuilderModel | None:
         if self.builder_dict is not False:
             return self.builder_dict
 
@@ -308,24 +301,24 @@ class NestedBuildDataRetriever:
         # fallback when there's only indirect information
         build_dict = await self.get_build_dict()
         if build_dict is not None:
-            self.builder_dict = await self.master.db.builders.getBuilder(build_dict['builderid'])
+            self.builder_dict = await self.master.db.builders.getBuilder(build_dict.builderid)
             return self.builder_dict
 
         self.builder_dict = None
         return None
 
     @async_to_deferred
-    async def get_builder_id(self):
+    async def get_builder_id(self) -> int | None:
         if 'builderid' in self.args:
             return self.args['builderid']
 
         builder_dict = await self.get_builder_dict()
         if builder_dict is None:
             return None
-        return builder_dict['id']
+        return builder_dict.id
 
     @async_to_deferred
-    async def get_log_dict(self):
+    async def get_log_dict(self) -> LogModel | None:
         if self.log_dict is not False:
             return self.log_dict
 
@@ -338,7 +331,7 @@ class NestedBuildDataRetriever:
             self.log_dict = None
             return None
         self.log_dict = await self.master.db.logs.getLogBySlug(
-            step_dict['id'], self.args.get('log_slug')
+            step_dict.id, self.args.get('log_slug')
         )
         return self.log_dict
 
@@ -350,16 +343,16 @@ class NestedBuildDataRetriever:
         log_dict = await self.get_log_dict()
         if log_dict is None:
             return None
-        return log_dict['id']
+        return log_dict.id
 
     @async_to_deferred
-    async def get_worker_dict(self):
+    async def get_worker_dict(self) -> WorkerModel | None:
         if self.worker_dict is not False:
             return self.worker_dict
 
         build_dict = await self.get_build_dict()
         if build_dict is not None:
-            workerid = build_dict.get('workerid', None)
+            workerid = build_dict.workerid
             if workerid is not None:
                 self.worker_dict = await self.master.db.workers.getWorker(workerid=workerid)
                 return self.worker_dict

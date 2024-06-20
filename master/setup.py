@@ -262,7 +262,6 @@ setup_args = {
                 [
                     ('buildbot.secrets.providers.file', ['SecretInAFile']),
                     ('buildbot.secrets.providers.passwordstore', ['SecretInPass']),
-                    ('buildbot.secrets.providers.vault', ['HashiCorpVaultSecretProvider']),
                     (
                         'buildbot.secrets.providers.vault_hvac',
                         [
@@ -566,6 +565,10 @@ setup_args = {
                     ),
                     ('buildbot.steps.shellsequence', ['ShellArg']),
                     (
+                        'buildbot.util.git_credential',
+                        ['GitCredentialInputRenderer', 'GitCredentialOptions'],
+                    ),
+                    (
                         'buildbot.util.kubeclientservice',
                         [
                             'KubeHardcodedConfig',
@@ -643,7 +646,7 @@ py_38 = sys.version_info[0] > 3 or (sys.version_info[0] == 3 and sys.version_inf
 if not py_38:
     raise RuntimeError("Buildbot master requires at least Python-3.8")
 
-twisted_ver = ">= 18.7.0"
+twisted_ver = ">= 19.2.0"
 
 bundle_version = version.split("-")[0]
 
@@ -657,7 +660,7 @@ setup_args['install_requires'] = [
     'importlib-resources >= 5; python_version < "3.9"',
     # required for tests, but Twisted requires this anyway
     'zope.interface >= 4.1.1',
-    'sqlalchemy >= 1.3.0, < 1.5',
+    'sqlalchemy >= 1.4.0',
     'alembic >= 1.6.0',
     'python-dateutil>=1.5',
     "txaio >= 2.2.2",

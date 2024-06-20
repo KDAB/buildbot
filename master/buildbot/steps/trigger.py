@@ -230,16 +230,16 @@ class Trigger(BuildStep):
                 for builderid, br in brids.items():
                     builds = yield self.master.db.builds.getBuilds(buildrequestid=br)
                     for build in builds:
-                        builderid = build['builderid']
+                        builderid = build.builderid
                         # When virtual builders are used, the builderid used for triggering
                         # is not the same as the one that the build actually got
                         if builderid not in builderNames:
                             builderDict = yield self.master.data.get(("builders", builderid))
                             builderNames[builderid] = builderDict["name"]
-                        num = build['number']
+                        num = build.number
                         url = getURLForBuild(self.master, builderid, num)
                         yield self.addURL(
-                            f'{statusToString(build["results"])}: '
+                            f'{statusToString(build.results)}: '
                             f'{builderNames[builderid]} #{num}',
                             url,
                         )
@@ -249,13 +249,13 @@ class Trigger(BuildStep):
         @defer.inlineCallbacks
         def _is_buildrequest_complete(brid):
             buildrequest = yield self.master.db.buildrequests.getBuildRequest(brid)
-            return buildrequest['complete']
+            return buildrequest.complete
 
         event = ('buildrequests', str(brid), 'complete')
         yield self.master.mq.waitUntilEvent(event, lambda: _is_buildrequest_complete(brid))
         builds = yield self.master.db.builds.getBuilds(buildrequestid=brid)
         for build in builds:
-            self._result_list.append(build["results"])
+            self._result_list.append(build.results)
         self.updateSummary()
 
     @defer.inlineCallbacks

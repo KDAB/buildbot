@@ -16,10 +16,15 @@
 Support for buildsets in the database
 """
 
+from __future__ import annotations
+
 import json
+from dataclasses import dataclass
+from dataclasses import field
 from functools import reduce
 from operator import and_
 from operator import or_
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from twisted.internet import defer
@@ -28,6 +33,10 @@ from buildbot.db import NULL
 from buildbot.db import base
 from buildbot.util import datetime2epoch
 from buildbot.util import epoch2datetime
+from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    import datetime
 
 
 class BsProps(dict):
@@ -36,6 +45,39 @@ class BsProps(dict):
 
 class AlreadyCompleteError(RuntimeError):
     pass
+
+
+@dataclass
+class BuildSetModel:
+    bsid: int
+    external_idstring: str | None
+    reason: str | None
+    submitted_at: datetime.datetime
+    complete: bool = False
+    complete_at: datetime.datetime | None = None
+    results: int | None = None
+    parent_buildid: int | None = None
+    parent_relationship: str | None = None
+    rebuilt_buildid: int | None = None
+
+    sourcestamps: list[int] = field(default_factory=list)
+
+    # For backward compatibility
+    def __getitem__(self, key: str):
+        warn_deprecated(
+            '4.1.0',
+            (
+                'BuildsetsConnectorComponent '
+                'getBuildset, getBuildsets, and getRecentBuildsets '
+                'no longer return BuildSet as dictionnaries. '
+                'Usage of [] accessor is deprecated: please access the member directly'
+            ),
+        )
+
+        if hasattr(self, key):
+            return getattr(self, key)
+
+        raise KeyError(key)
 
 
 class BuildsetsConnectorComponent(base.DBConnectorComponent):
@@ -163,12 +205,11 @@ class BuildsetsConnectorComponent(base.DBConnectorComponent):
         def thd(conn):
             tbl = self.db.model.buildsets
 
-            q = tbl.update(
-                whereclause=(
-                    (tbl.c.id == bsid) & ((tbl.c.complete == NULL) | (tbl.c.complete != 1))
-                )
+            q = tbl.update().where(
+                (tbl.c.id == bsid) & ((tbl.c.complete == NULL) | (tbl.c.complete != 1))
             )
-            res = conn.execute(q, complete=1, results=results, complete_at=complete_at)
+            res = conn.execute(q.values(complete=1, results=results, complete_at=complete_at))
+            conn.commit()
 
             if res.rowcount != 1:
                 # happens when two buildrequests finish at the same time
@@ -176,22 +217,21 @@ class BuildsetsConnectorComponent(base.DBConnectorComponent):
 
         yield self.db.pool.do(thd)
 
-    # returns a Deferred that returns a value
-    def getBuildset(self, bsid):
-        def thd(conn):
+    def getBuildset(self, bsid) -> defer.Deferred[BuildSetModel | None]:
+        def thd(conn) -> BuildSetModel | None:
             bs_tbl = self.db.model.buildsets
-            q = bs_tbl.select(whereclause=bs_tbl.c.id == bsid)
+            q = bs_tbl.select().where(bs_tbl.c.id == bsid)
             res = conn.execute(q)
             row = res.fetchone()
             if not row:
                 return None
-            return self._thd_row2dict(conn, row)
+            return self._thd_model_from_row(conn, row)
 
         return self.db.pool.do(thd)
 
     @defer.inlineCallbacks
     def getBuildsets(self, complete=None, resultSpec=None):
-        def thd(conn):
+        def thd(conn) -> list[BuildSetModel]:
             if resultSpec is not None:
                 sourceStampFilter = resultSpec.popFilter('sourcestamps', 'contains')
             else:
@@ -233,22 +273,27 @@ class BuildsetsConnectorComponent(base.DBConnectorComponent):
                             ],
                         )
                     )
-                return resultSpec.thd_execute(conn, q, lambda x: self._thd_row2dict(conn, x))
+                return resultSpec.thd_execute(conn, q, lambda x: self._thd_model_from_row(conn, x))
             res = conn.execute(q)
-            return [self._thd_row2dict(conn, row) for row in res.fetchall()]
+            return [self._thd_model_from_row(conn, row) for row in res.fetchall()]
 
         res = yield self.db.pool.do(thd)
         return res
 
-    # returns a Deferred that returns a value
-    def getRecentBuildsets(self, count=None, branch=None, repository=None, complete=None):
-        def thd(conn):
+    def getRecentBuildsets(
+        self,
+        count: int | None = None,
+        branch: str | None = None,
+        repository: str | None = None,
+        complete: bool | None = None,
+    ) -> defer.Deferred[list[BuildSetModel]]:
+        def thd(conn) -> list[BuildSetModel]:
             bs_tbl = self.db.model.buildsets
             ss_tbl = self.db.model.sourcestamps
             j = self.db.model.buildsets
             j = j.join(self.db.model.buildset_sourcestamps)
             j = j.join(self.db.model.sourcestamps)
-            q = sa.select(columns=[bs_tbl], from_obj=[j], distinct=True)
+            q = sa.select(bs_tbl).select_from(j).distinct()
             q = q.order_by(sa.desc(bs_tbl.c.submitted_at))
             q = q.limit(count)
 
@@ -262,19 +307,18 @@ class BuildsetsConnectorComponent(base.DBConnectorComponent):
             if repository:
                 q = q.where(ss_tbl.c.repository == repository)
             res = conn.execute(q)
-            return list(reversed([self._thd_row2dict(conn, row) for row in res.fetchall()]))
+            return list(reversed([self._thd_model_from_row(conn, row) for row in res.fetchall()]))
 
         return self.db.pool.do(thd)
 
-    # returns a Deferred that returns a value
     @base.cached("BuildsetProperties")
-    def getBuildsetProperties(self, bsid):
-        def thd(conn):
+    def getBuildsetProperties(self, bsid) -> defer.Deferred[BsProps]:
+        def thd(conn) -> BsProps:
             bsp_tbl = self.db.model.buildset_properties
             q = sa.select(
-                [bsp_tbl.c.property_name, bsp_tbl.c.property_value],
-                whereclause=bsp_tbl.c.buildsetid == bsid,
-            )
+                bsp_tbl.c.property_name,
+                bsp_tbl.c.property_value,
+            ).where(bsp_tbl.c.buildsetid == bsid)
             ret = []
             for row in conn.execute(q):
                 try:
@@ -286,26 +330,26 @@ class BuildsetsConnectorComponent(base.DBConnectorComponent):
 
         return self.db.pool.do(thd)
 
-    def _thd_row2dict(self, conn, row):
+    def _thd_model_from_row(self, conn, row):
         # get sourcestamps
         tbl = self.db.model.buildset_sourcestamps
         sourcestamps = [
             r.sourcestampid
             for r in conn.execute(
-                sa.select([tbl.c.sourcestampid], (tbl.c.buildsetid == row.id))
+                sa.select(tbl.c.sourcestampid).where(tbl.c.buildsetid == row.id)
             ).fetchall()
         ]
 
-        return {
-            "external_idstring": row.external_idstring,
-            "reason": row.reason,
-            "submitted_at": epoch2datetime(row.submitted_at),
-            "complete": bool(row.complete),
-            "complete_at": epoch2datetime(row.complete_at),
-            "rebuilt_buildid": row.rebuilt_buildid,
-            "results": row.results,
-            "bsid": row.id,
-            "sourcestamps": sourcestamps,
-            "parent_buildid": row.parent_buildid,
-            "parent_relationship": row.parent_relationship,
-        }
+        return BuildSetModel(
+            bsid=row.id,
+            external_idstring=row.external_idstring,
+            reason=row.reason,
+            submitted_at=epoch2datetime(row.submitted_at),
+            complete=bool(row.complete),
+            complete_at=epoch2datetime(row.complete_at),
+            results=row.results,
+            parent_buildid=row.parent_buildid,
+            parent_relationship=row.parent_relationship,
+            rebuilt_buildid=row.rebuilt_buildid,
+            sourcestamps=sourcestamps,
+        )

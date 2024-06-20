@@ -31,20 +31,23 @@ def test_unicode(migrate_engine):
         sa.Column('u', sa.Unicode(length=100)),
         sa.Column('b', sa.LargeBinary),
     )
-    test_unicode.create()
+    test_unicode.create(bind=migrate_engine)
+    migrate_engine.commit()
 
     # insert a unicode value in there
     u = "Frosty the \N{SNOWMAN}"
     b = b'\xff\xff\x00'
     ins = test_unicode.insert().values(u=u, b=b)
     migrate_engine.execute(ins)
+    migrate_engine.commit()
 
     # see if the data is intact
-    row = migrate_engine.execute(sa.select([test_unicode])).fetchall()[0]
-    assert isinstance(row['u'], str)
-    assert row['u'] == u
-    assert isinstance(row['b'], bytes)
-    assert row['b'] == b
+    row = migrate_engine.execute(test_unicode.select()).fetchall()[0]
+    assert isinstance(row.u, str)
+    assert row.u == u
+    assert isinstance(row.b, bytes)
+    assert row.b == b
 
     # drop the test table
-    test_unicode.drop()
+    test_unicode.drop(bind=migrate_engine)
+    migrate_engine.commit()

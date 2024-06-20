@@ -71,7 +71,6 @@ class HgPoller(base.ReconfigurablePollingChangeSource, StateMixin):
         usetimestamps=True,
         category=None,
         project="",
-        pollinterval=-2,
         encoding="utf-8",
         name=None,
         pollAtLaunch=False,
@@ -79,10 +78,6 @@ class HgPoller(base.ReconfigurablePollingChangeSource, StateMixin):
         pollRandomDelayMin=0,
         pollRandomDelayMax=0,
     ):
-        # for backward compatibility; the parameter used to be spelled with 'i'
-        if pollinterval != -2:
-            pollInterval = pollinterval
-
         if branch and branches:
             config.error("HgPoller: can't specify both branch and branches")
 
@@ -115,7 +110,6 @@ class HgPoller(base.ReconfigurablePollingChangeSource, StateMixin):
         usetimestamps=True,
         category=None,
         project="",
-        pollinterval=-2,
         encoding="utf-8",
         name=None,
         pollAtLaunch=False,
@@ -123,10 +117,6 @@ class HgPoller(base.ReconfigurablePollingChangeSource, StateMixin):
         pollRandomDelayMin=0,
         pollRandomDelayMax=0,
     ):
-        # for backward compatibility; the parameter used to be spelled with 'i'
-        if pollinterval != -2:
-            pollInterval = pollinterval
-
         self.repourl = repourl
 
         self.branches = self.build_branches(branch, branches)

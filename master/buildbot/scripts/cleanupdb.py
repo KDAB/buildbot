@@ -39,7 +39,7 @@ def doCleanupDatabase(config, master_cfg):
     percent = 0
     saved = 0
     for log in res:
-        saved += yield db.logs.compressLog(log['id'], force=config['force'])
+        saved += yield db.logs.compressLog(log.id, force=config['force'])
         i += 1
         if not config['quiet'] and percent != i * 100 / len(res):
             percent = i * 100 / len(res)
@@ -53,7 +53,7 @@ def doCleanupDatabase(config, master_cfg):
 
         # sqlite vacuum function rebuild the whole database to claim
         # free disk space back
-        def thd(engine):
+        def thd(conn):
             # In Python 3.6 and higher, sqlite3 no longer commits an
             # open transaction before DDL statements.
             # It is necessary to set the isolation_level to none
@@ -61,7 +61,7 @@ def doCleanupDatabase(config, master_cfg):
             # See: https://bugs.python.org/issue28518
 
             # Get the underlying sqlite connection from SQLAlchemy.
-            sqlite_conn = engine.connection.connection
+            sqlite_conn = conn.connection
             # Set isolation_level to 'auto-commit mode'
             sqlite_conn.isolation_level = None
             sqlite_conn.execute("vacuum;").close()

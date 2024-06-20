@@ -43,7 +43,7 @@ class NoSuchMaildir(Exception):
 
 
 class MaildirService(service.BuildbotService):
-    pollinterval = 10  # only used if we don't have DNotify
+    pollInterval = 10  # only used if we don't have DNotify
     name = 'MaildirService'
 
     def __init__(self, basedir=None):
@@ -80,7 +80,7 @@ class MaildirService(service.BuildbotService):
             # because of a python bug
             log.msg("DNotify failed, falling back to polling")
         if not self.dnotify:
-            self.timerService = internet.TimerService(self.pollinterval, self.poll)
+            self.timerService = internet.TimerService(self.pollInterval, self.poll)
             yield self.timerService.setServiceParent(self)
         self.poll()
         yield super().startService()
@@ -130,6 +130,7 @@ class MaildirService(service.BuildbotService):
             log.err(None, f"while polling maildir '{self.basedir}':")
 
     def moveToCurDir(self, filename):
+        f = None
         if runtime.platformType == "posix":
             # open the file before moving it, because I'm afraid that once
             # it's in cur/, someone might delete it at any moment

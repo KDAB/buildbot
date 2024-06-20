@@ -342,32 +342,6 @@ _sourcestamp = {
 message['sourcestamps'] = Selector()
 message['sourcestamps'].add(None, DictValidator(**_sourcestamp))
 
-dbdict['ssdict'] = DictValidator(
-    ssid=IntValidator(),
-    branch=NoneOk(StringValidator()),
-    revision=NoneOk(StringValidator()),
-    patchid=NoneOk(IntValidator()),
-    patch_body=NoneOk(BinaryValidator()),
-    patch_level=NoneOk(IntValidator()),
-    patch_subdir=NoneOk(StringValidator()),
-    patch_author=NoneOk(StringValidator()),
-    patch_comment=NoneOk(StringValidator()),
-    codebase=StringValidator(),
-    repository=StringValidator(),
-    project=StringValidator(),
-    created_at=DateTimeValidator(),
-)
-
-# project
-dbdict['projectdict'] = DictValidator(
-    id=IntValidator(),
-    name=StringValidator(),
-    slug=StringValidator(),
-    description=NoneOk(StringValidator()),
-    description_format=NoneOk(StringValidator()),
-    description_html=NoneOk(StringValidator()),
-)
-
 # builder
 
 message['builders'] = Selector()
@@ -381,35 +355,6 @@ message['builders'].add(
             name=StringValidator(),
         ),
     ),
-)
-
-dbdict['builderdict'] = DictValidator(
-    id=IntValidator(),
-    masterids=ListValidator(IntValidator()),
-    name=StringValidator(),
-    description=NoneOk(StringValidator()),
-    description_format=NoneOk(StringValidator()),
-    description_html=NoneOk(StringValidator()),
-    projectid=NoneOk(IntValidator()),
-    tags=ListValidator(StringValidator()),
-)
-
-# worker
-
-dbdict['workerdict'] = DictValidator(
-    id=IntValidator(),
-    name=StringValidator(),
-    configured_on=ListValidator(
-        DictValidator(
-            masterid=IntValidator(),
-            builderid=IntValidator(),
-        )
-    ),
-    paused=BooleanValidator(),
-    pause_reason=NoneOk(StringValidator()),
-    graceful=BooleanValidator(),
-    connected_to=ListValidator(IntValidator()),
-    workerinfo=JsonValidator(),
 )
 
 # buildset
@@ -447,20 +392,6 @@ message['buildsets'].add(
             sourcestamps=ListValidator(DictValidator(**_sourcestamp)), **_buildset
         ),
     ),
-)
-
-dbdict['bsdict'] = DictValidator(
-    bsid=IntValidator(),
-    external_idstring=NoneOk(StringValidator()),
-    reason=StringValidator(),
-    sourcestamps=ListValidator(IntValidator()),
-    submitted_at=DateTimeValidator(),
-    complete=BooleanValidator(),
-    complete_at=NoneOk(DateTimeValidator()),
-    results=NoneOk(IntValidator()),
-    rebuilt_buildid=NoneOk(IntValidator()),
-    parent_buildid=NoneOk(IntValidator()),
-    parent_relationship=NoneOk(StringValidator()),
 )
 
 # buildrequest
@@ -508,42 +439,6 @@ message['changes'].add(
     ),
 )
 
-dbdict['chdict'] = DictValidator(
-    changeid=IntValidator(),
-    author=StringValidator(),
-    committer=StringValidator(),
-    files=ListValidator(StringValidator()),
-    comments=StringValidator(),
-    revision=NoneOk(StringValidator()),
-    when_timestamp=DateTimeValidator(),
-    branch=NoneOk(StringValidator()),
-    category=NoneOk(StringValidator()),
-    revlink=NoneOk(StringValidator()),
-    properties=SourcedPropertiesValidator(),
-    repository=StringValidator(),
-    project=StringValidator(),
-    codebase=StringValidator(),
-    sourcestampid=IntValidator(),
-    parent_changeids=ListValidator(IntValidator()),
-)
-
-# changesources
-
-dbdict['changesourcedict'] = DictValidator(
-    id=IntValidator(),
-    name=StringValidator(),
-    masterid=NoneOk(IntValidator()),
-)
-
-# schedulers
-
-dbdict['schedulerdict'] = DictValidator(
-    id=IntValidator(),
-    name=StringValidator(),
-    masterid=NoneOk(IntValidator()),
-    enabled=BooleanValidator(),
-)
-
 # builds
 
 _build = {
@@ -566,10 +461,8 @@ message['builds'].add(
     None, MessageValidator(events=_buildEvents, messageValidator=DictValidator(**_build))
 )
 
-# As build's properties are fetched at DATA API level,
-# a distinction shall be made as both are not equal.
-# Validates DB layer
-dbdict['dbbuilddict'] = buildbase = DictValidator(
+# Validates DATA API layer
+dbdict['builddict'] = DictValidator(
     id=IntValidator(),
     number=IntValidator(),
     builderid=IntValidator(),
@@ -581,11 +474,7 @@ dbdict['dbbuilddict'] = buildbase = DictValidator(
     locks_duration_s=IntValidator(),
     state_string=StringValidator(),
     results=NoneOk(IntValidator()),
-)
-
-# Validates DATA API layer
-dbdict['builddict'] = DictValidator(
-    properties=NoneOk(SourcedPropertiesValidator()), **buildbase.keys
+    properties=NoneOk(SourcedPropertiesValidator()),
 )
 
 # build data
@@ -600,14 +489,6 @@ _build_data_msgdict = DictValidator(
 
 message['build_data'] = Selector()
 message['build_data'].add(None, MessageValidator(events=[], messageValidator=_build_data_msgdict))
-
-dbdict['build_datadict'] = DictValidator(
-    buildid=IntValidator(),
-    name=StringValidator(),
-    value=NoneOk(BinaryValidator()),
-    length=IntValidator(),
-    source=StringValidator(),
-)
 
 # steps
 
@@ -631,20 +512,6 @@ message['steps'].add(
     None, MessageValidator(events=_stepEvents, messageValidator=DictValidator(**_step))
 )
 
-dbdict['stepdict'] = DictValidator(
-    id=IntValidator(),
-    number=IntValidator(),
-    name=IdentifierValidator(50),
-    buildid=IntValidator(),
-    started_at=DateTimeValidator(),
-    locks_acquired_at=NoneOk(DateTimeValidator()),
-    complete_at=NoneOk(DateTimeValidator()),
-    state_string=StringValidator(),
-    results=NoneOk(IntValidator()),
-    urls=ListValidator(StringValidator()),
-    hidden=BooleanValidator(),
-)
-
 # logs
 
 _log = {
@@ -656,18 +523,6 @@ _log = {
     "type": IdentifierValidator(1),
 }
 _logEvents = ['new', 'complete', 'appended']
-
-# message['log']
-
-dbdict['logdict'] = DictValidator(
-    id=IntValidator(),
-    stepid=IntValidator(),
-    name=StringValidator(),
-    slug=IdentifierValidator(50),
-    complete=BooleanValidator(),
-    num_lines=IntValidator(),
-    type=IdentifierValidator(1),
-)
 
 # test results sets
 
@@ -688,19 +543,6 @@ message['test_result_sets'].add(
     None, MessageValidator(events=[b'new', b'completed'], messageValidator=_test_result_set_msgdict)
 )
 
-dbdict['test_result_setdict'] = DictValidator(
-    id=IntValidator(),
-    builderid=IntValidator(),
-    buildid=IntValidator(),
-    stepid=IntValidator(),
-    description=NoneOk(StringValidator()),
-    category=StringValidator(),
-    value_unit=StringValidator(),
-    tests_passed=NoneOk(IntValidator()),
-    tests_failed=NoneOk(IntValidator()),
-    complete=BooleanValidator(),
-)
-
 # test results
 
 _test_results_msgdict = DictValidator(
@@ -716,17 +558,6 @@ _test_results_msgdict = DictValidator(
 message['test_results'] = Selector()
 message['test_results'].add(
     None, MessageValidator(events=[b'new'], messageValidator=_test_results_msgdict)
-)
-
-dbdict['test_resultdict'] = DictValidator(
-    id=IntValidator(),
-    builderid=IntValidator(),
-    test_result_setid=IntValidator(),
-    test_name=NoneOk(StringValidator()),
-    test_code_path=NoneOk(StringValidator()),
-    line=NoneOk(IntValidator()),
-    duration_ns=NoneOk(IntValidator()),
-    value=StringValidator(),
 )
 
 

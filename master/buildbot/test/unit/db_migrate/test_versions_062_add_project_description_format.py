@@ -44,7 +44,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             sa.Column('slug', sa.String(50), nullable=False),
             sa.Column('description', sa.Text, nullable=True),
         )
-        projects.create()
+        projects.create(bind=conn)
 
         conn.execute(
             projects.insert(),
@@ -60,6 +60,7 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
                 }
             ],
         )
+        conn.commit()
 
     def test_update(self):
         def setup_thd(conn):
@@ -69,15 +70,15 @@ class Migration(migration.MigrateTestMixin, unittest.TestCase):
             metadata = sa.MetaData()
             metadata.bind = conn
 
-            projects = sautils.Table('projects', metadata, autoload=True)
+            projects = sautils.Table('projects', metadata, autoload_with=conn)
             self.assertIsInstance(projects.c.description_format.type, sa.Text)
             self.assertIsInstance(projects.c.description_html.type, sa.Text)
 
-            q = sa.select([
+            q = sa.select(
                 projects.c.name,
                 projects.c.description_format,
                 projects.c.description_html,
-            ])
+            )
 
             num_rows = 0
             for row in conn.execute(q):

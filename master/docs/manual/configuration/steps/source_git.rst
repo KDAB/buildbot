@@ -121,6 +121,7 @@ The Git step takes the following arguments:
       * ``debug``: `--debug`
       * ``long``: `--long``
       * ``exact-match``: `--exact-match`
+      * ``first-parent``: `--first-parent`
       * ``tags``: `--tags`
       * ``dirty``: `--dirty`
 
@@ -128,6 +129,7 @@ The Git step takes the following arguments:
      Examples show the key-value pair:
 
       * ``match=foo``: `--match foo`
+      * ``exclude=foo``: `--exclude foo`
       * ``abbrev=7``: `--abbrev=7`
       * ``candidates=7``: `--candidates=7`
       * ``dirty=foo``: `--dirty=foo`
@@ -152,3 +154,13 @@ The Git step takes the following arguments:
    This may be either a :ref:`Secret` or just a string.
    `sshPrivateKey` must be specified in order to use this option.
    `sshHostKey` must not be specified in order to use this option.
+
+``auth_credentials``
+
+   (optional) An username/password tuple to use when running git for fetch operations.
+   The worker's git version needs to be at least 1.7.9.
+
+``git_credentials``
+
+   (optional) See :ref:`GitCredentialOptions`.
+   The worker's git version needs to be at least 1.7.9.

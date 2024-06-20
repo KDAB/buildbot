@@ -13,12 +13,14 @@
 #
 # Copyright Buildbot Team Members
 
+import sqlalchemy as sa
 from sqlalchemy.engine import url
 from sqlalchemy.pool import NullPool
 from twisted.python import runtime
 from twisted.trial import unittest
 
 from buildbot.db import enginestrategy
+from buildbot.util.sautils import sa_version
 
 
 class BuildbotCreateEngineTest(unittest.TestCase):
@@ -110,7 +112,11 @@ class BuildbotCreateEngineTest(unittest.TestCase):
         self.assertEqual(
             [str(u), max_conns, self.filter_kwargs(kwargs)],
             [
-                "mysql://user:pass@host:1234/dbname?charset=utf8&use_unicode=True",
+                (
+                    "mysql://user:pass@host:1234/dbname?charset=utf8&use_unicode=True"
+                    if sa_version()[0] < 2
+                    else "mysql://user:***@host:1234/dbname?charset=utf8&use_unicode=True"
+                ),
                 None,
                 self.mysql_kwargs,
             ],
@@ -192,4 +198,5 @@ class BuildbotEngineStrategy(unittest.TestCase):
 
     def test_create_engine(self):
         engine = enginestrategy.create_engine('sqlite://', basedir="/base")
-        self.assertEqual(engine.scalar("SELECT 13 + 14"), 27)
+        with engine.connect() as conn:
+            self.assertEqual(conn.scalar(sa.text("SELECT 13 + 14")), 27)
