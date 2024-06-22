@@ -1,7 +1,9 @@
 # TODO: this is the output of pip freeze, most of the packages are dependencies and should be
 # removed.
+alembic==1.9.0
 astroid==1.4.9
 attrs==23.1.0
+autobahn==22.12.1
 Automat==22.10.0
 botocore==1.31.20
 cairocffi==1.2.0
@@ -14,6 +16,7 @@ charset-normalizer==2.0.4
 click==7.1.2
 click-default-group==1.2.2
 constantly==15.1.0
+croniter==1.4.1
 cryptography==3.4.6
 cssselect2==0.4.1
 decorator==4.4.2
@@ -24,11 +27,12 @@ docutils==0.16
 flake8==4.0.1
 funcparserlib==1.0.1
 future==0.18.2
+graphql-core==3.2.3
 greenlet==2.0.1
 hyperlink==21.0.0
 idna==2.10
 imagesize==1.4.1
-importlib-metadata==3.7.0
+importlib_metadata==7.1.0
 incremental==17.5.0
 influxdb==5.3.1
 isort==5.7.0
@@ -89,6 +93,7 @@ txaio==22.2.1
 txrequests==0.9.6
 types-PyYAML==6.0.12.10
 typing_extensions==4.4.0
+unidiff==0.7.5
 urllib3==1.26.3
 webcolors==1.11.1
 webencodings==0.5.1
