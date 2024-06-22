@@ -245,7 +245,7 @@ class BuildsetsConnectorComponent(base.DBConnectorComponent):
                 j = bs_tbl
                 j = j.join(self.db.model.buildset_sourcestamps)
                 j = j.join(ss_tbl)
-            q = sa.select(columns=[bs_tbl], from_obj=[j], distinct=True)
+            q = sa.select(bs_tbl).select_from(j).distinct()
 
             if complete is not None:
                 if complete:
