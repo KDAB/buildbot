@@ -18,7 +18,7 @@ git fetch origin --tags
 
 # required for yarn
 export PATH="$PATH:$PWD/node_modules/.bin/"
-npm install yarn webpack-cli
+npm install yarn
 
 # This will build all frontend packages in a custom virtualenv maintained by the Makefile.
 # This is what upstream uses to run their frontend tests, so it should work for us too.
@@ -37,7 +37,6 @@ pip install \
 
 pip install \
     -e www/base \
-    -e www/react-base \
     -e www/console_view \
     -e www/grid_view \
     -e www/waterfall_view \
