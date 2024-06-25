@@ -1,0 +1,603 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`FixedSizeList > changing itemSize updates the rendered items 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 4,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 2,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > onScroll > scrolling should report partial items correctly in onItemsRendered 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 7,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 5,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 1,
+      "overscanStopIndex": 9,
+      "visibleStartIndex": 2,
+      "visibleStopIndex": 7,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 2,
+      "overscanStopIndex": 9,
+      "visibleStartIndex": 3,
+      "visibleStopIndex": 7,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 8,
+      "visibleStartIndex": 2,
+      "visibleStopIndex": 7,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 94,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 95,
+      "visibleStopIndex": 100,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 95,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 96,
+      "visibleStopIndex": 100,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 93,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 95,
+      "visibleStopIndex": 100,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > onScroll > should call onScroll after mount 1`] = `
+[
+  [
+    {
+      "scrollDirection": "forward",
+      "scrollOffset": 0,
+      "scrollUpdateWasRequested": false,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > onScroll > should call onScroll when scroll position changes 1`] = `
+[
+  [
+    {
+      "scrollDirection": "forward",
+      "scrollOffset": 0,
+      "scrollUpdateWasRequested": false,
+    },
+  ],
+  [
+    {
+      "scrollDirection": "forward",
+      "scrollOffset": 100,
+      "scrollUpdateWasRequested": true,
+    },
+  ],
+  [
+    {
+      "scrollDirection": "backward",
+      "scrollOffset": 0,
+      "scrollUpdateWasRequested": true,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > overscanCount > should accommodate a custom overscan 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 1,
+      "overscanStopIndex": 11,
+      "visibleStartIndex": 4,
+      "visibleStopIndex": 8,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > overscanCount > should not scan past the beginning of the list 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > overscanCount > should not scan past the end of the list 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 4,
+      "overscanStopIndex": 10,
+      "visibleStartIndex": 6,
+      "visibleStopIndex": 10,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > overscanCount > should overscan in both directions when not scrolling 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 8,
+      "visibleStartIndex": 2,
+      "visibleStopIndex": 6,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > overscanCount > should overscan in the direction being scrolled 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 8,
+      "visibleStartIndex": 2,
+      "visibleStopIndex": 6,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 3,
+      "overscanStopIndex": 10,
+      "visibleStartIndex": 4,
+      "visibleStopIndex": 8,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 7,
+      "visibleStartIndex": 2,
+      "visibleStopIndex": 6,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > overscanCount > should require a minimum of 1 overscan to support tabbing 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 1,
+      "overscanStopIndex": 7,
+      "visibleStartIndex": 2,
+      "visibleStopIndex": 6,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > scroll with align = "auto" should work with partially-visible items 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 5,
+      "overscanStopIndex": 13,
+      "visibleStartIndex": 7,
+      "visibleStopIndex": 11,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 94,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 96,
+      "visibleStopIndex": 100,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 7,
+      "visibleStartIndex": 1,
+      "visibleStopIndex": 5,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > scroll with align = "auto" should work with very small lists and partial items 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 2,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 2,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > should account for scrollbar size 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 15,
+      "overscanStopIndex": 23,
+      "visibleStartIndex": 17,
+      "visibleStopIndex": 21,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 15,
+      "overscanStopIndex": 24,
+      "visibleStartIndex": 17,
+      "visibleStopIndex": 22,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > should ignore indexes greater than itemCount 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 94,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 96,
+      "visibleStopIndex": 100,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > should ignore indexes less than zero 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > should not set invalid offsets when the list contains few items 1`] = `
+[MockFunction spy] {
+  "calls": [
+    [
+      {
+        "overscanStartIndex": 0,
+        "overscanStopIndex": 3,
+        "visibleStartIndex": 0,
+        "visibleStopIndex": 3,
+      },
+    ],
+  ],
+  "results": [
+    {
+      "type": "return",
+      "value": undefined,
+    },
+  ],
+}
+`;
+
+exports[`FixedSizeList > scrollToItem method > should scroll to the correct item for align = "auto" 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 5,
+      "overscanStopIndex": 13,
+      "visibleStartIndex": 7,
+      "visibleStopIndex": 11,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 8,
+      "visibleStartIndex": 2,
+      "visibleStopIndex": 6,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > should scroll to the correct item for align = "center" 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 6,
+      "overscanStopIndex": 15,
+      "visibleStartIndex": 8,
+      "visibleStopIndex": 13,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 5,
+      "overscanStopIndex": 14,
+      "visibleStartIndex": 7,
+      "visibleStopIndex": 12,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 94,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 96,
+      "visibleStopIndex": 100,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > should scroll to the correct item for align = "end" 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 5,
+      "overscanStopIndex": 13,
+      "visibleStartIndex": 7,
+      "visibleStopIndex": 11,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 4,
+      "overscanStopIndex": 12,
+      "visibleStartIndex": 6,
+      "visibleStopIndex": 10,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > should scroll to the correct item for align = "smart" 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 6,
+      "overscanStopIndex": 15,
+      "visibleStartIndex": 8,
+      "visibleStopIndex": 13,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 4,
+      "overscanStopIndex": 12,
+      "visibleStartIndex": 6,
+      "visibleStopIndex": 10,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 94,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 96,
+      "visibleStopIndex": 100,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 93,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 95,
+      "visibleStopIndex": 99,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 94,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 96,
+      "visibleStopIndex": 100,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 92,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 94,
+      "visibleStopIndex": 98,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 94,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 96,
+      "visibleStopIndex": 100,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 86,
+      "overscanStopIndex": 95,
+      "visibleStartIndex": 88,
+      "visibleStopIndex": 93,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 94,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 96,
+      "visibleStopIndex": 100,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > scrollToItem method > should scroll to the correct item for align = "start" 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 8,
+      "overscanStopIndex": 16,
+      "visibleStartIndex": 10,
+      "visibleStopIndex": 14,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 7,
+      "overscanStopIndex": 15,
+      "visibleStartIndex": 9,
+      "visibleStopIndex": 13,
+    },
+  ],
+  [
+    {
+      "overscanStartIndex": 94,
+      "overscanStopIndex": 100,
+      "visibleStartIndex": 96,
+      "visibleStopIndex": 100,
+    },
+  ],
+]
+`;
+
+exports[`FixedSizeList > should render a list of rows 1`] = `
+[
+  [
+    {
+      "overscanStartIndex": 0,
+      "overscanStopIndex": 6,
+      "visibleStartIndex": 0,
+      "visibleStopIndex": 4,
+    },
+  ],
+]
+`;

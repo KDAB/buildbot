@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "description": "Utilities for Buildbot plugins",
   "author": "Povilas Kanapickas <povilas@radix.lt>",
-  "main": "dist/buildbot-plugin-support.umd.js",
-  "module": "dist/buildbot-plugin-support.mjs",
+  "module": "dist/buildbot-plugin-support.js",
+  "exports": "src/index.ts",
+  "type": "module",
   "types": "dist/index.d.ts",
   "scripts": {
     "start": "vite",
@@ -14,7 +15,7 @@
   "devDependencies": {
     "@types/node": "^18.15.11",
     "@types/react": "^18.0.31",
-    "vite": "^4.5.3",
+    "vite": "~5.3.1",
     "vite-plugin-dts": "^2.1.0"
   },
   "license": "MPL-2.0"
