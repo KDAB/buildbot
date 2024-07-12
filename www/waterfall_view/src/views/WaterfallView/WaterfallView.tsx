@@ -100,7 +100,7 @@ export const WaterfallView = observer(() => {
 
   const settings = buildbotGetSettings();
   const [scalingFactor, setScalingFactor] =
-    useState(() => settings.getIntegerSetting("Waterfall.scaling_waterfall"));
+    useState(() => settings.getFloatSetting("Waterfall.scaling_waterfall"));
   const lazyLoadingLimit = settings.getIntegerSetting("Waterfall.lazy_limit_waterfall");
   const showBuildersWithoutBuilds =
     settings.getBooleanSetting("Waterfall.show_builders_without_builds");
@@ -176,7 +176,7 @@ export const WaterfallView = observer(() => {
       const buildersToShow = buildersQuery.array.filter(b =>
         isBuilderFiltered(b, filterManager, mastersQuery, builderToBuilds, showBuildersWithoutBuilds,
           showOldBuilders));
-      const builderIds = new Set<number>(buildersToShow.keys());
+      const builderIds = new Set(buildersToShow.map(b => b.builderid));
       const buildGroups = groupBuildsByTime(builderIds, buildsQuery.array,
         settings.getIntegerSetting("Waterfall.idle_threshold_waterfall"), Date.now() / 1000);
 
@@ -254,7 +254,7 @@ buildbotSetupPlugin(reg => {
     name: 'Waterfall',
     caption: 'Waterfall related settings',
     items: [{
-        type: 'integer',
+        type: 'float',
         name: 'scaling_waterfall',
         caption: 'Scaling factor',
         defaultValue: 1
