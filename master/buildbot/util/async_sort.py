@@ -29,9 +29,9 @@ def async_sort(l, key, max_parallel=10):
 
     sem = defer.DeferredSemaphore(max_parallel)
     try:
-        keys = yield defer.gatherResults([sem.run(key, i) for i in l])
+        keys = yield defer.gatherResults([sem.run(key, i) for i in l], consumeErrors=True)
     except defer.FirstError as e:
-        raise e.subFailure.value
+        raise e.subFailure.value from e
 
     # Index the keys by the id of the original item in list
     keys = {id(l[i]): v for i, v in enumerate(keys)}

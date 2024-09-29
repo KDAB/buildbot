@@ -23,6 +23,7 @@ from buildbot.process.properties import Interpolate
 from buildbot.test.fake import fakemaster
 from buildbot.test.reactor import TestReactorMixin
 from buildbot.util import service
+from buildbot.util.twisted import async_to_deferred
 
 
 class DeferredStartStop(service.AsyncService):
@@ -163,13 +164,13 @@ class ClusteredBuildbotService(unittest.TestCase, TestReactorMixin):
         b2 = self.makeService(attach_to_master=False, name='b', serviceid=21)  # same args as 'b1'
         b3 = self.makeService(attach_to_master=False, name='b', serviceid=20)  # same id as 'a'
 
-        self.assertTrue(a == a)  # pylint: disable=comparison-with-itself
+        self.assertTrue(a == a)  # noqa: PLR0124
         self.assertTrue(a != b1)
         self.assertTrue(a != b2)
         self.assertTrue(a != b3)
 
         self.assertTrue(b1 != a)
-        self.assertTrue(b1 == b1)  # pylint: disable=comparison-with-itself
+        self.assertTrue(b1 == b1)  # noqa: PLR0124
         self.assertTrue(b1 == b2)
         self.assertTrue(b1 == b3)
 
@@ -748,6 +749,17 @@ class BuildbotServiceManager(unittest.TestCase):
         test = yield service.renderSecrets(('user', Interpolate('test_string')))
         self.assertEqual(test, ('user', 'test_string'))
 
+    @async_to_deferred
+    async def test_service_name_collision(self):
+        with self.assertRaises(config.ConfigErrors):
+            self.master.config = fakeConfig()
+            service = MyService(1, name="service")
+            self.master.config.services = [service, service]
+            self.manager = service.BuildbotServiceManager()
+            await self.manager.setServiceParent(self.master)
+            await self.master.startService()
+            await self.master.reconfigServiceWithBuildbotConfig(self.master.config)
+
 
 class UnderTestSharedService(service.SharedService):
     def __init__(self, arg1=None):
@@ -767,7 +779,7 @@ class SharedService(unittest.TestCase):
     @defer.inlineCallbacks
     def test_bad_constructor(self):
         parent = service.AsyncMultiService()
-        with self.assertRaises(Exception):
+        with self.assertRaises(TypeError):
             yield UnderTestSharedService.getService(parent, arg2="foo")
 
     @defer.inlineCallbacks

@@ -48,7 +48,7 @@ class TestGitHubStatusPush(
             self.master,
             self,
             HOSTED_BASE_URL,
-            headers={'Authorization': 'token XXYYZZ', 'User-Agent': 'Buildbot'},
+            headers={'User-Agent': 'Buildbot'},
             debug=None,
             verify=None,
         )
@@ -64,7 +64,6 @@ class TestGitHubStatusPush(
     @defer.inlineCallbacks
     def test_basic(self):
         build = yield self.insert_build_new()
-        # we make sure proper calls to txrequests have been made
         self._http.expect(
             'post',
             '/repos/buildbot/buildbot/statuses/d34db33fd43db33f',
@@ -74,6 +73,7 @@ class TestGitHubStatusPush(
                 'description': 'Build started.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -84,6 +84,7 @@ class TestGitHubStatusPush(
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -94,6 +95,7 @@ class TestGitHubStatusPush(
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
 
         build['complete'] = False
@@ -177,6 +179,7 @@ class TestGitHubStatusPush(
                 'description': 'Build started.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -187,6 +190,7 @@ class TestGitHubStatusPush(
                 'description': 'Build started.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -197,6 +201,7 @@ class TestGitHubStatusPush(
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -207,6 +212,7 @@ class TestGitHubStatusPush(
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -217,6 +223,7 @@ class TestGitHubStatusPush(
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -227,6 +234,7 @@ class TestGitHubStatusPush(
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
 
         # note that the first sourcestamp only has revision, second only branch and only the third
@@ -306,7 +314,7 @@ class TestGitHubStatusPushURL(TestReactorMixin, unittest.TestCase, ReporterTestM
             self.master,
             self,
             HOSTED_BASE_URL,
-            headers={'Authorization': 'token XXYYZZ', 'User-Agent': 'Buildbot'},
+            headers={'User-Agent': 'Buildbot'},
             debug=None,
             verify=None,
         )
@@ -324,7 +332,6 @@ class TestGitHubStatusPushURL(TestReactorMixin, unittest.TestCase, ReporterTestM
         self.reporter_test_repo = 'git@github.com:buildbot2/buildbot2.git'
 
         build = yield self.insert_build_new()
-        # we make sure proper calls to txrequests have been made
         self._http.expect(
             'post',
             '/repos/buildbot2/buildbot2/statuses/d34db33fd43db33f',
@@ -334,6 +341,7 @@ class TestGitHubStatusPushURL(TestReactorMixin, unittest.TestCase, ReporterTestM
                 'description': 'Build started.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -344,6 +352,7 @@ class TestGitHubStatusPushURL(TestReactorMixin, unittest.TestCase, ReporterTestM
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -354,6 +363,7 @@ class TestGitHubStatusPushURL(TestReactorMixin, unittest.TestCase, ReporterTestM
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
 
         yield self.sp._got_event(('builds', 20, 'new'), build)
@@ -366,7 +376,6 @@ class TestGitHubStatusPushURL(TestReactorMixin, unittest.TestCase, ReporterTestM
     @defer.inlineCallbacks
     def test_https(self):
         build = yield self.insert_build_new()
-        # we make sure proper calls to txrequests have been made
         self._http.expect(
             'post',
             '/repos/buildbot1/buildbot1/statuses/d34db33fd43db33f',
@@ -376,6 +385,7 @@ class TestGitHubStatusPushURL(TestReactorMixin, unittest.TestCase, ReporterTestM
                 'description': 'Build started.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -386,6 +396,7 @@ class TestGitHubStatusPushURL(TestReactorMixin, unittest.TestCase, ReporterTestM
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
@@ -396,6 +407,7 @@ class TestGitHubStatusPushURL(TestReactorMixin, unittest.TestCase, ReporterTestM
                 'description': 'Build done.',
                 'context': 'buildbot/Builder0',
             },
+            headers={'Authorization': 'token XXYYZZ'},
         )
 
         yield self.sp._got_event(('builds', 20, 'new'), build)
@@ -413,12 +425,17 @@ class TestGitHubCommentPush(TestGitHubStatusPush):
     @defer.inlineCallbacks
     def test_basic(self):
         build = yield self.insert_build_new()
-        # we make sure proper calls to txrequests have been made
         self._http.expect(
-            'post', '/repos/buildbot/buildbot/issues/34/comments', json={'body': 'Build done.'}
+            'post',
+            '/repos/buildbot/buildbot/issues/34/comments',
+            json={'body': 'Build done.'},
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
-            'post', '/repos/buildbot/buildbot/issues/34/comments', json={'body': 'Build done.'}
+            'post',
+            '/repos/buildbot/buildbot/issues/34/comments',
+            json={'body': 'Build done.'},
+            headers={'Authorization': 'token XXYYZZ'},
         )
 
         build['complete'] = False
@@ -443,12 +460,17 @@ class TestGitHubCommentPush(TestGitHubStatusPush):
     def test_basic_branch_head(self):
         self.reporter_test_props['branch'] = 'refs/pull/13/head'
         build = yield self.insert_build_new()
-        # we make sure proper calls to txrequests have been made
         self._http.expect(
-            'post', '/repos/buildbot/buildbot/issues/13/comments', json={'body': 'Build done.'}
+            'post',
+            '/repos/buildbot/buildbot/issues/13/comments',
+            json={'body': 'Build done.'},
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
-            'post', '/repos/buildbot/buildbot/issues/13/comments', json={'body': 'Build done.'}
+            'post',
+            '/repos/buildbot/buildbot/issues/13/comments',
+            json={'body': 'Build done.'},
+            headers={'Authorization': 'token XXYYZZ'},
         )
 
         build['complete'] = False
@@ -473,21 +495,25 @@ class TestGitHubCommentPush(TestGitHubStatusPush):
             'post',
             '/repos/test_user/test_project/issues/4192/comments',
             json={'body': 'Build done.'},
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
             '/repos/test_user/test_project/issues/4192/comments',
             json={'body': 'Build done.'},
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
             '/repos/test_user/test_project/issues/4192/comments',
             json={'body': 'Build done.'},
+            headers={'Authorization': 'token XXYYZZ'},
         )
         self._http.expect(
             'post',
             '/repos/test_user/test_project/issues/4192/comments',
             json={'body': 'Build done.'},
+            headers={'Authorization': 'token XXYYZZ'},
         )
 
         # note that the first sourcestamp only has revision, second only branch and only the third

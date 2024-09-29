@@ -182,20 +182,18 @@ class CreateWorkerOptions(MakerBase):
         else:
             try:
                 master, port = master_arg.split(":")
-            except ValueError:
+            except ValueError as e:
                 raise usage.UsageError(
-                    (
-                        "invalid <master> argument '{}', "
-                        "if it is an ipv6 address, it must be enclosed by []"
-                    ).format(master_arg)
-                )
+                    f"invalid <master> argument '{master_arg}', "
+                    "if it is an ipv6 address, it must be enclosed by []"
+                ) from e
 
         if not master:
-            raise usage.UsageError("invalid <master> argument '{}'".format(master_arg))
+            raise usage.UsageError(f"invalid <master> argument '{master_arg}'")
         try:
             port = int(port)
-        except ValueError:
-            raise usage.UsageError("invalid master port '{}', needs to be a number".format(port))
+        except ValueError as e:
+            raise usage.UsageError(f"invalid master port '{port}', needs to be a number") from e
 
         return master, port
 
@@ -221,12 +219,12 @@ class CreateWorkerOptions(MakerBase):
         for argument in ["keepalive", "maxdelay", "log-size"]:
             try:
                 self[argument] = int(self[argument])
-            except ValueError:
-                raise usage.UsageError("{} parameter needs to be a number".format(argument))
+            except ValueError as e:
+                raise usage.UsageError(f"{argument} parameter needs to be a number") from e
 
         for argument in ["log-count", "maxretries", "umask", "numcpus"]:
             if not re.match(r'^((0o)\d+|0|[1-9]\d*)$', self[argument]) and self[argument] != 'None':
-                raise usage.UsageError("{} parameter needs to be a number or None".format(argument))
+                raise usage.UsageError(f"{argument} parameter needs to be a number or None")
 
         if self['allow-shutdown'] not in [None, 'signal', 'file']:
             raise usage.UsageError("allow-shutdown needs to be one of 'signal' or 'file'")
@@ -251,7 +249,7 @@ class Options(usage.Options):
     def opt_version(self):
         import buildbot_worker  # pylint: disable=import-outside-toplevel
 
-        print("worker version: {}".format(buildbot_worker.version))
+        print(f"worker version: {buildbot_worker.version}")
         usage.Options.opt_version(self)
 
     def opt_verbose(self):
@@ -267,7 +265,7 @@ def run():
     try:
         config.parseOptions()
     except usage.error as e:
-        print("{}:  {}".format(sys.argv[0], e))
+        print(f"{sys.argv[0]}:  {e}")
         print()
         c = getattr(config, 'subOptions', config)
         print(str(c))

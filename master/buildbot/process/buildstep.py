@@ -281,6 +281,7 @@ class BuildStep(
         self._acquiringLocks = []
         self.stopped = False
         self.timed_out = False
+        self.max_lines_reached = False
         self.master = None
         self.statistics = {}
         self.logs = {}
@@ -351,7 +352,7 @@ class BuildStep(
                     # python will then swallow the attribute error and call
                     # __getattr__ from worker_transition
                     _, _, traceback = sys.exc_info()
-                    raise CallableAttributeError(e).with_traceback(traceback)
+                    raise CallableAttributeError(e).with_traceback(traceback) from e
                     # we re-raise the original exception by changing its type,
                     # but keeping its stacktrace
             else:
@@ -405,7 +406,11 @@ class BuildStep(
             stepsumm += f' ({statusToString(self.results)})'
             if self.timed_out:
                 stepsumm += " (timed out)"
+            elif self.max_lines_reached:
+                stepsumm += " (max lines reached)"
 
+        if self.build is not None:
+            stepsumm = self.build.properties.cleanupTextFromSecrets(stepsumm)
         return {'step': stepsumm}
 
     @defer.inlineCallbacks
@@ -832,6 +837,8 @@ class BuildStep(
             res = yield command.run(self, self.remote, self.build.builder.name)
             if command.remote_failure_reason in ("timeout", "timeout_without_output"):
                 self.timed_out = True
+            elif command.remote_failure_reason in ("max_lines_failure",):
+                self.max_lines_reached = True
         finally:
             self.cmd = None
         return res
@@ -894,6 +901,7 @@ class ShellMixin:
     lazylogfiles = {}
     timeout = 1200
     maxTime = None
+    max_lines = None
     logEnviron = True
     interruptSignal = 'KILL'
     sigtermTime = None
@@ -911,6 +919,7 @@ class ShellMixin:
         ('lazylogfiles', check_param_bool),
         ('timeout', check_param_number_none),
         ('maxTime', check_param_number_none),
+        ('max_lines', check_param_number_none),
         ('logEnviron', check_param_bool),
         ('interruptSignal', check_param_str_none),
         ('sigtermTime', check_param_number_none),
@@ -1030,6 +1039,11 @@ class ShellMixin:
                 summary += f' ({statusToString(self.results)})'
                 if self.timed_out:
                     summary += " (timed out)"
+                elif self.max_lines_reached:
+                    summary += " (max lines)"
+
+            if self.build is not None:
+                summary = self.build.properties.cleanupTextFromSecrets(summary)
             return {'step': summary}
         return super().getResultSummary()
 

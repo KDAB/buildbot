@@ -81,14 +81,6 @@ check_long_lines() {
 }
 
 
-check_yield_defer_returnValue() {
-    local yields=false
-    if git diff "$REVRANGE" | grep '+.*yield defer.returnValue'; then
-        yields=true
-    fi
-    $yields
-}
-
 check_relnotes() {
     if git diff --exit-code "$REVRANGE" master/docs/relnotes/index.rst >/dev/null 2>&1; then
         return 1
@@ -168,7 +160,6 @@ fi
 status "checking formatting"
 check_tabs && not_ok "$REVRANGE adds tabs"
 check_long_lines && warning "$REVRANGE adds long lines"
-check_yield_defer_returnValue && not_ok "$REVRANGE yields defer.returnValue"
 
 status "checking for use of sa.Table"
 check_sa_Table || warning "use (buildbot.util.)sautils.Table instead of sa.Table"
@@ -189,24 +180,6 @@ if [ ${#py_files[@]} -ne 0 ]; then
             fi
         fi
     fi
-fi
-
-status "running pylint"
-if [[ -z `command -v pylint` ]]; then
-    warning "pylint is not installed"
-elif [[ ! -f common/pylintrc ]]; then
-    warning "common/pylintrc not found"
-else
-    pylint_ok=true
-    for filename in ${py_files[@]}; do
-        if ! pylint --rcfile=common/pylintrc --disable=R,line-too-long \
-                --enable=W0611 --output-format=text --reports=no \
-                --spelling-private-dict-file=common/code_spelling_ignore_words.txt \
-                "$filename"; then
-            pylint_ok=false
-        fi
-    done
-    $pylint_ok || not_ok "pylint failed"
 fi
 
 if git diff --name-only $REVRANGE | grep ^master/docs/ ; then

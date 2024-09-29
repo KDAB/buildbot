@@ -116,16 +116,11 @@ class AutoLoginPBFactory(PBClientFactory):
         else:
             log.err(why, 'While trying to connect:')
             reactor.stop()
-            defer.returnValue(None)
+            return
 
         self._failedAttempts += 1
         delay = self._timeoutForAttempt(self._failedAttempts)
-        log.msg(
-            "Scheduling retry {attempt} to getPerspective in {delay} seconds.".format(
-                attempt=self._failedAttempts,
-                delay=delay,
-            )
-        )
+        log.msg(f"Scheduling retry {self._failedAttempts} to getPerspective in {delay} seconds.")
 
         # Delay the retry according to the backoff policy
         try:

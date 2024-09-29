@@ -32,6 +32,7 @@ from buildbot.config.builder import BuilderConfig
 from buildbot.config.errors import ConfigErrors
 from buildbot.config.errors import capture_config_errors
 from buildbot.config.errors import error
+from buildbot.db.compression import ZStdCompressor
 from buildbot.interfaces import IRenderable
 from buildbot.process.project import Project
 from buildbot.revlinks import default_revlink_matcher
@@ -57,6 +58,12 @@ def get_is_in_unit_tests():
     return _in_unit_tests
 
 
+def _default_log_compression_method():
+    if ZStdCompressor.available:
+        return ZStdCompressor.name
+    return 'gz'
+
+
 def loadConfigDict(basedir, configFileName):
     if not os.path.isdir(basedir):
         raise ConfigErrors([f"basedir '{basedir}' does not exist"])
@@ -65,9 +72,9 @@ def loadConfigDict(basedir, configFileName):
         raise ConfigErrors([f"configuration file '{filename}' does not exist"])
 
     try:
-        with open(filename, "r", encoding='utf-8'):
+        with open(filename, encoding='utf-8'):
             pass
-    except IOError as e:
+    except OSError as e:
         raise ConfigErrors([f"unable to open configuration file {repr(filename)}: {e}"]) from e
 
     log.msg(f"Loading configuration from {repr(filename)}")
@@ -134,11 +141,11 @@ class MasterConfig(util.ComparableMixin):
         # default values for all attributes
         # global
         self.title = 'Buildbot'
-        self.titleURL = 'http://buildbot.net'
+        self.titleURL = 'http://buildbot.net/'
         self.buildbotURL = 'http://localhost:8080/'
         self.changeHorizon = None
         self.logCompressionLimit = 4 * 1024
-        self.logCompressionMethod = 'gz'
+        self.logCompressionMethod = _default_log_compression_method()
         self.logEncoding = 'utf-8'
         self.logMaxSize = None
         self.logMaxTailSize = None
@@ -312,6 +319,12 @@ class MasterConfig(util.ComparableMixin):
         def copy_str_param(name):
             copy_param(name, check_type=(str,), check_type_name='a string')
 
+        def copy_str_url_param_with_trailing_slash(name):
+            copy_str_param(name)
+            url = getattr(self, name, None)
+            if url is not None and not url.endswith('/'):
+                setattr(self, name, url + '/')
+
         copy_str_param('title')
 
         max_title_len = 18
@@ -321,10 +334,11 @@ class MasterConfig(util.ComparableMixin):
             warnings.warn(
                 'WARNING: Title is too long to be displayed. ' + '"Buildbot" will be used instead.',
                 category=ConfigWarning,
+                stacklevel=1,
             )
 
-        copy_str_param('titleURL')
-        copy_str_param('buildbotURL')
+        copy_str_url_param_with_trailing_slash('titleURL')
+        copy_str_url_param_with_trailing_slash('buildbotURL')
 
         def copy_str_or_callable_param(name):
             copy_param(
@@ -347,25 +361,49 @@ class MasterConfig(util.ComparableMixin):
                     'You can `opt-out` by setting this variable to None.\n'
                     'Or `opt-in` for more information by setting it to "full".\n',
                     category=ConfigWarning,
+                    stacklevel=1,
                 )
         copy_str_or_callable_param('buildbotNetUsageData')
 
         copy_int_param('changeHorizon')
         copy_int_param('logCompressionLimit')
 
-        self.logCompressionMethod = config_dict.get('logCompressionMethod', 'gz')
-        if self.logCompressionMethod not in ('raw', 'bz2', 'gz', 'lz4'):
-            error("c['logCompressionMethod'] must be 'raw', 'bz2', 'gz' or 'lz4'")
+        self.logCompressionMethod = config_dict.get(
+            'logCompressionMethod',
+            _default_log_compression_method(),
+        )
+        if self.logCompressionMethod not in ('raw', 'bz2', 'gz', 'lz4', 'zstd', 'br'):
+            error("c['logCompressionMethod'] must be 'raw', 'bz2', 'gz', 'lz4', 'br' or 'zstd'")
 
         if self.logCompressionMethod == "lz4":
             try:
                 import lz4  # pylint: disable=import-outside-toplevel
 
-                [lz4]
+                _ = lz4
             except ImportError:
                 error(
                     "To set c['logCompressionMethod'] to 'lz4' "
                     "you must install the lz4 library ('pip install lz4')"
+                )
+        elif self.logCompressionMethod == "zstd":
+            try:
+                import zstandard  # pylint: disable=import-outside-toplevel
+
+                _ = zstandard
+            except ImportError:
+                error(
+                    "To set c['logCompressionMethod'] to 'zstd' "
+                    "you must install the zstandard Buildbot extra ('pip install buildbot[zstd]')"
+                )
+        elif self.logCompressionMethod == "br":
+            try:
+                import brotli  # pylint: disable=import-outside-toplevel
+
+                _ = brotli
+            except ImportError:
+                error(
+                    "To set c['logCompressionMethod'] to 'br' "
+                    "you must install the brotli Buildbot extra ('pip install buildbot[brotli]')"
                 )
 
         copy_int_param('logMaxSize')
@@ -601,6 +639,7 @@ class MasterConfig(util.ComparableMixin):
                         "Perhaps you meant to specify workerbuilddir instead."
                     ),
                     category=ConfigWarning,
+                    stacklevel=1,
                 )
 
         self.builders = builders

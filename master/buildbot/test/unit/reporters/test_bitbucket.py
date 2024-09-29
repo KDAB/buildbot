@@ -30,6 +30,7 @@ from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.util.config import ConfigErrorsMixin
 from buildbot.test.util.logging import LoggingMixin
 from buildbot.test.util.reporter import ReporterTestMixin
+from buildbot.util import httpclientservice
 
 
 class TestBitbucketStatusPush(
@@ -44,12 +45,16 @@ class TestBitbucketStatusPush(
 
         self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
-        self._http = yield fakehttpclientservice.HTTPClientService.getService(
-            self.master, self, _BASE_URL, auth=None, debug=None, verify=None
+        self._http = yield fakehttpclientservice.HTTPClientService.getService(self.master, self, "")
+        self.httpsession = httpclientservice.HTTPSession(
+            None, _BASE_URL, auth=None, debug=None, verify=None
         )
-        self.oauthhttp = yield fakehttpclientservice.HTTPClientService.getService(
-            self.master, self, _OAUTH_URL, auth=('key', 'secret'), debug=None, verify=None
+        self.httpsession.update_headers({'Authorization': 'Bearer foo'})
+
+        self.oauthsession = httpclientservice.HTTPSession(
+            None, _OAUTH_URL, auth=('key', 'secret'), debug=None, verify=None
         )
+
         self.bsp = BitbucketStatusPush(Interpolate('key'), Interpolate('secret'))
         yield self.bsp.setServiceParent(self.master)
         yield self.bsp.startService()
@@ -62,16 +67,17 @@ class TestBitbucketStatusPush(
     def test_basic(self):
         build = yield self.insert_build_new()
 
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={'access_token': 'foo'},
         )
-        # we make sure proper calls to txrequests have been made
         self._http.expect(
             'post',
             '/user/repo/commit/d34db33fd43db33f/statuses/build',
+            session=self.httpsession,
             json={
                 'state': 'INPROGRESS',
                 'key': '0550a051225ac4ea91a92c9c94d41dfe6fa9f428',  # sha1("Builder0")
@@ -82,15 +88,17 @@ class TestBitbucketStatusPush(
             code=201,
         )
 
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={'access_token': 'foo'},
         )
         self._http.expect(
             'post',
             '/user/repo/commit/d34db33fd43db33f/statuses/build',
+            session=self.httpsession,
             json={
                 'state': 'SUCCESSFUL',
                 'key': '0550a051225ac4ea91a92c9c94d41dfe6fa9f428',  # sha1("Builder0")
@@ -101,15 +109,17 @@ class TestBitbucketStatusPush(
             code=201,
         )
 
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={'access_token': 'foo'},
         )
         self._http.expect(
             'post',
             '/user/repo/commit/d34db33fd43db33f/statuses/build',
+            session=self.httpsession,
             json={
                 'state': 'FAILED',
                 'key': '0550a051225ac4ea91a92c9c94d41dfe6fa9f428',  # sha1("Builder0")
@@ -134,15 +144,17 @@ class TestBitbucketStatusPush(
         build = yield self.insert_build_finished(SUCCESS)
 
         # make sure a 201 return code does not trigger an error
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={'access_token': 'foo'},
         )
         self._http.expect(
             'post',
             '/user/repo/commit/d34db33fd43db33f/statuses/build',
+            session=self.httpsession,
             json={
                 'state': 'SUCCESSFUL',
                 'key': '0550a051225ac4ea91a92c9c94d41dfe6fa9f428',  # sha1("Builder0")
@@ -158,15 +170,17 @@ class TestBitbucketStatusPush(
         self.assertNotLogged('201: unable to upload Bitbucket status')
 
         # make sure a 200 return code does not trigger an error
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={'access_token': 'foo'},
         )
         self._http.expect(
             'post',
             '/user/repo/commit/d34db33fd43db33f/statuses/build',
+            session=self.httpsession,
             json={
                 'state': 'SUCCESSFUL',
                 'key': '0550a051225ac4ea91a92c9c94d41dfe6fa9f428',  # sha1("Builder0")
@@ -185,9 +199,10 @@ class TestBitbucketStatusPush(
     def test_unable_to_authenticate(self):
         build = yield self.insert_build_new()
 
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={
                 "error_description": "Unsupported grant type: None",
@@ -203,16 +218,17 @@ class TestBitbucketStatusPush(
     def test_unable_to_send_status(self):
         build = yield self.insert_build_new()
 
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={'access_token': 'foo'},
         )
-        # we make sure proper calls to txrequests have been made
         self._http.expect(
             'post',
             '/user/repo/commit/d34db33fd43db33f/statuses/build',
+            session=self.httpsession,
             json={
                 'state': 'INPROGRESS',
                 'key': '0550a051225ac4ea91a92c9c94d41dfe6fa9f428',  # sha1("Builder0")
@@ -237,9 +253,10 @@ class TestBitbucketStatusPush(
         self.reporter_test_repo = ''
         build = yield self.insert_build_new()
 
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={'access_token': 'foo'},
         )
@@ -262,11 +279,19 @@ class TestBitbucketStatusPushProperties(
         self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
         self._http = yield fakehttpclientservice.HTTPClientService.getService(
-            self.master, self, _BASE_URL, auth=None, debug=None, verify=None
+            self.master,
+            self,
+            "",
         )
-        self.oauthhttp = yield fakehttpclientservice.HTTPClientService.getService(
-            self.master, self, _OAUTH_URL, auth=('key', 'secret'), debug=None, verify=None
+        self.httpsession = httpclientservice.HTTPSession(
+            None, _BASE_URL, auth=None, debug=None, verify=None
         )
+        self.httpsession.update_headers({'Authorization': 'Bearer foo'})
+
+        self.oauthsession = httpclientservice.HTTPSession(
+            None, _OAUTH_URL, auth=('key', 'secret'), debug=None, verify=None
+        )
+
         self.bsp = BitbucketStatusPush(
             Interpolate('key'),
             Interpolate('secret'),
@@ -290,15 +315,17 @@ class TestBitbucketStatusPushProperties(
     def test_properties(self):
         build = yield self.insert_build_new()
 
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={'access_token': 'foo'},
         )
         self._http.expect(
             'post',
             '/user/repo/commit/d34db33fd43db33f/statuses/build',
+            session=self.httpsession,
             json={
                 'state': 'INPROGRESS',
                 'key': '84f9e75c46896d56da4fd75e096d24ec62f76f33',  # sha1("Builder0/0")
@@ -309,15 +336,17 @@ class TestBitbucketStatusPushProperties(
             code=201,
         )
 
-        self.oauthhttp.expect(
+        self._http.expect(
             'post',
             '',
+            session=self.oauthsession,
             data={'grant_type': 'client_credentials'},
             content_json={'access_token': 'foo'},
         )
         self._http.expect(
             'post',
             '/user/repo/commit/d34db33fd43db33f/statuses/build',
+            session=self.httpsession,
             json={
                 'state': 'SUCCESSFUL',
                 'key': '84f9e75c46896d56da4fd75e096d24ec62f76f33',  # sha1("Builder0/0")

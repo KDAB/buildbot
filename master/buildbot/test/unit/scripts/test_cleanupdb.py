@@ -31,10 +31,26 @@ from buildbot.test.util import misc
 try:
     import lz4
 
-    [lz4]
+    _ = lz4
     hasLz4 = True
 except ImportError:
     hasLz4 = False
+
+try:
+    import zstandard
+
+    _ = zstandard
+    HAS_ZSTD = True
+except ImportError:
+    HAS_ZSTD = False
+
+try:
+    import brotli
+
+    _ = brotli
+    HAS_BROTLI = True
+except ImportError:
+    HAS_BROTLI = False
 
 
 def mkconfig(**kwargs):
@@ -63,7 +79,7 @@ class TestCleanupDb(
     def setUp(self):
         self.setup_test_reactor()
         self.setUpDirs('basedir')
-        with open(os.path.join('basedir', 'buildbot.tac'), 'wt', encoding='utf-8') as f:
+        with open(os.path.join('basedir', 'buildbot.tac'), "w", encoding='utf-8') as f:
             f.write(
                 textwrap.dedent("""
                 from twisted.application import service
@@ -89,7 +105,7 @@ class TestCleanupDb(
     def createMasterCfg(self, extraconfig=""):
         db_url = db.resolve_test_index_in_db_url(os.environ["BUILDBOT_TEST_DB_URL"])
 
-        with open(os.path.join('basedir', 'master.cfg'), 'wt', encoding='utf-8') as f:
+        with open(os.path.join('basedir', 'master.cfg'), "w", encoding='utf-8') as f:
             f.write(
                 textwrap.dedent(f"""
                 from buildbot.plugins import *
@@ -174,6 +190,14 @@ class TestCleanupDbRealDb(db.RealDatabaseWithConnectorMixin, TestCleanupDb):
                 # ok.. lz4 is not installed, don't fail
                 lengths["lz4"] = 40
                 continue
+            if mode == "zstd" and not HAS_ZSTD:
+                # zstandard is not installed, don't fail
+                lengths["zstd"] = 20
+                continue
+            if mode == "br" and not HAS_BROTLI:
+                # brotli is not installed, don't fail
+                lengths["br"] = 14
+                continue
             # create a master.cfg with different compression method
             self.createMasterCfg(f"c['logCompressionMethod'] = '{mode}'")
             res = yield cleanupdb._cleanupDatabase(mkconfig(basedir='basedir'))
@@ -193,4 +217,14 @@ class TestCleanupDbRealDb(db.RealDatabaseWithConnectorMixin, TestCleanupDb):
 
             lengths[mode] = yield self.master.db.pool.do(thd)
 
-        self.assertDictAlmostEqual(lengths, {'raw': 5999, 'bz2': 44, 'lz4': 40, 'gz': 31})
+        self.assertDictAlmostEqual(
+            lengths,
+            {
+                'raw': 5999,
+                'bz2': 44,
+                'lz4': 40,
+                'gz': 31,
+                'zstd': 20,
+                'br': 14,
+            },
+        )

@@ -24,7 +24,6 @@ import re
 import sys
 import textwrap
 import time
-from builtins import bytes
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
@@ -455,8 +454,6 @@ def command_to_string(command):
     # flatten any nested lists
     words = flatten(words, (list, tuple))
 
-    # strip instances and other detritus (which can happen if a
-    # description is requested before rendering)
     stringWords = []
     for w in words:
         if isinstance(w, (bytes, str)):
@@ -464,6 +461,8 @@ def command_to_string(command):
             # trying to covert it.
             w = bytes2unicode(w, errors="replace")
             stringWords.append(w)
+        else:
+            stringWords.append(repr(w))
     words = stringWords
 
     if not words:

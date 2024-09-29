@@ -147,6 +147,7 @@ setup_args = {
         "buildbot.config",
         "buildbot.data",
         "buildbot.db",
+        "buildbot.db.compression",
         "buildbot.db.migrations",
         "buildbot.db.migrations.versions",
         "buildbot.db.types",
@@ -295,6 +296,10 @@ setup_args = {
                 [
                     ('buildbot.process.buildstep', ['BuildStep']),
                     ('buildbot.steps.cmake', ['CMake']),
+                    (
+                        'buildbot.steps.configurable',
+                        ['BuildbotTestCiTrigger', 'BuildbotCiSetupSteps'],
+                    ),
                     ('buildbot.steps.cppcheck', ['Cppcheck']),
                     ('buildbot.steps.gitdiffinfo', ['GitDiffInfo']),
                     (
@@ -646,7 +651,7 @@ py_38 = sys.version_info[0] > 3 or (sys.version_info[0] == 3 and sys.version_inf
 if not py_38:
     raise RuntimeError("Buildbot master requires at least Python-3.8")
 
-twisted_ver = ">= 19.2.0"
+twisted_ver = ">= 21.2.0"
 
 bundle_version = version.split("-")[0]
 
@@ -654,6 +659,7 @@ bundle_version = version.split("-")[0]
 setup_args['install_requires'] = [
     'setuptools >= 8.0',
     'Twisted ' + twisted_ver,
+    'treq >= 20.9',
     'Jinja2 >= 2.1',
     'msgpack >= 0.6.0',
     "croniter >= 1.3.0",
@@ -702,9 +708,6 @@ setup_args['extras_require'] = {
     'test': [
         'setuptools_trial',
         'ruff',
-        # spellcheck introduced in version 1.4.0
-        'pylint<1.7.0',
-        'pyenchant',
     ]
     + test_deps,
     'bundle': [
@@ -732,6 +735,15 @@ setup_args['extras_require'] = {
         'pyenchant',
         'sphinx-jinja',
         'towncrier',
+    ],
+    'brotli': [
+        'Brotli>=1.1.0',
+    ],
+    'zstd': [
+        'zstandard>=0.23.0',
+    ],
+    'configurable': [
+        'evalidate >= 2.0.0',
     ],
 }
 

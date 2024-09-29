@@ -55,7 +55,6 @@ class GitLabStatusPush(ReporterBase):
             generators = self._create_default_generators()
 
         super().checkConfig(generators=generators, **kwargs)
-        httpclientservice.HTTPClientService.checkAvailable(self.__class__.__name__)
 
     @defer.inlineCallbacks
     def reconfigService(
@@ -85,8 +84,8 @@ class GitLabStatusPush(ReporterBase):
         if baseURL.endswith('/'):
             baseURL = baseURL[:-1]
         self.baseURL = baseURL
-        self._http = yield httpclientservice.HTTPClientService.getService(
-            self.master,
+        self._http = yield httpclientservice.HTTPSession(
+            self.master.httpservice,
             baseURL,
             headers={'PRIVATE-TOKEN': token},
             debug=self.debug,

@@ -53,8 +53,6 @@ class PushjetNotifier(ReporterBase):
 
         super().checkConfig(generators=generators)
 
-        httpclientservice.HTTPClientService.checkAvailable(self.__class__.__name__)
-
     @defer.inlineCallbacks
     def reconfigService(
         self, secret, levels=None, base_url='https://api.pushjet.io', generators=None
@@ -70,7 +68,7 @@ class PushjetNotifier(ReporterBase):
             self.levels = {}
         else:
             self.levels = levels
-        self._http = yield httpclientservice.HTTPClientService.getService(self.master, base_url)
+        self._http = yield httpclientservice.HTTPSession(self.master.httpservice, base_url)
 
     def _create_default_generators(self):
         formatter = MessageFormatter(template_type='html', template=DEFAULT_MSG_TEMPLATE)

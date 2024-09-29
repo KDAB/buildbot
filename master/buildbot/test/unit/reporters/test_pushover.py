@@ -15,6 +15,7 @@
 
 
 import os
+from typing import Optional
 from unittest import SkipTest
 
 from twisted.internet import defer
@@ -42,7 +43,11 @@ class TestPushoverNotifier(ConfigErrorsMixin, TestReactorMixin, unittest.TestCas
         )
 
     @defer.inlineCallbacks
-    def setupPushoverNotifier(self, user_key="1234", api_token=Interpolate("abcd"), **kwargs):
+    def setupPushoverNotifier(
+        self, user_key="1234", api_token: Optional[Interpolate] = None, **kwargs
+    ):
+        if api_token is None:
+            api_token = Interpolate("abcd")
         pn = PushoverNotifier(user_key, api_token, **kwargs)
         yield pn.setServiceParent(self.master)
         yield pn.startService()
@@ -95,10 +100,7 @@ class TestPushoverNotifier(ConfigErrorsMixin, TestReactorMixin, unittest.TestCas
                 "TEST_PUSHOVER_CREDENTIALS is defined"
             )
         user, token = creds.split(':')
-        _http = yield httpclientservice.HTTPClientService.getService(
-            self.master, 'https://api.pushover.net'
-        )
-        yield _http.startService()
+        _http = httpclientservice.HTTPSession(self.master.httpservice, 'https://api.pushover.net')
         pn = yield self.setupPushoverNotifier(user_key=user, api_token=token)
         n = yield pn.sendNotification({'message': "Buildbot Pushover test passed!"})
         j = yield n.json()

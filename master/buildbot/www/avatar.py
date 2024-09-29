@@ -51,8 +51,6 @@ class AvatarGitHub(AvatarBase):
         debug=False,
         verify=False,
     ):
-        httpclientservice.HTTPClientService.checkAvailable(self.__class__.__name__)
-
         self.github_api_endpoint = github_api_endpoint
         if github_api_endpoint is None:
             self.github_api_endpoint = self.DEFAULT_GITHUB_API_URL
@@ -85,8 +83,8 @@ class AvatarGitHub(AvatarBase):
         elif self.client_creds:
             headers['Authorization'] = 'basic ' + self.client_creds
 
-        self.client = yield httpclientservice.HTTPClientService.getService(
-            self.master,
+        self.client = yield httpclientservice.HTTPSession(
+            self.master.httpservice,
             self.github_api_endpoint,
             headers=headers,
             debug=self.debug,

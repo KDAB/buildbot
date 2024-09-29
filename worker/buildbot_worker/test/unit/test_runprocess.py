@@ -39,7 +39,7 @@ from buildbot_worker.test.util.misc import nl
 try:
     from unittest.mock import Mock
 except ImportError:
-    from mock import Mock
+    from unittest.mock import Mock
 
 
 def catCommand():
@@ -47,15 +47,15 @@ def catCommand():
 
 
 def stdoutCommand(output):
-    return [sys.executable, '-c', 'import sys; sys.stdout.write("{0}\\n")'.format(output)]
+    return [sys.executable, '-c', f'import sys; sys.stdout.write("{output}\\n")']
 
 
 def stderrCommand(output):
-    return [sys.executable, '-c', 'import sys; sys.stderr.write("{0}\\n")'.format(output)]
+    return [sys.executable, '-c', f'import sys; sys.stderr.write("{output}\\n")']
 
 
 def sleepCommand(dur):
-    return [sys.executable, '-c', 'import time; time.sleep({0})'.format(dur)]
+    return [sys.executable, '-c', f'import time; time.sleep({dur})']
 
 
 def scriptCommand(function, *args):
@@ -65,6 +65,21 @@ def scriptCommand(function, *args):
 
 def printArgsCommand():
     return [sys.executable, '-c', 'import sys; sys.stdout.write(repr(sys.argv[1:]))']
+
+
+def print_text_command(lines, phrase):
+    return [
+        sys.executable,
+        '-c',
+        f'''
+import time
+import sys
+for _ in range({lines}):
+    sys.stdout.write("{phrase}\\n")
+    sys.stdout.flush()
+    time.sleep(0.2)
+''',
+    ]
 
 
 # windows returns rc 1, because exit status cannot indicate "signalled";
@@ -128,7 +143,7 @@ class TestRunProcess(BasedirMixin, unittest.TestCase):
 
         yield s.start()
 
-        self.failIf(('stdout', nl('hello\n')) in self.updates, self.show())
+        self.assertFalse(('stdout', nl('hello\n')) in self.updates, self.show())
         self.assertTrue(('rc', 0) in self.updates, self.show())
 
     @defer.inlineCallbacks
@@ -151,7 +166,7 @@ class TestRunProcess(BasedirMixin, unittest.TestCase):
 
         yield s.start()
 
-        self.failIf(('stderr', nl('hello\n')) not in self.updates, self.show())
+        self.assertFalse(('stderr', nl('hello\n')) not in self.updates, self.show())
         self.assertTrue(('rc', 0) in self.updates, self.show())
 
     @defer.inlineCallbacks
@@ -162,7 +177,7 @@ class TestRunProcess(BasedirMixin, unittest.TestCase):
 
         yield s.start()
 
-        self.failIf(('stderr', nl('hello\n')) in self.updates, self.show())
+        self.assertFalse(('stderr', nl('hello\n')) in self.updates, self.show())
         self.assertTrue(('rc', 0) in self.updates, self.show())
 
     @defer.inlineCallbacks
@@ -334,6 +349,25 @@ class TestRunProcess(BasedirMixin, unittest.TestCase):
         self.assertTrue(('rc', FATAL_RC) in self.updates, self.show())
         self.assertTrue(("failure_reason", "timeout") in self.updates, self.show())
 
+    @defer.inlineCallbacks
+    def test_command_max_lines(self):
+        s = runprocess.RunProcess(
+            0,
+            print_text_command(5, 'hello'),
+            self.basedir,
+            'utf-8',
+            self.send_update,
+            sendStdout=True,
+            max_lines=1,
+        )
+
+        d = s.start()
+        yield d
+
+        self.assertTrue(('stdout', nl('hello\n')) in self.updates, self.show())
+        self.assertTrue(('rc', FATAL_RC) in self.updates, self.show())
+        self.assertTrue(("failure_reason", "max_lines_failure") in self.updates, self.show())
+
     @compat.skipUnlessPlatformIs("posix")
     @defer.inlineCallbacks
     def test_stdin_closed(self):
@@ -464,9 +498,7 @@ class TestRunProcess(BasedirMixin, unittest.TestCase):
         headers = "".join([
             list(update.values())[0] for update in self.updates if list(update) == ["header"]
         ])
-        self.assertFalse(
-            re.match('\bPYTHONPATH=a{0}'.format(os.pathsep), headers), "got:\n" + headers
-        )
+        self.assertFalse(re.match(f'\bPYTHONPATH=a{os.pathsep}', headers), "got:\n" + headers)
 
     @defer.inlineCallbacks
     def testEnvironArray(self):
@@ -484,7 +516,7 @@ class TestRunProcess(BasedirMixin, unittest.TestCase):
         headers = "".join([
             list(update.values())[0] for update in self.updates if list(update) == ["header"]
         ])
-        self.assertFalse(re.match('\bFOO=a{0}b\b'.format(os.pathsep), headers), "got:\n" + headers)
+        self.assertFalse(re.match(f'\bFOO=a{os.pathsep}b\b', headers), "got:\n" + headers)
 
     def testEnvironInt(self):
         with self.assertRaises(RuntimeError):
@@ -509,9 +541,7 @@ class TestRunProcess(BasedirMixin, unittest.TestCase):
             usePTY=False,
             childFDs=None,
         ):
-            self.assertTrue(
-                args[0].lower().endswith("cmd.exe"), "{0} is not cmd.exe".format(args[0])
-            )
+            self.assertTrue(args[0].lower().endswith("cmd.exe"), f"{args[0]} is not cmd.exe")
 
         self.patch(runprocess.reactor, "spawnProcess", spawnProcess)
         tempEnviron = os.environ.copy()
@@ -574,7 +604,7 @@ class TestPOSIXKilling(BasedirMixin, unittest.TestCase):
         self.tearDownBasedir()
 
     def newPidfile(self):
-        pidfile = os.path.abspath("test-{0}.pid".format(len(self.pidfiles)))
+        pidfile = os.path.abspath(f"test-{len(self.pidfiles)}.pid")
         if os.path.exists(pidfile):
             os.unlink(pidfile)
         self.pidfiles.append(pidfile)
@@ -587,13 +617,13 @@ class TestPOSIXKilling(BasedirMixin, unittest.TestCase):
 
         def poll():
             if reactor.seconds() > until:
-                d.errback(RuntimeError("pidfile {0} never appeared".format(pidfile)))
+                d.errback(RuntimeError(f"pidfile {pidfile} never appeared"))
                 return
             if os.path.exists(pidfile):
                 try:
                     with open(pidfile) as f:
                         pid = int(f.read())
-                except (IOError, TypeError, ValueError):
+                except (OSError, TypeError, ValueError):
                     pid = None
 
                 if pid is not None:
@@ -608,10 +638,10 @@ class TestPOSIXKilling(BasedirMixin, unittest.TestCase):
         try:
             os.kill(pid, 0)
         except OSError:
-            self.fail("pid {0} still alive".format(pid))
+            self.fail(f"pid {pid} still alive")
 
     def assertDead(self, pid, timeout=5):
-        log.msg("checking pid {0!r}".format(pid))
+        log.msg(f"checking pid {pid!r}")
 
         def check():
             try:
@@ -632,7 +662,7 @@ class TestPOSIXKilling(BasedirMixin, unittest.TestCase):
             time.sleep(0.01)
             if check():
                 return
-        self.fail("pid {0} still alive after {1}s".format(pid, timeout))
+        self.fail(f"pid {pid} still alive after {timeout}s")
 
     # tests
 
@@ -867,7 +897,7 @@ class TestWindowsKilling(BasedirMixin, unittest.TestCase):
         self.tearDownBasedir()
 
     def new_pid_file(self):
-        pidfile = os.path.abspath("test-{0}.pid".format(len(self.pidfiles)))
+        pidfile = os.path.abspath(f"test-{len(self.pidfiles)}.pid")
         if os.path.exists(pidfile):
             os.unlink(pidfile)
         self.pidfiles.append(pidfile)
@@ -880,13 +910,13 @@ class TestWindowsKilling(BasedirMixin, unittest.TestCase):
 
         def poll():
             if reactor.seconds() > until:
-                d.errback(RuntimeError("pidfile {0} never appeared".format(pidfile)))
+                d.errback(RuntimeError(f"pidfile {pidfile} never appeared"))
                 return
             if os.path.exists(pidfile):
                 try:
                     with open(pidfile) as f:
                         pid = int(f.read())
-                except (IOError, TypeError, ValueError):
+                except (OSError, TypeError, ValueError):
                     pid = None
 
                 if pid is not None:
@@ -899,10 +929,10 @@ class TestWindowsKilling(BasedirMixin, unittest.TestCase):
 
     def assert_alive(self, pid):
         if not psutil.pid_exists(pid):
-            self.fail("pid {0} dead, but expected it to be alive".format(pid))
+            self.fail(f"pid {pid} dead, but expected it to be alive")
 
     def assert_dead(self, pid, timeout=5):
-        log.msg("checking pid {0!r}".format(pid))
+        log.msg(f"checking pid {pid!r}")
 
         # check immediately
         if not psutil.pid_exists(pid):
@@ -916,7 +946,7 @@ class TestWindowsKilling(BasedirMixin, unittest.TestCase):
             time.sleep(0.01)
             if not psutil.pid_exists(pid):
                 return
-        self.fail("pid {0} still alive after {1}s".format(pid, timeout))
+        self.fail(f"pid {pid} still alive after {timeout}s")
 
     # tests
 
@@ -961,13 +991,13 @@ class TestWindowsKilling(BasedirMixin, unittest.TestCase):
         )
 
         taskkill_calls = []
-        orig_taskkill = s._taskkill
+        orig_taskkill = s._win32_taskkill
 
         def mock_taskkill(pid, force):
             taskkill_calls.append(force)
             orig_taskkill(pid, force)
 
-        s._taskkill = mock_taskkill
+        s._win32_taskkill = mock_taskkill
 
         runproc_d = s.start()
         pid = yield self.wait_for_pidfile(pidfile)
@@ -1009,8 +1039,7 @@ class TestWindowsKilling(BasedirMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def test_with_child_parent_dies(self):
         # when a spawned process spawns another process, and then dies itself
-        # (either intentionally or accidentally), we can't kill the child process.
-        # In the future we should be able to fix this as Windows has CREATE_NEW_PROCESS_GROUP.
+        # (either intentionally or accidentally), we kill the child processes.
         parent_pidfile = self.new_pid_file()
         child_pidfile = self.new_pid_file()
 
@@ -1022,7 +1051,6 @@ class TestWindowsKilling(BasedirMixin, unittest.TestCase):
             self.send_update,
         )
         runproc_d = s.start()
-
         # wait for both processes to start up, then call s.kill
         parent_pid = yield self.wait_for_pidfile(parent_pidfile)
         child_pid = yield self.wait_for_pidfile(child_pidfile)
@@ -1033,7 +1061,7 @@ class TestWindowsKilling(BasedirMixin, unittest.TestCase):
         yield runproc_d
 
         self.assert_dead(parent_pid)
-        self.assert_alive(child_pid)
+        self.assert_dead(child_pid)
 
 
 class TestLogFileWatcher(BasedirMixin, unittest.TestCase):
@@ -1063,7 +1091,7 @@ class TestLogFileWatcher(BasedirMixin, unittest.TestCase):
         if os.path.exists(test_filename):
             os.remove(test_filename)
         lf = runprocess.LogFileWatcher(rp, 'test', test_filename, False)
-        self.assertFalse(lf.statFile(), "{} doesn't exist".format(test_filename))
+        self.assertFalse(lf.statFile(), f"{test_filename} doesn't exist")
 
     def test_statFile_exists(self):
         rp = self.makeRP()

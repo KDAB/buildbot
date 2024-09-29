@@ -22,9 +22,8 @@ env:
 matrix:
   fast_finish: true
   include:
-    # isort, pylint, docs first as they're more likely to find issues
+    # ruff, docs first as they're more likely to find issues
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=ruff
-    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=pylint NUM_CPU=2 MEMORY_SIZE=2G
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=docs
 
     # add js tests in separate job. Start it early because it is quite long
@@ -37,7 +36,7 @@ matrix:
 
     # include "ci" string into the name of the status that is eventually submitted to Github, so
     # that the codecov.io service would wait until this build is finished before creating report.
-    - env: PYTHON=3.9 TREQ=22.2.0 TWISTED=19.2.0 SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
+    - env: PYTHON=3.9 TREQ=22.2.0 TWISTED=21.2.0 SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
     - env: PYTHON=3.9 TREQ=22.2.0 TWISTED=22.4.0 SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=1.4.52 NUM_CPU=2 TESTS=trial
     - env: PYTHON=3.8 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=ci/coverage
@@ -56,7 +55,7 @@ matrix:
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=interop WORKER_PYTHON=3.5
 
     # Worker tests on python and twisted package combinations.
-    - env: PYTHON=3.9 TREQ=22.2.0 TWISTED=19.2.0 SQLALCHEMY=latest TESTS=trial_worker
+    - env: PYTHON=3.9 TREQ=22.2.0 TWISTED=21.2.0 SQLALCHEMY=latest TESTS=trial_worker
 
     # Configuration when SQLite database is persistent between running tests
     # (by default in other tests in-memory SQLite database is used which is
@@ -78,11 +77,11 @@ install:
     cmd: |
       rm -rf /tmp/bbvenv
       python$PYTHON -m venv /tmp/bbvenv
-  - /tmp/bbvenv/bin/pip install -U pip wheel
-  - condition: TESTS not in ("dev_virtualenv", "smokes", "e2e_react_whl", "e2e_react_tgz", "trial_worker")
+  - /tmp/bbvenv/bin/pip install -r requirements-pip.txt
+  - condition: TESTS not in ("dev_virtualenv", "e2e_react_whl", "e2e_react_tgz", "trial_worker")
     cmd: /tmp/bbvenv/bin/pip install -r requirements-ci.txt
   # On python 3.12 workaround done in dcbc28d1431e1aae892f7fdc0e266253365bc11e is no longer enough.
-  - condition: TESTS not in ("dev_virtualenv", "smokes", "e2e_react_whl", "e2e_react_tgz", "trial_worker")
+  - condition: TESTS not in ("dev_virtualenv", "e2e_react_whl", "e2e_react_tgz", "trial_worker")
     cmd: /tmp/bbvenv/bin/pip install -e master -e worker
   - condition: TESTS == "dev_virtualenv"
     cmd: /tmp/bbvenv/bin/pip install -r requirements-ci.txt -r requirements-ciworker.txt -r requirements-cidocs.txt
@@ -168,18 +167,11 @@ script:
     condition: TESTS == "ci/coverage"
     cmd: /tmp/bbvenv/bin/coverage run --rcfile=.coveragerc /tmp/bbvenv/bin/trial -j8 --reporter=text --rterrors buildbot.test buildbot_worker.test
 
-  # Run additional tests in their separate job
-  - title: pylint
-    condition: TESTS == "pylint"
-    cmd:  |
-      export PATH=/tmp/bbvenv/bin/:$PATH
-      make pylint
-
   - title: ruff
     condition: TESTS == "ruff"
     cmd:  |
       export PATH=/tmp/bbvenv/bin/:$PATH
-      ruff check `git ls-files |grep '.py$'`
+      ruff check `git ls-files |grep '.py$'` && \
       ruff format --check `git ls-files |grep '.py$'`
 
   # Build documentation

@@ -70,10 +70,10 @@ def gitDescribeToPep440(version):
         if v.group('dev'):
             patch += 1
             dev = int(v.group('dev'))
-            return "{}.{}.{}.dev{}".format(major, minor, patch, dev)
+            return f"{major}.{minor}.{patch}.dev{dev}"
         if v.group('post'):
             return "{}.{}.{}.post{}".format(major, minor, patch, v.group('post'))
-        return "{}.{}.{}".format(major, minor, patch)
+        return f"{major}.{minor}.{patch}"
 
     return v
 
@@ -132,7 +132,7 @@ def getVersion(init_file):
         fn = os.path.join(cwd, 'VERSION')
         with open(fn) as f:
             return f.read().strip()
-    except IOError:
+    except OSError:
         pass
 
     version = getVersionFromArchiveId()
@@ -230,7 +230,12 @@ class BuildJsCommand(Command):
 
             for command in commands:
                 logging.info('Running command: {}'.format(str(" ".join(command))))
-                subprocess.check_call(command, shell=shell)
+                try:
+                    subprocess.check_call(command, shell=shell)
+                except subprocess.CalledProcessError as e:
+                    raise Exception(
+                        f"Exception = {e} command was called in directory = {os.getcwd()}"
+                    ) from e
 
         self.copy_tree(
             os.path.join(package, 'static'), os.path.join("build", "lib", package, "static")

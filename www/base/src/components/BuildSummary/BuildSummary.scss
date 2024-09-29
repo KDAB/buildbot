@@ -12,8 +12,13 @@
   }
 
   .bb-build-summary-details,
-  .bb-build-summary-time {
+  .bb-build-summary-step-details {
     float: right;
+  }
+
+  .bb-build-request-counter {
+    color: $gray-600;
+    font-style: italic;
   }
 
   .btn-xs {

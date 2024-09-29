@@ -57,7 +57,7 @@ class Builder(util_service.ReconfigurableServiceMixin, service.MultiService):
 
     @property
     def expectations(self):
-        warnings.warn("'Builder.expectations' is deprecated.")
+        warnings.warn("'Builder.expectations' is deprecated.", stacklevel=2)
         return None
 
     def __init__(self, name):
@@ -68,7 +68,7 @@ class Builder(util_service.ReconfigurableServiceMixin, service.MultiService):
         self._builderid = None
 
         # build/wannabuild slots: Build objects move along this sequence
-        self.building = []
+        self.building: list[Build] = []
         # old_building holds active builds that were stolen from a predecessor
         self.old_building = weakref.WeakKeyDictionary()
 

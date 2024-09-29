@@ -274,12 +274,10 @@ class WWWService(service.ReconfigurableServiceMixin, service.AsyncMultiService):
     def refresh_base_plugin_name(self, new_config):
         if 'base_react' in new_config.www.get('plugins', {}):
             config.error(
-                "base_react is no longer supported. Remove buildbot-www-react and install"
+                "base_react is no longer supported. Remove buildbot-www-react and install "
                 "buildbot-www package"
             )
-            self.base_plugin_name = 'base'
-        else:
-            self.base_plugin_name = 'base'
+        self.base_plugin_name = 'base'
 
     def configPlugins(self, root, new_config):
         plugin_root = root
@@ -304,8 +302,6 @@ class WWWService(service.ReconfigurableServiceMixin, service.AsyncMultiService):
             app.setConfiguration(plugin)
             plugin_root.putChild(unicode2bytes(key), app.resource)
 
-            if not app.ui:
-                del new_config.www['plugins'][key]
         for plugin_name in set(self.apps.names) - known_plugins:
             log.msg(f"NOTE: www plugin {repr(plugin_name)} is installed but not configured")
 
@@ -334,7 +330,7 @@ class WWWService(service.ReconfigurableServiceMixin, service.AsyncMultiService):
 
         # /api
         root.putChild(b'api', rest.RestRootResource(self.master))
-        [graphql]  # import is made for side effects
+        _ = graphql  # import is made for side effects
 
         # /config
         root.putChild(b'config', wwwconfig.ConfigResource(self.master))

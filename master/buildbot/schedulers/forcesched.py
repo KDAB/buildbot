@@ -15,6 +15,7 @@
 
 import re
 import traceback
+from typing import Optional
 
 from twisted.internet import defer
 from twisted.python.reflect import accumulateClassList
@@ -45,8 +46,8 @@ class ValidationErrorCollector:
         res = None
         try:
             res = yield fn(*args, **kwargs)
-        except CollectedValidationError as e:
-            for error_name, e in e.errors.items():
+        except CollectedValidationError as err:
+            for error_name, e in err.errors.items():
                 self.errors[error_name] = e
         except ValueError as e:
             self.errors[name] = str(e)
@@ -79,6 +80,7 @@ class BaseParameter:
         "hide",
         "maxsize",
         "autopopulate",
+        "tooltip",
     ]
     name = ""
     parentName = None
@@ -93,6 +95,7 @@ class BaseParameter:
     hide = False
     maxsize = None
     autopopulate = None
+    tooltip = ""
 
     @property
     def fullName(self):
@@ -649,14 +652,14 @@ class ForceScheduler(base.BaseScheduler):
         self,
         name,
         builderNames,
-        username=UserNameParameter(),
-        reason=StringParameter(name="reason", default="force build", size=20),
+        username: Optional[UserNameParameter] = None,
+        reason: Optional[StringParameter] = None,
         reasonString="A build was forced by '%(owner)s': %(reason)s",
         buttonName=None,
         codebases=None,
         label=None,
         properties=None,
-        priority=IntParameter(name="priority", default=0),
+        priority: Optional[IntParameter] = None,
     ):
         """
         Initialize a ForceScheduler.
@@ -708,6 +711,9 @@ class ForceScheduler(base.BaseScheduler):
                 f"{repr(builderNames)}"
             )
 
+        if reason is None:
+            reason = StringParameter(name="reason", default="force build", size=20)
+
         if self.checkIfType(reason, BaseParameter):
             self.reason = reason
         else:
@@ -722,6 +728,9 @@ class ForceScheduler(base.BaseScheduler):
                 f"ForceScheduler '{name}': properties must be "
                 f"a list of BaseParameters: {repr(properties)}"
             )
+
+        if username is None:
+            username = UserNameParameter()
 
         if self.checkIfType(username, BaseParameter):
             self.username = username
@@ -764,6 +773,9 @@ class ForceScheduler(base.BaseScheduler):
         super().__init__(
             name=name, builderNames=builderNames, properties={}, codebases=codebase_dict
         )
+
+        if priority is None:
+            priority = IntParameter(name="priority", default=0)
 
         if self.checkIfType(priority, IntParameter):
             self.priority = priority

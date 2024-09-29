@@ -62,7 +62,6 @@ class BitbucketStatusPush(ReporterBase):
             generators = self._create_default_generators()
 
         super().checkConfig(generators=generators, **kwargs)
-        httpclientservice.HTTPClientService.checkAvailable(self.__class__.__name__)
 
     @defer.inlineCallbacks
     def reconfigService(
@@ -94,14 +93,14 @@ class BitbucketStatusPush(ReporterBase):
 
         base_url = base_url.rstrip('/')
 
-        self._http = yield httpclientservice.HTTPClientService.getService(
-            self.master, base_url, debug=self.debug, verify=self.verify, auth=self.auth
+        self._http = yield httpclientservice.HTTPSession(
+            self.master.httpservice, base_url, debug=self.debug, verify=self.verify, auth=self.auth
         )
 
         self.oauthhttp = None
         if self.auth is None:
-            self.oauthhttp = yield httpclientservice.HTTPClientService.getService(
-                self.master,
+            self.oauthhttp = yield httpclientservice.HTTPSession(
+                self.master.httpservice,
                 oauth_url,
                 auth=(oauth_key, oauth_secret),
                 debug=self.debug,
@@ -126,7 +125,7 @@ class BitbucketStatusPush(ReporterBase):
                 log.msg(f"{request.code}: unable to authenticate to Bitbucket {content}")
                 return
             token = (yield request.json())['access_token']
-            self._http.updateHeaders({'Authorization': f'Bearer {token}'})
+            self._http.update_headers({'Authorization': f'Bearer {token}'})
 
         build = reports[0]['builds'][0]
         if build['complete']:

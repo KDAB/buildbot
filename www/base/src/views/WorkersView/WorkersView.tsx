@@ -28,7 +28,12 @@ import {
   useDataApiQuery
 } from "buildbot-data-js";
 import {WorkerActionsModal} from "../../components/WorkerActionsModal/WorkerActionsModal";
+import {MultipleWorkersActionsModal} from "../../components/MultipleWorkersActionsModal/MultipleWorkersActionsModal";
 import {WorkersTable} from "../../components/WorkersTable/WorkersTable";
+import {
+  getBuildLinkDisplayProperties,
+  useTopbarActions,
+} from "buildbot-ui";
 
 const isWorkerFiltered = (worker: Worker, showOldWorkers: boolean) => {
   if (showOldWorkers) {
@@ -77,7 +82,7 @@ export const WorkersView = observer(() => {
   const mastersQuery = useDataApiQuery(() => Master.getAll(accessor));
   const buildsQuery = useDataApiQuery(() =>
     Build.getAll(accessor, {query: {
-        property: ["owners", "workername", "branch"],
+        property: ["owners", "workername", "branch", ...getBuildLinkDisplayProperties()],
         limit: 200,
         order: '-buildid'
       }
@@ -90,6 +95,19 @@ export const WorkersView = observer(() => {
   }).sort((a, b) => a.name.localeCompare(b.name))
     .sort((a, b) => b.connected_to.length - a.connected_to.length);
 
+  const [showWorkersActions, setShowWorkersActions] =
+    useState<boolean>(false);
+
+  useTopbarActions([
+    {
+      caption: "Actions...",
+      variant: "primary",
+      action: () => {
+        setShowWorkersActions(true);
+      },
+    },
+  ]);
+
   return (
     <div className="container">
       <WorkersTable workers={filteredWorkers} buildersQuery={buildersQuery}
@@ -99,6 +117,13 @@ export const WorkersView = observer(() => {
       { workerForActions !== null
         ? <WorkerActionsModal worker={workerForActions}
                               onClose={() => setWorkerForActions(null)}/>
+        : <></>
+      }
+      { showWorkersActions
+        ? <MultipleWorkersActionsModal
+            workers={workersQuery.array}
+            preselectedWorkers={filteredWorkers}
+            onClose={() => setShowWorkersActions(false)}/>
         : <></>
       }
     </div>

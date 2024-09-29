@@ -27,7 +27,7 @@ from buildbot.test.util.warnings import (  # noqa pylint: disable=wrong-import-p
 )
 from buildbot.warnings import DeprecatedApiWarning  # noqa pylint: disable=wrong-import-position
 
-[mock]
+_ = mock
 
 # apply the same patches the buildmaster does when it starts
 monkeypatches.patch_all()
@@ -35,7 +35,7 @@ monkeypatches.patch_all()
 # enable deprecation warnings
 warnings.filterwarnings('always', category=DeprecationWarning)
 
-[setuptools]  # force use for pylint
+_ = setuptools  # force use for pylint
 
 # This is where we load deprecated module-level APIs to ignore warning produced by importing them.
 # After the deprecated API has been removed, leave at least one instance of the import in a
@@ -84,5 +84,37 @@ warnings.filterwarnings(
     "ignore",
     r"This process \(pid=\d+\) is multi-threaded, use of fork\(\) may lead "
     r"to deadlocks in the child\.",
+    category=DeprecationWarning,
+)
+
+# Warnings comes from attr 24.1.0 because of automat
+warnings.filterwarnings(
+    "ignore",
+    r"The `hash` argument is deprecated in favor of `unsafe_hash` "
+    r"and will be removed in or after August 2025\.",
+    category=DeprecationWarning,
+)
+
+warnings.filterwarnings(
+    "ignore",
+    r"twisted.web.resource._UnsafeErrorPage.__init__ was deprecated in "
+    r"Twisted 22.10.0; please use Use twisted.web.pages.errorPage instead, "
+    r"which properly escapes HTML. instead",
+    category=DeprecationWarning,
+)
+
+warnings.filterwarnings(
+    "ignore",
+    r"twisted.web.resource._UnsafeNoResource.__init__ was deprecated in "
+    r"Twisted 22.10.0; please use Use twisted.web.pages.notFound instead, "
+    r"which properly escapes HTML. instead",
+    category=DeprecationWarning,
+)
+
+warnings.filterwarnings(
+    "ignore",
+    r"twisted.web.resource._UnsafeForbiddenResource.__init__ was deprecated in "
+    r"Twisted 22.10.0; please use Use twisted.web.pages.forbidden instead, "
+    r"which properly escapes HTML. instead",
     category=DeprecationWarning,
 )

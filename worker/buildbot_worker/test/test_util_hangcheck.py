@@ -14,9 +14,10 @@ from twisted.spread.pb import PBClientFactory
 from twisted.trial.unittest import TestCase
 from twisted.web.static import Data
 
+from buildbot_worker.test.util.site import SiteWithClose
+
 from ..util import HangCheckFactory
 from ..util._hangcheck import HangCheckProtocol
-from buildbot_worker.test.util.site import SiteWithClose
 
 try:
     from twisted.internet.testing import AccumulatingProtocol
@@ -243,8 +244,8 @@ class EndToEndHangCheckTests(TestCase):
 
         try:
             yield result
-        except defer.CancelledError:
-            raise RuntimeError('Timeout did not happen')
+        except defer.CancelledError as e:
+            raise RuntimeError('Timeout did not happen') from e
         finally:
             d_connected.cancel()
             timer.cancel()

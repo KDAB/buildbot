@@ -25,7 +25,7 @@ An example ``www`` configuration line which enables change_hook and two DIALECTS
 
 Within the ``www`` config dictionary arguments, the ``change_hook`` key enables/disables the module, and ``change_hook_dialects`` whitelists DIALECTs where the keys are the module names and the values are optional arguments which will be passed to the hooks.
 
-The :contrib-src:`master/contrib/post_build_request.py` script allows for the submission of an arbitrary change request.
+The :src:`master/contrib/post_build_request.py` script allows for the submission of an arbitrary change request.
 Run :command:`post_build_request.py --help` for more information.
 The ``base`` dialect must be enabled for this to work.
 
@@ -86,7 +86,7 @@ Once this is configured on your buildmaster add the following hook on your serve
     [hooks]
     changegroup.buildbot = python:/path/to/hgbuildbot.py:hook
 
-You'll find :contrib-src:`master/contrib/hgbuildbot.py`, and its inline documentation, in the :contrib-src:`buildbot-contrib <../../>` repository.
+You'll find :src:`master/contrib/hgbuildbot.py`, and its inline documentation, in the :src:`buildbot-contrib <../../>` repository.
 
 .. bb:chsrc:: GitHub
 
@@ -95,7 +95,7 @@ GitHub hook
 
 .. note::
 
-   There is a standalone HTTP server available for receiving GitHub notifications as well: :contrib-src:`master/contrib/github_buildbot.py`.
+   There is a standalone HTTP server available for receiving GitHub notifications as well: :src:`master/contrib/github_buildbot.py`.
    This script may be useful in cases where you cannot expose the WebStatus for public consumption. Alternatively, you can setup a reverse proxy :ref:`Reverse_Proxy_Config`.
 
 The GitHub hook has the following parameters:
@@ -138,9 +138,11 @@ The GitHub hook has the following parameters:
 ``github_api_endpoint`` (default ``https://api.github.com``)
     If you have a self-host GitHub Enterprise installation, please set this URL properly.
 
-``token``
-    If your GitHub or GitHub Enterprise instance does not allow anonymous communication, you need to provide an access token.
-    Instructions can be found `here <https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/>`_.
+``token`` If your GitHub or GitHub Enterprise instance does not allow anonymous communication, you
+    need to provide an access token.  Instructions can be found `here
+    <https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/>`_. This
+    attribute is rendered using the :class:`~buildbot.interfaces.IRenderable` interface, the only
+    property available is ``full_name``, of the format ``{owner}/{full_name}``.
 
 ``pullrequest_ref`` (default ``merge``)
     Remote ref to test if a pull request is sent to the endpoint.
@@ -233,7 +235,7 @@ When this is set up, you should add a `POST` service pointing to ``/change_hook/
 For example, if the grid URL is ``http://builds.example.com/bbot/grid``, then point BitBucket to ``http://builds.example.com/change_hook/bitbucket``.
 To specify a project associated to the repository, append ``?project=name`` to the URL.
 
-Note that there is a standalone HTTP server available for receiving BitBucket notifications, as well: :contrib-src:`master/contrib/bitbucket_buildbot.py`.
+Note that there is a standalone HTTP server available for receiving BitBucket notifications, as well: :src:`master/contrib/bitbucket_buildbot.py`.
 This script may be useful in cases where you cannot expose the WebStatus for public consumption.
 
 .. warning::

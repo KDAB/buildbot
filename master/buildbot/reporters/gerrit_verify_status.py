@@ -67,7 +67,6 @@ class GerritVerifyStatusPush(ReporterBase):
             generators = self._create_default_generators()
 
         super().checkConfig(generators=generators, **kwargs)
-        httpclientservice.HTTPClientService.checkAvailable(self.__class__.__name__)
 
     @defer.inlineCallbacks
     def reconfigService(
@@ -97,8 +96,8 @@ class GerritVerifyStatusPush(ReporterBase):
         if baseURL.endswith('/'):
             baseURL = baseURL[:-1]
 
-        self._http = yield httpclientservice.HTTPClientService.getService(
-            self.master, baseURL, auth=auth, debug=self.debug, verify=self.verify
+        self._http = yield httpclientservice.HTTPSession(
+            self.master.httpservice, baseURL, auth=auth, debug=self.debug, verify=self.verify
         )
 
         self._verification_name = verification_name or Interpolate('%(prop:buildername)s')

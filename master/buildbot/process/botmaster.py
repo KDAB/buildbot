@@ -13,6 +13,10 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from twisted.internet import defer
 from twisted.python import log
 
@@ -27,6 +31,10 @@ from buildbot.process.results import RETRY
 from buildbot.process.workerforbuilder import States
 from buildbot.util import service
 from buildbot.util.render_description import render_description
+from buildbot.worker.latent import AbstractLatentWorker
+
+if TYPE_CHECKING:
+    from buildbot.worker import AbstractWorker
 
 
 class LockRetrieverMixin:
@@ -86,7 +94,7 @@ class BotMaster(service.ReconfigurableServiceMixin, service.AsyncMultiService, L
     def __init__(self):
         super().__init__()
 
-        self.builders = {}
+        self.builders: dict[str, Builder] = {}
         self.builderNames = []
         # builders maps Builder names to instances of bb.p.builder.Builder,
         # which is the master-side object that defines and controls a build.
@@ -142,7 +150,10 @@ class BotMaster(service.ReconfigurableServiceMixin, service.AsyncMultiService, L
                             results = CANCELLED
                         else:
                             results = RETRY
-                        is_building = build.workerforbuilder.state == States.BUILDING
+                        is_building = (
+                            build.workerforbuilder is not None
+                            and build.workerforbuilder.state == States.BUILDING
+                        )
 
                         # Master should not wait build.stopBuild for ages to complete if worker
                         # does not send any message about shutting the builds down quick enough.
@@ -163,7 +174,11 @@ class BotMaster(service.ReconfigurableServiceMixin, service.AsyncMultiService, L
                         if not is_building:
                             # if it is not building, then it must be a latent worker
                             # which is substantiating. Cancel it.
-                            build.workerforbuilder.worker.insubstantiate()
+                            if build.workerforbuilder is not None and isinstance(
+                                build.workerforbuilder.worker,
+                                AbstractLatentWorker,
+                            ):
+                                build.workerforbuilder.worker.insubstantiate()
             # then wait for all builds to finish
             dl = []
             for builder in self.builders.values():
@@ -215,15 +230,19 @@ class BotMaster(service.ReconfigurableServiceMixin, service.AsyncMultiService, L
         self.shuttingDown = False
 
     @metrics.countMethod('BotMaster.workerLost()')
-    def workerLost(self, bot):
+    def workerLost(self, bot: AbstractWorker):
         metrics.MetricCountEvent.log("BotMaster.attached_workers", -1)
         for b in self.builders.values():
-            if bot.workername in b.config.workernames:
+            if b.config is not None and bot.workername in b.config.workernames:
                 b.detached(bot)
 
     @metrics.countMethod('BotMaster.getBuildersForWorker()')
-    def getBuildersForWorker(self, workername):
-        return [b for b in self.builders.values() if workername in b.config.workernames]
+    def getBuildersForWorker(self, workername: str):
+        return [
+            b
+            for b in self.builders.values()
+            if b.config is not None and workername in b.config.workernames
+        ]
 
     def getBuildernames(self):
         return self.builderNames

@@ -65,9 +65,9 @@ __all__ = []
 try:
     from unittest import mock
 
-    [mock]
+    _ = mock
 except ImportError:
     try:
-        import mock
-    except ImportError:
-        raise ImportError("Buildbot tests require the 'mock' module; try 'pip install mock'")
+        from unittest import mock
+    except ImportError as e:
+        raise ImportError("Buildbot tests require the 'mock' module; try 'pip install mock'") from e

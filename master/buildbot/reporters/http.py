@@ -33,7 +33,6 @@ class HttpStatusPush(ReporterBase):
             generators = self._create_default_generators()
 
         super().checkConfig(generators=generators, **kwargs)
-        httpclientservice.HTTPClientService.checkAvailable(self.__class__.__name__)
 
     @defer.inlineCallbacks
     def reconfigService(
@@ -47,8 +46,13 @@ class HttpStatusPush(ReporterBase):
 
         yield super().reconfigService(generators=generators, **kwargs)
 
-        self._http = yield httpclientservice.HTTPClientService.getService(
-            self.master, serverUrl, auth=auth, headers=headers, debug=self.debug, verify=self.verify
+        self._http = yield httpclientservice.HTTPSession(
+            self.master.httpservice,
+            serverUrl,
+            auth=auth,
+            headers=headers,
+            debug=self.debug,
+            verify=self.verify,
         )
 
     def _create_default_generators(self):

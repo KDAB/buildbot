@@ -66,8 +66,6 @@ class PushoverNotifier(ReporterBase):
 
         super().checkConfig(generators=generators)
 
-        httpclientservice.HTTPClientService.checkAvailable(self.__class__.__name__)
-
         if otherParams is not None and set(otherParams.keys()) - VALID_PARAMS:
             config.error(
                 "otherParams can be only 'sound', 'callback', 'timestamp', "
@@ -94,8 +92,8 @@ class PushoverNotifier(ReporterBase):
             self.otherParams = {}
         else:
             self.otherParams = otherParams
-        self._http = yield httpclientservice.HTTPClientService.getService(
-            self.master, 'https://api.pushover.net'
+        self._http = yield httpclientservice.HTTPSession(
+            self.master.httpservice, 'https://api.pushover.net'
         )
 
     def _create_default_generators(self):

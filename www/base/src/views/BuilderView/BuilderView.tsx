@@ -17,7 +17,7 @@
 
 import {observer} from "mobx-react";
 import {useState} from "react";
-import {buildbotSetupPlugin} from "buildbot-plugin-support";
+import {buildbotGetSettings, buildbotSetupPlugin} from "buildbot-plugin-support";
 import {
   Build,
   Builder,
@@ -25,10 +25,17 @@ import {
   DataCollection,
   Forcescheduler,
   Project,
-  useDataAccessor,
+  useDataAccessor, useDataApiDynamicQuery,
   useDataApiQuery
 } from "buildbot-data-js";
-import {TopbarAction, useTopbarItems, useTopbarActions, WorkerBadge} from "buildbot-ui";
+import {
+  getBuildLinkDisplayProperties,
+  TopbarAction,
+  useTopbarItems,
+  useTopbarActions,
+  WorkerBadge,
+  useLoadMoreItemsState
+} from "buildbot-ui";
 import {BuildsTable} from "../../components/BuildsTable/BuildsTable";
 import {BuildRequestsTable} from "../../components/BuildrequestsTable/BuildrequestsTable";
 import {useNavigate, useParams} from "react-router-dom";
@@ -39,6 +46,7 @@ import {FaStop, FaSpinner} from "react-icons/fa";
 import {buildTopbarItemsForBuilder} from "../../util/TopbarUtils";
 import { Tab, Tabs } from "react-bootstrap";
 import { LoadingSpan } from "../../components/LoadingSpan/LoadingSpan";
+import { UrlNotFoundView } from "../UrlNotFoundView/UrlNotFoundView";
 
 const anyCancellableBuilds = (builds: DataCollection<Build>,
                               buildrequests: DataCollection<Buildrequest>) => {
@@ -93,19 +101,21 @@ const buildTopbarActions = (builds: DataCollection<Build>,
 }
 
 export const BuilderView = observer(() => {
-  const builderid = Number.parseInt(useParams<"builderid">().builderid ?? "");
+  const builderid = useParams<"builderid">().builderid
   const navigate = useNavigate();
 
   const accessor = useDataAccessor([builderid]);
 
-  const numBuilds = 200;
+  const initialBuildsFetchLimit = 200;
+  const [buildsFetchLimit, onLoadMoreBuilds] =
+      useLoadMoreItemsState(initialBuildsFetchLimit, initialBuildsFetchLimit);
 
-  const buildersQuery = useDataApiQuery(() => Builder.getAll(accessor, {id: builderid.toString()}));
-  const buildsQuery = useDataApiQuery(() =>
+  const buildersQuery = useDataApiQuery(() => Builder.getAll(accessor, {id: builderid}));
+  const buildsQuery = useDataApiDynamicQuery([buildsFetchLimit], () =>
     buildersQuery.getRelated(builder => Build.getAll(accessor, {query: {
         builderid: builder.builderid,
-        property: ["owners", "workername", "branch", "revision"],
-        limit: numBuilds,
+        property: ["owners", "workername", "branch", "revision", ...getBuildLinkDisplayProperties()],
+        limit: buildsFetchLimit,
         order: '-number'
       }
     })));
@@ -131,11 +141,11 @@ export const BuilderView = observer(() => {
   })));
 
   const builder = buildersQuery.getNthOrNull(0);
-  const builds = buildsQuery.getParentCollectionOrEmpty(builderid.toString());
-  const buildrequests = buildrequestsQuery.getParentCollectionOrEmpty(builderid.toString());
-  const forceschedulers = forceSchedulersQuery.getParentCollectionOrEmpty(builderid.toString());
+  const builds = buildsQuery.getParentCollectionOrEmpty(builder?.id ?? "");
+  const buildrequests = buildrequestsQuery.getParentCollectionOrEmpty(builder?.id ?? "");
+  const forceschedulers = forceSchedulersQuery.getParentCollectionOrEmpty(builder?.id ?? "");
   const project = projectsQuery.getNthOrNull(0);
-  const workers = workersQuery.getParentCollectionOrEmpty(builderid.toString());
+  const workers = workersQuery.getParentCollectionOrEmpty(builder?.id ?? "");
 
   const [isCancelling, setIsCancelling] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -204,12 +214,20 @@ export const BuilderView = observer(() => {
     <ul className="list-inline bb-builder-workers-container">
     {
       !workers.isResolved() ? <LoadingSpan/> :
+      workers.array.length === 0 ? <span>None</span> :
       workers.array.map(worker => (
         <li><WorkerBadge key={worker.name} worker={worker} showWorkerName={true}/></li>
       ))
     }
     </ul>);
   };
+
+  if (!buildersQuery.isResolved()) {
+    return <LoadingSpan />
+  }
+  if (builder === null) {
+    return <UrlNotFoundView />
+  }
 
   return (
     <div className="container">
@@ -220,8 +238,11 @@ export const BuilderView = observer(() => {
       }
       <div>
         <Tabs defaultActiveKey={1}>
-          <Tab eventKey={1} title="Build requests">
+          <Tab eventKey={1} title="Builds">
+            <TableHeading>Builds requests:</TableHeading>
             <BuildRequestsTable buildrequests={buildrequests}/>
+            <BuildsTable builds={builds} builders={null} fetchLimit={buildsFetchLimit}
+                         onLoadMore={onLoadMoreBuilds}/>
           </Tab>
           <Tab eventKey={2} title="Workers">
             {renderWorkers()}
@@ -229,16 +250,14 @@ export const BuilderView = observer(() => {
         </Tabs>
       </div>
 
-      <BuildsTable builds={builds} builders={null}/>
       {shownForceScheduler !== null
-        ? <ForceBuildModal scheduler={shownForceScheduler} builderid={builderid}
+        ? <ForceBuildModal scheduler={shownForceScheduler} builderid={builder.builderid}
                            onClose={onForceBuildModalClose}/>
         : <></>
       }
     </div>
   );
   // TODO: reimplement build duration tab
-  // TODO: display more than 100 builds
 });
 
 buildbotSetupPlugin((reg) => {

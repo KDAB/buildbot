@@ -27,8 +27,7 @@ import {
   useDataApiSingleElementQuery
 } from "buildbot-data-js";
 import {useParams} from "react-router-dom";
-import {useState} from "react";
-import {ChangeDetails} from "buildbot-ui";
+import {getBuildLinkDisplayProperties, ChangeDetails, useLoadMoreItemsState} from "buildbot-ui";
 import {BuildsTable} from "../../components/BuildsTable/BuildsTable";
 import {LoadingDiv} from "../../components/LoadingDiv/LoadingDiv";
 
@@ -37,14 +36,17 @@ export const ChangeBuildsView = observer(() => {
   const changeid = Number.parseInt(useParams<"changeid">().changeid ?? "");
 
   const accessor = useDataAccessor([changeid]);
-  const buildsFetchLimit = buildbotGetSettings().getIntegerSetting('ChangeBuilds.buildsFetchLimit');
+
+  const initialBuildsFetchLimit = buildbotGetSettings().getIntegerSetting("ChangeBuilds.buildsFetchLimit");
+  const [buildsFetchLimit, onLoadMoreBuilds] =
+      useLoadMoreItemsState(initialBuildsFetchLimit, initialBuildsFetchLimit);
 
   const changeQuery = useDataApiQuery(() => Change.getAll(accessor, {id: changeid.toString()}));
   const change = changeQuery.getNthOrNull(0);
 
-  const buildsQuery = useDataApiSingleElementQuery(change,
+  const buildsQuery = useDataApiSingleElementQuery(change, [buildsFetchLimit],
     c => c.getBuilds({query: {
-        property: ["owners", "workername", "branch", "revision"],
+        property: ["owners", "workername", "branch", "revision", ...getBuildLinkDisplayProperties()],
         limit: buildsFetchLimit
       }}));
 
@@ -59,19 +61,24 @@ export const ChangeBuildsView = observer(() => {
       return Builder.getAll(accessor, {query: {builderid__eq: builderIds}})
     });
 
-  const [showDetails, setShowDetails] = useState(false);
+  const renderBuilds = () => {
+    if (!buildsQuery.isResolved()) {
+      return <LoadingDiv/>;
+    }
+    if (buildsQuery.array.length === 0) {
+      return <>None</>
+    }
+    return <BuildsTable builds={buildsQuery} builders={buildersQuery} fetchLimit={buildsFetchLimit}
+                        onLoadMore={onLoadMoreBuilds}/>
+  };
 
   return (
     <div className="container">
       { change !== null
-        ? <ChangeDetails change={change} compact={false}
-                         showDetails={showDetails} setShowDetails={setShowDetails}/>
+        ? <ChangeDetails change={change} compact={false} showDetails={true} setShowDetails={null}/>
         : <LoadingDiv/>
       }
-      { buildsQuery.array.length > 0
-        ? <BuildsTable builds={buildsQuery} builders={buildersQuery}/>
-        : <LoadingDiv/>
-      }
+      {renderBuilds()}
     </div>
   );
 });

@@ -237,12 +237,13 @@ class GitHubEventHandler(PullRequestMixin):
         if self._token:
             p = Properties()
             p.master = self.master
+            p.setProperty("full_name", repo, "change_hook")
             token = yield p.render(self._token)
             headers['Authorization'] = 'token ' + token
 
         url = f'/repos/{repo}/commits/{sha}'
-        http = yield httpclientservice.HTTPClientService.getService(
-            self.master,
+        http = yield httpclientservice.HTTPSession(
+            self.master.httpservice,
             self.github_api_endpoint,
             headers=headers,
             debug=self.debug,
@@ -268,12 +269,13 @@ class GitHubEventHandler(PullRequestMixin):
         if self._token:
             p = Properties()
             p.master = self.master
+            p.setProperty("full_name", repo, "change_hook")
             token = yield p.render(self._token)
             headers["Authorization"] = "token " + token
 
         url = f"/repos/{repo}/pulls/{number}/files"
-        http = yield httpclientservice.HTTPClientService.getService(
-            self.master,
+        http = yield httpclientservice.HTTPSession(
+            self.master.httpservice,
             self.github_api_endpoint,
             headers=headers,
             debug=self.debug,

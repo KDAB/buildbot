@@ -306,12 +306,11 @@ Three basic settings describe the buildmaster in status reports:
 
 :bb:cfg:`title` is a short string that will appear at the top of this buildbot installation's home page (linked to the :bb:cfg:`titleURL`).
 
-:bb:cfg:`titleURL` is a URL string that must end with a slash (``/``).
+:bb:cfg:`titleURL` is a URL string.
 HTML status displays will show ``title`` as a link to :bb:cfg:`titleURL`.
 This URL is often used to provide a link from buildbot HTML pages to your project's home page.
 
 The :bb:cfg:`buildbotURL` string should point to the location where the buildbot's internal web server is visible.
-This URL must end with a slash (``/``).
 
 When status notices are sent to users (e.g., by email or over IRC), :bb:cfg:`buildbotURL` will be used to create a URL to the specific build or problem that they are being notified about.
 
@@ -338,7 +337,8 @@ The default value is 4096, which should be a reasonable default on most file sys
 This setting has no impact on status plugins, and merely affects the required disk space on the master for build logs.
 
 The :bb:cfg:`logCompressionMethod` controls what type of compression is used for build logs.
-The default is 'gz', and the other valid option are 'raw' (no compression), 'gz' or 'lz4' (required lz4 package).
+Valid option are 'raw' (no compression), 'gz', 'lz4' (required lz4 package), 'br' (requires buildbot[brotli] extra) or 'zstd' (requires buildbot[zstd] extra).
+The default is 'zstd' if the ``buildbot[zstd]`` is installed, otherwise defaults to 'gz'.
 
 Please find below some stats extracted from 50x "trial Pyflakes" runs (results may differ according to log type).
 

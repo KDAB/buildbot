@@ -23,7 +23,7 @@ from buildbot_worker.exceptions import AbandonChain
 from buildbot_worker.interfaces import IWorkerCommand
 
 # The following identifier should be updated each time this file is changed
-command_version = "3.2"
+command_version = "3.3"
 
 # version history:
 #  >=1.17: commands are interruptable
@@ -68,10 +68,11 @@ command_version = "3.2"
 #      command.
 #  >= 3.1: rmfile command added to remove a file
 #  >= 3.2: shell command now reports failure reason in case the command timed out.
+#  >= 3.3: shell command now supports max_lines parameter.
 
 
 @implementer(IWorkerCommand)
-class Command(object):
+class Command:
     """This class defines one command that can be invoked by the build master.
     The command is executed on the worker side, and always sends back a
     completion message when it finishes. It may also send intermediate status
@@ -145,12 +146,12 @@ class Command(object):
         missingArgs = [arg for arg in self.requiredArgs if arg not in args]
         if missingArgs:
             raise ValueError(
-                "{0} is missing args: {1}".format(self.__class__.__name__, ", ".join(missingArgs))
+                "{} is missing args: {}".format(self.__class__.__name__, ", ".join(missingArgs))
             )
         self.setup(args)
 
     def log_msg(self, msg, *args):
-        log.msg("(command {0}): {1}".format(self.command_id, msg), *args)
+        log.msg(f"(command {self.command_id}): {msg}", *args)
 
     def setup(self, args):
         """Override this in a subclass to extract items from the args dict."""
@@ -179,7 +180,7 @@ class Command(object):
     def sendStatus(self, status):
         """Send a status update to the master."""
         if self.debug:
-            self.log_msg("sendStatus: {0}".format(status))
+            self.log_msg(f"sendStatus: {status}")
         if not self.running:
             self.log_msg("would sendStatus but not .running")
             return
@@ -198,7 +199,7 @@ class Command(object):
 
     def _abandonOnFailure(self, rc):
         if not isinstance(rc, int):
-            self.log_msg("weird, _abandonOnFailure was given rc={0} ({1})".format(rc, type(rc)))
+            self.log_msg(f"weird, _abandonOnFailure was given rc={rc} ({type(rc)})")
         assert isinstance(rc, int)
         if rc != 0:
             raise AbandonChain(rc)

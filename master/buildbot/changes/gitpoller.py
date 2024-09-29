@@ -230,14 +230,14 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
 
         self.parseGitFeatures(stdout)
         if not self.gitInstalled:
-            raise EnvironmentError('Git is not installed')
+            raise OSError('Git is not installed')
 
         if not self.supportsSshPrivateKeyAsEnvOption:
             has_ssh_private_key = (
                 yield self.renderSecrets(self._git_auth.ssh_private_key)
             ) is not None
             if has_ssh_private_key:
-                raise EnvironmentError('SSH private keys require Git 2.3.0 or newer')
+                raise OSError('SSH private keys require Git 2.3.0 or newer')
 
     def activate(self):
         try:
@@ -348,7 +348,8 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         else:
             url_identifier = f"{git_url.proto}/{_sanitize(git_url.domain)}"
             if git_url.port is not None:
-                url_identifier += f":{git_url.port}"
+                # replace `:` with url encode `%3A`
+                url_identifier += f"%3A{git_url.port}"
 
             if git_url.owner is not None:
                 url_identifier += f"/{_sanitize(git_url.owner)}"
@@ -512,7 +513,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         @d.addCallback
         def process(git_output):
             if not git_output:
-                raise EnvironmentError('could not get commit author for rev')
+                raise OSError('could not get commit author for rev')
             return git_output
 
         return d
@@ -522,7 +523,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         args = ['--no-walk', r'--format=%cN <%cE>', rev, '--']
         res = yield self._dovccmd('log', args, path=self.workdir)
         if not res:
-            raise EnvironmentError('could not get commit committer for rev')
+            raise OSError('could not get commit committer for rev')
         return res
 
     @defer.inlineCallbacks
@@ -654,7 +655,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
                     f'command {full_args} in {path} on repourl {self.repourl} failed '
                     f'with exit code {code}: {stderr}'
                 )
-            raise EnvironmentError(
+            raise OSError(
                 f'command {full_args} in {path} on repourl {self.repourl} '
                 f'failed with exit code {code}: {stderr}'
             )

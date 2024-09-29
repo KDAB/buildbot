@@ -28,8 +28,10 @@ from buildbot.data import exceptions
 from buildbot.util.twisted import async_to_deferred
 
 if TYPE_CHECKING:
+    from typing import Any
     from typing import Literal
 
+    from buildbot.data.resultspec import ResultSpec
     from buildbot.db.builders import BuilderModel
     from buildbot.db.builds import BuildModel
     from buildbot.db.logs import LogModel
@@ -70,7 +72,7 @@ class ResourceType:
             pathPatterns[i] = pp
         self.eventPaths = pathPatterns
 
-    @functools.lru_cache(1)
+    @functools.lru_cache(1)  # noqa: B019
     def getEndpoints(self):
         endpoints = self.endpoints[:]
         for i, ep in enumerate(endpoints):
@@ -79,14 +81,14 @@ class ResourceType:
             endpoints[i] = ep(self, self.master)
         return endpoints
 
-    @functools.lru_cache(1)
+    @functools.lru_cache(1)  # noqa: B019
     def getDefaultEndpoint(self):
         for ep in self.getEndpoints():
             if ep.kind != EndpointKind.COLLECTION:
                 return ep
         return None
 
-    @functools.lru_cache(1)
+    @functools.lru_cache(1)  # noqa: B019
     def getCollectionEndpoint(self):
         for ep in self.getEndpoints():
             if ep.kind == EndpointKind.COLLECTION or ep.isPseudoCollection:
@@ -129,7 +131,15 @@ class Endpoint:
         self.rtype = rtype
         self.master = master
 
-    def get(self, resultSpec, kwargs):
+    def get(self, resultSpec: ResultSpec, kwargs: dict[str, Any]):
+        raise NotImplementedError
+
+    async def stream(self, resultSpec: ResultSpec, kwargs: dict[str, Any]):
+        """
+        This is a prototype interface method for internal use.
+        There could be breaking changes to it.
+        Use at your own risks.
+        """
         raise NotImplementedError
 
     def control(self, action, args, kwargs):

@@ -47,10 +47,10 @@ from buildbot.warnings import DeprecatedApiWarning
 
 global_defaults = {
     "title": 'Buildbot',
-    "titleURL": 'http://buildbot.net',
+    "titleURL": 'http://buildbot.net/',
     "buildbotURL": 'http://localhost:8080/',
     "logCompressionLimit": 4096,
-    "logCompressionMethod": 'gz',
+    "logCompressionMethod": 'zstd',
     "logEncoding": 'utf-8',
     "logMaxTailSize": None,
     "logMaxSize": None,
@@ -138,7 +138,7 @@ class ConfigLoaderTests(ConfigErrorsMixin, dirs.DirsMixin, unittest.SynchronousT
         """
 
         def raise_IOError(*args, **kwargs):
-            raise IOError("error_msg")
+            raise OSError("error_msg")
 
         self.install_config_file('#dummy')
 
@@ -423,10 +423,10 @@ class MasterConfig_loaders(ConfigErrorsMixin, unittest.TestCase):
             self.do_test_load_global({"title": "Very very very very very long title"})
 
     def test_load_global_titleURL(self):
-        self.do_test_load_global({"titleURL": 'hi'}, titleURL='hi')
+        self.do_test_load_global({"titleURL": 'hi'}, titleURL='hi/')
 
     def test_load_global_buildbotURL(self):
-        self.do_test_load_global({"buildbotURL": 'hey'}, buildbotURL='hey')
+        self.do_test_load_global({"buildbotURL": 'hey'}, buildbotURL='hey/')
 
     def test_load_global_changeHorizon(self):
         self.do_test_load_global({"changeHorizon": 10}, changeHorizon=10)
@@ -453,7 +453,7 @@ class MasterConfig_loaders(ConfigErrorsMixin, unittest.TestCase):
             self.cfg.load_global(self.filename, {'logCompressionMethod': 'foo'})
 
         self.assertConfigError(
-            errors, "c['logCompressionMethod'] must be 'raw', 'bz2', 'gz' or 'lz4'"
+            errors, "c['logCompressionMethod'] must be 'raw', 'bz2', 'gz', 'lz4', 'br' or 'zstd'"
         )
 
     def test_load_global_codebaseGenerator(self):

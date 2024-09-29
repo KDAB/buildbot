@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Buildbot documentation build configuration file, created by
 # sphinx-quickstart on Tue Aug 10 15:13:31 2010.
@@ -153,7 +152,6 @@ extlinks = {
     # "pretty" reference that looks like relative path in Buildbot source tree
     # by default.
     'src': ('https://github.com/buildbot/buildbot/tree/master/%s', '%s'),
-    'contrib-src': ('https://github.com/buildbot/buildbot-contrib/tree/master/%s', '%s'),
 }
 
 # Sphinx' link checker.
