@@ -13,9 +13,9 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
 
 import os
-from typing import Optional
 from unittest import SkipTest
 
 from twisted.internet import defer
@@ -32,9 +32,10 @@ from buildbot.util import httpclientservice
 
 
 class TestPushoverNotifier(ConfigErrorsMixin, TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
     # returns a Deferred
     def setupFakeHttp(self):
@@ -44,7 +45,7 @@ class TestPushoverNotifier(ConfigErrorsMixin, TestReactorMixin, unittest.TestCas
 
     @defer.inlineCallbacks
     def setupPushoverNotifier(
-        self, user_key="1234", api_token: Optional[Interpolate] = None, **kwargs
+        self, user_key="1234", api_token: Interpolate | None = None, **kwargs
     ):
         if api_token is None:
             api_token = Interpolate("abcd")
@@ -96,8 +97,7 @@ class TestPushoverNotifier(ConfigErrorsMixin, TestReactorMixin, unittest.TestCas
         creds = os.environ.get('TEST_PUSHOVER_CREDENTIALS')
         if creds is None:
             raise SkipTest(
-                "real pushover test runs only if the variable "
-                "TEST_PUSHOVER_CREDENTIALS is defined"
+                "real pushover test runs only if the variable TEST_PUSHOVER_CREDENTIALS is defined"
             )
         user, token = creds.split(':')
         _http = httpclientservice.HTTPSession(self.master.httpservice, 'https://api.pushover.net')

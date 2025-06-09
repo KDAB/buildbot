@@ -5,24 +5,25 @@
   Copyright Buildbot Team Members
 */
 
-import {action, makeObservable, observable} from "mobx";
-import {BaseClass} from "./BaseClass";
-import {Builder, builderDescriptor} from "./Builder";
-import {IDataDescriptor} from "./DataDescriptor";
-import {IDataAccessor} from "../DataAccessor";
-import {RequestQuery} from "../DataQuery";
+import {action, makeObservable, observable} from 'mobx';
+import {BaseClass} from './BaseClass';
+import {Builder, builderDescriptor} from './Builder';
+import {IDataDescriptor} from './DataDescriptor';
+import {IDataAccessor} from '../DataAccessor';
+import {RequestQuery} from '../DataQuery';
+import {Codebase, codebaseDescriptor} from './Codebase';
 
 export class Project extends BaseClass {
   @observable projectid!: number;
-  @observable description!: string|null;
-  @observable description_format!: string|null;
-  @observable description_html!: string|null;
+  @observable description!: string | null;
+  @observable description_format!: string | null;
+  @observable description_html!: string | null;
   @observable slug!: string[];
   @observable name!: string;
-  @observable active!: boolean|null;
+  @observable active!: boolean | null;
 
-  constructor(accessor: IDataAccessor, endpoint: string, object: any) {
-    super(accessor, endpoint, String(object.projectid));
+  constructor(accessor: IDataAccessor, object: any) {
+    super(accessor, 'projects', String(object.projectid));
     this.update(object);
     makeObservable(this);
   }
@@ -48,20 +49,24 @@ export class Project extends BaseClass {
   }
 
   getBuilders(query: RequestQuery = {}) {
-    return this.get<Builder>("builders", query, builderDescriptor);
+    return this.get<Builder>('builders', query, builderDescriptor);
+  }
+
+  getCodebases(query: RequestQuery = {}) {
+    return this.get<Codebase>('codebases', query, codebaseDescriptor);
   }
 
   static getAll(accessor: IDataAccessor, query: RequestQuery = {}) {
-    return accessor.get("projects", query, projectDescriptor);
+    return accessor.get('projects', query, projectDescriptor);
   }
 }
 
 export class ProjectDescriptor implements IDataDescriptor<Project> {
-  restArrayField = "projects";
-  fieldId: string = "projectid";
+  restArrayField = 'projects';
+  fieldId: string = 'projectid';
 
-  parse(accessor: IDataAccessor, endpoint: string, object: any) {
-    return new Project(accessor, endpoint, object);
+  parse(accessor: IDataAccessor, object: any) {
+    return new Project(accessor, object);
   }
 }
 

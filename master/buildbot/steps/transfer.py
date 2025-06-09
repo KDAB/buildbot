@@ -136,7 +136,7 @@ class FileUpload(_TransferBuildStep):
         # properly. TODO: maybe pass the master's basedir all the way down
         # into the BuildStep so we can do this better.
         masterdest = os.path.expanduser(masterdest)
-        log.msg(f"FileUpload started, from worker {repr(source)} to master {repr(masterdest)}")
+        log.msg(f"FileUpload started, from worker {source!r} to master {masterdest!r}")
 
         if self.description is None:
             self.description = [f'uploading {os.path.basename(source)}']
@@ -179,9 +179,7 @@ class FileUpload(_TransferBuildStep):
         cmd = makeStatusRemoteCommand(self, 'uploadFile', args)
         res = yield self.runTransferCommand(cmd, fileWriter)
 
-        log.msg(
-            f"File '{os.path.basename(self.workersrc)}' upload finished with results {str(res)}"
-        )
+        log.msg(f"File '{os.path.basename(self.workersrc)}' upload finished with results {res!s}")
 
         return res
 
@@ -231,7 +229,7 @@ class DirectoryUpload(_TransferBuildStep):
         # properly. TODO: maybe pass the master's basedir all the way down
         # into the BuildStep so we can do this better.
         masterdest = os.path.expanduser(masterdest)
-        log.msg(f"DirectoryUpload started, from worker {repr(source)} to master {repr(masterdest)}")
+        log.msg(f"DirectoryUpload started, from worker {source!r} to master {masterdest!r}")
 
         self.descriptionDone = f"uploading {os.path.basename(source)}"
         if self.url is not None:
@@ -402,10 +400,13 @@ class MultipleFileUpload(_TransferBuildStep, CompositeStepMixin):
             return SKIPPED
 
         if self.glob:
-            results = yield defer.gatherResults([
-                self.runGlob(os.path.join(self.workdir, source), abandonOnFailure=False)
-                for source in sources
-            ])
+            results = yield defer.gatherResults(
+                [
+                    self.runGlob(os.path.join(self.workdir, source), abandonOnFailure=False)
+                    for source in sources
+                ],
+                consumeErrors=True,
+            )
             sources = [self.workerPathToMasterPath(p) for p in flatten(results)]
 
         log.msg(f"MultipleFileUpload started, from worker {sources!r} to master {masterdest!r}")
@@ -469,13 +470,13 @@ class FileDownload(_TransferBuildStep):
         # paths will be interpreted relative to that
         source = os.path.expanduser(self.mastersrc)
         workerdest = self.workerdest
-        log.msg(f"FileDownload started, from master {repr(source)} to worker {repr(workerdest)}")
+        log.msg(f"FileDownload started, from master {source!r} to worker {workerdest!r}")
 
         self.descriptionDone = ["downloading to", os.path.basename(workerdest)]
 
         # setup structures for reading the file
         try:
-            fp = open(source, 'rb')  # noqa pylint: disable=consider-using-with
+            fp = open(source, 'rb')
         except OSError:
             # if file does not exist, bail out with an error
             yield self.addCompleteLog('stderr', f'File {source!r} not available at master')
@@ -540,7 +541,7 @@ class StringDownload(_TransferBuildStep):
         # we are currently in the buildmaster's basedir, so any non-absolute
         # paths will be interpreted relative to that
         workerdest = self.workerdest
-        log.msg(f"StringDownload started, from master to worker {repr(workerdest)}")
+        log.msg(f"StringDownload started, from master to worker {workerdest!r}")
 
         self.descriptionDone = ["downloading to", os.path.basename(workerdest)]
 
@@ -574,8 +575,7 @@ class JSONStringDownload(StringDownload):
         if workerdest is None:
             raise TypeError("__init__() takes at least 3 arguments")
 
-        if 's' in buildstep_kwargs:
-            del buildstep_kwargs['s']
+        buildstep_kwargs.pop('s', None)
         super().__init__(s=o, workerdest=workerdest, **buildstep_kwargs)
 
     @defer.inlineCallbacks
@@ -593,8 +593,7 @@ class JSONPropertiesDownload(StringDownload):
         if workerdest is None:
             raise TypeError("__init__() takes at least 2 arguments")
 
-        if 's' in buildstep_kwargs:
-            del buildstep_kwargs['s']
+        buildstep_kwargs.pop('s', None)
         super().__init__(s=None, workerdest=workerdest, **buildstep_kwargs)
 
     @defer.inlineCallbacks

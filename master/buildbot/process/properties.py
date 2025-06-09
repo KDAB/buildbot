@@ -12,11 +12,15 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
+from __future__ import annotations
 
 import collections
 import json
 import re
 import weakref
+from typing import TYPE_CHECKING
+from typing import Callable
+from typing import ClassVar
 
 from twisted.internet import defer
 from twisted.python.components import registerAdapter
@@ -27,6 +31,9 @@ from buildbot import util
 from buildbot.interfaces import IProperties
 from buildbot.interfaces import IRenderable
 from buildbot.util import flatten
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @implementer(IProperties)
@@ -46,7 +53,7 @@ class Properties(util.ComparableMixin):
     string when used as a mapping.
     """
 
-    compare_attrs = ('properties',)
+    compare_attrs: ClassVar[Sequence[str]] = ('properties',)
 
     def __init__(self, **kwargs):
         """
@@ -235,6 +242,7 @@ class PropertiesMixin:
     """
 
     set_runtime_properties = False
+    getProperties: Callable[[], IProperties]
 
     def getProperty(self, propname, default=None):
         return self.getProperties().getProperty(propname, default)
@@ -252,7 +260,7 @@ class PropertiesMixin:
             runtime = self.set_runtime_properties
         props.setProperty(propname, value, source, runtime=runtime)
 
-    def render(self, value):
+    def render(self, value) -> defer.Deferred[IRenderable]:
         return self.getProperties().render(value)
 
 
@@ -304,6 +312,9 @@ class RenderableOperatorsMixin:
     def in_(self, other):
         return _OperatorRenderer(self, other, "in", lambda v1, v2: v1 in v2)
 
+    def getRenderingFor(self, iprops: IProperties) -> defer.Deferred:
+        raise NotImplementedError
+
 
 @implementer(IRenderable)
 class _OperatorRenderer(RenderableOperatorsMixin, util.ComparableMixin):
@@ -313,7 +324,7 @@ class _OperatorRenderer(RenderableOperatorsMixin, util.ComparableMixin):
 
     """
 
-    compare_attrs = ('fn',)
+    compare_attrs: ClassVar[Sequence[str]] = ('fn',)
 
     def __init__(self, v1, v2, cstr, comparator):
         self.v1 = v1
@@ -327,7 +338,7 @@ class _OperatorRenderer(RenderableOperatorsMixin, util.ComparableMixin):
         return self.comparator(v1, v2)
 
     def __repr__(self):
-        return f'{repr(self.v1)} {str(self.cstr)} {repr(self.v2)}'
+        return f'{self.v1!r} {self.cstr!s} {self.v2!r}'
 
 
 class _PropertyMap:
@@ -364,9 +375,9 @@ class _PropertyMap:
             # if prop exists and is true (nonempty), use it; otherwise, use
             # repl
             prop, repl = mo.group(1, 2)
-            if prop in self.temp_vals and self.temp_vals[prop]:
+            if self.temp_vals.get(prop):
                 return self.temp_vals[prop]
-            elif prop in properties and properties[prop]:
+            elif prop in properties and properties[prop]:  # noqa: RUF019
                 return properties[prop]
             return repl
 
@@ -412,7 +423,7 @@ class WithProperties(util.ComparableMixin):
     want to interpolate build properties.
     """
 
-    compare_attrs = ('fmtstring', 'args', 'lambda_subs')
+    compare_attrs: ClassVar[Sequence[str]] = ('fmtstring', 'args', 'lambda_subs')
 
     def __init__(self, fmtstring, *args, **lambda_subs):
         self.fmtstring = fmtstring
@@ -448,7 +459,7 @@ class _NotHasKey(util.ComparableMixin):
     check it with ``==`` or ``!=``.
     """
 
-    compare_attrs = ()
+    compare_attrs: ClassVar[Sequence[str]] = ()
 
 
 # any instance of _NotHasKey would do, yet we don't want to create and delete
@@ -458,7 +469,14 @@ _notHasKey = _NotHasKey()
 
 @implementer(IRenderable)
 class _Lookup(util.ComparableMixin):
-    compare_attrs = ('value', 'index', 'default', 'defaultWhenFalse', 'hasKey', 'elideNoneAs')
+    compare_attrs: ClassVar[Sequence[str]] = (
+        'value',
+        'index',
+        'default',
+        'defaultWhenFalse',
+        'hasKey',
+        'elideNoneAs',
+    )
 
     def __init__(
         self, value, index, default=None, defaultWhenFalse=True, hasKey=_notHasKey, elideNoneAs=None
@@ -473,23 +491,23 @@ class _Lookup(util.ComparableMixin):
     def __repr__(self):
         parts = [repr(self.index)]
         if self.default is not None:
-            parts.append(f', default={repr(self.default)}')
+            parts.append(f', default={self.default!r}')
         if not self.defaultWhenFalse:
             parts.append(', defaultWhenFalse=False')
         if self.hasKey != _notHasKey:
-            parts.append(f', hasKey={repr(self.hasKey)}')
+            parts.append(f', hasKey={self.hasKey!r}')
         if self.elideNoneAs is not None:
-            parts.append(f', elideNoneAs={repr(self.elideNoneAs)}')
+            parts.append(f', elideNoneAs={self.elideNoneAs!r}')
 
         parts_str = ''.join(parts)
 
-        return f'_Lookup({repr(self.value)}, {parts_str})'
+        return f'_Lookup({self.value!r}, {parts_str})'
 
     @defer.inlineCallbacks
     def getRenderingFor(self, build):
         value = build.render(self.value)
         index = build.render(self.index)
-        value, index = yield defer.gatherResults([value, index])
+        value, index = yield defer.gatherResults([value, index], consumeErrors=True)
         if index not in value:
             rv = yield build.render(self.default)
         else:
@@ -571,7 +589,7 @@ class _SecretIndexer:
 
 @implementer(IRenderable)
 class _SourceStampDict(util.ComparableMixin):
-    compare_attrs = ('codebase',)
+    compare_attrs: ClassVar[Sequence[str]] = ('codebase',)
 
     def __init__(self, codebase):
         self.codebase = codebase
@@ -585,7 +603,7 @@ class _SourceStampDict(util.ComparableMixin):
 
 @implementer(IRenderable)
 class _Lazy(util.ComparableMixin):
-    compare_attrs = ('value',)
+    compare_attrs: ClassVar[Sequence[str]] = ('value',)
 
     def __init__(self, value):
         self.value = value
@@ -594,7 +612,7 @@ class _Lazy(util.ComparableMixin):
         return self.value
 
     def __repr__(self):
-        return f'_Lazy({repr(self.value)})'
+        return f'_Lazy({self.value!r})'
 
 
 @implementer(IRenderable)
@@ -604,7 +622,7 @@ class Interpolate(RenderableOperatorsMixin, util.ComparableMixin):
     want to interpolate build properties.
     """
 
-    compare_attrs = ('fmtstring', 'args', 'kwargs')
+    compare_attrs: ClassVar[Sequence[str]] = ('fmtstring', 'args', 'kwargs')
 
     identifier_re = re.compile(r'^[\w._-]*$')
 
@@ -620,10 +638,10 @@ class Interpolate(RenderableOperatorsMixin, util.ComparableMixin):
 
     def __repr__(self):
         if self.args:
-            return f'Interpolate({repr(self.fmtstring)}, *{repr(self.args)})'
+            return f'Interpolate({self.fmtstring!r}, *{self.args!r})'
         elif self.kwargs:
-            return f'Interpolate({repr(self.fmtstring)}, **{repr(self.kwargs)})'
-        return f'Interpolate({repr(self.fmtstring)})'
+            return f'Interpolate({self.fmtstring!r}, **{self.kwargs!r})'
+        return f'Interpolate({self.fmtstring!r})'
 
     def _parse_substitution_prop(self, arg):
         try:
@@ -656,7 +674,7 @@ class Interpolate(RenderableOperatorsMixin, util.ComparableMixin):
                 repl = None
             except ValueError:
                 config.error(
-                    "Must specify both codebase and attribute for " f"src Interpolation '{arg}'"
+                    f"Must specify both codebase and attribute for src Interpolation '{arg}'"
                 )
                 return {}, None, None
 
@@ -751,8 +769,7 @@ class Interpolate(RenderableOperatorsMixin, util.ComparableMixin):
             truePart, falsePart = self._splitBalancedParen(delim, repl[1:])
         except ValueError:
             config.error(
-                f"invalid Interpolate ternary expression '{repl[1:]}' "
-                f"with delimiter '{repl[0]}'"
+                f"invalid Interpolate ternary expression '{repl[1:]}' with delimiter '{repl[0]}'"
             )
             return None
         return _Lookup(
@@ -788,15 +805,15 @@ class Interpolate(RenderableOperatorsMixin, util.ComparableMixin):
                 if key not in self.interpolations:
                     config.error(f"invalid Interpolate default type '{repl[0]}'")
 
+    @defer.inlineCallbacks
     def getRenderingFor(self, build):
         props = build.getProperties()
         if self.args:
-            d = props.render(self.args)
-            d.addCallback(lambda args: self.fmtstring % tuple(args))
+            args = yield props.render(self.args)
+            return self.fmtstring % tuple(args)
         else:
-            d = props.render(self.interpolations)
-            d.addCallback(lambda res: self.fmtstring % res)
-        return d
+            res = yield props.render(self.interpolations)
+            return self.fmtstring % res
 
 
 @implementer(IRenderable)
@@ -805,7 +822,7 @@ class Property(RenderableOperatorsMixin, util.ComparableMixin):
     An instance of this class renders a property of a build.
     """
 
-    compare_attrs = ('key', 'default', 'defaultWhenFalse')
+    compare_attrs: ClassVar[Sequence[str]] = ('key', 'default', 'defaultWhenFalse')
 
     def __init__(self, key, default=None, defaultWhenFalse=True):
         """
@@ -845,7 +862,7 @@ class FlattenList(RenderableOperatorsMixin, util.ComparableMixin):
     An instance of this class flattens all nested lists in a list
     """
 
-    compare_attrs = ('nestedlist',)
+    compare_attrs: ClassVar[Sequence[str]] = ('nestedlist',)
 
     def __init__(self, nestedlist, types=(list, tuple)):
         """
@@ -855,14 +872,10 @@ class FlattenList(RenderableOperatorsMixin, util.ComparableMixin):
         self.nestedlist = nestedlist
         self.types = types
 
+    @defer.inlineCallbacks
     def getRenderingFor(self, props):
-        d = props.render(self.nestedlist)
-
-        @d.addCallback
-        def flat(r):
-            return flatten(r, self.types)
-
-        return d
+        r = yield props.render(self.nestedlist)
+        return flatten(r, self.types)
 
     def __add__(self, b):
         if isinstance(b, FlattenList):
@@ -872,7 +885,7 @@ class FlattenList(RenderableOperatorsMixin, util.ComparableMixin):
 
 @implementer(IRenderable)
 class _Renderer(util.ComparableMixin):
-    compare_attrs = ('fn',)
+    compare_attrs: ClassVar[Sequence[str]] = ('fn',)
 
     def __init__(self, fn):
         self.fn = fn
@@ -898,8 +911,8 @@ class _Renderer(util.ComparableMixin):
 
     def __repr__(self):
         if self.args or self.kwargs:
-            return f'renderer({repr(self.fn)}, args={repr(self.args)}, kwargs={repr(self.kwargs)})'
-        return f'renderer({repr(self.fn)})'
+            return f'renderer({self.fn!r}, args={self.args!r}, kwargs={self.kwargs!r})'
+        return f'renderer({self.fn!r})'
 
 
 def renderer(fn):
@@ -936,7 +949,7 @@ class _ListRenderer:
         self.value = value
 
     def getRenderingFor(self, build):
-        return defer.gatherResults([build.render(e) for e in self.value])
+        return defer.gatherResults([build.render(e) for e in self.value], consumeErrors=True)
 
 
 registerAdapter(_ListRenderer, list, IRenderable)
@@ -952,7 +965,7 @@ class _TupleRenderer:
         self.value = value
 
     def getRenderingFor(self, build):
-        d = defer.gatherResults([build.render(e) for e in self.value])
+        d = defer.gatherResults([build.render(e) for e in self.value], consumeErrors=True)
         d.addCallback(tuple)
         return d
 

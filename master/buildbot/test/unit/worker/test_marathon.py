@@ -27,20 +27,24 @@ from buildbot.test.reactor import TestReactorMixin
 from buildbot.worker.marathon import MarathonLatentWorker
 
 
-class TestMarathonLatentWorker(unittest.TestCase, TestReactorMixin):
+class TestMarathonLatentWorker(TestReactorMixin, unittest.TestCase):
     def setUp(self):
         self.setup_test_reactor()
         self.build = Properties(image="busybox:latest", builder="docker_worker")
         self.worker = None
+        self.master = None
+
+        def cleanup():
+            if self.worker is not None:
+
+                class FakeResult:
+                    code = 200
+
+                self._http.delete = lambda _: defer.succeed(FakeResult())
+
+        self.addCleanup(cleanup)
 
     def tearDown(self):
-        if self.worker is not None:
-
-            class FakeResult:
-                code = 200
-
-            self._http.delete = lambda _: defer.succeed(FakeResult())
-            self.worker.master.stopService()
         self.flushLoggedErrors(LatentWorkerSubstantiatiationCancelled)
 
     def test_constructor_normal(self):
@@ -53,13 +57,15 @@ class TestMarathonLatentWorker(unittest.TestCase, TestReactorMixin):
         kwargs.setdefault('image', 'debian:wheezy')
         worker = MarathonLatentWorker('bot', 'tcp://marathon.local', **kwargs)
         self.worker = worker
-        master = fakemaster.make_master(self, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantData=True)
         self._http = yield fakehttpclientservice.HTTPClientService.getService(
-            master, self, 'tcp://marathon.local', auth=kwargs.get('auth')
+            self.master, self, 'tcp://marathon.local', auth=kwargs.get('auth')
         )
-        yield worker.setServiceParent(master)
+        yield worker.setServiceParent(self.master)
         worker.reactor = self.reactor
-        yield master.startService()
+        yield self.master.startService()
+        self.addCleanup(self.master.stopService)
+
         worker.masterhash = "masterhash"
         return worker
 
@@ -94,6 +100,7 @@ class TestMarathonLatentWorker(unittest.TestCase, TestReactorMixin):
                 'id': 'buildbot-worker/buildbot-bot-masterhash',
                 'env': {
                     'BUILDMASTER': "master",
+                    'BUILDMASTER_PROTOCOL': 'pb',
                     'BUILDMASTER_PORT': '1234',
                     'WORKERNAME': 'bot',
                     'WORKERPASS': "pass",
@@ -131,6 +138,7 @@ class TestMarathonLatentWorker(unittest.TestCase, TestReactorMixin):
                 'id': 'buildbot-worker/buildbot-bot-masterhash',
                 'env': {
                     'BUILDMASTER': "master",
+                    'BUILDMASTER_PROTOCOL': 'pb',
                     'BUILDMASTER_PORT': '1234',
                     'WORKERNAME': 'bot',
                     'WORKERPASS': "pass",
@@ -164,6 +172,7 @@ class TestMarathonLatentWorker(unittest.TestCase, TestReactorMixin):
                 'id': 'buildbot-worker/buildbot-bot-masterhash',
                 'env': {
                     'BUILDMASTER': "master",
+                    'BUILDMASTER_PROTOCOL': 'pb',
                     'BUILDMASTER_PORT': '1234',
                     'WORKERNAME': 'bot',
                     'WORKERPASS': "pass",
@@ -204,6 +213,7 @@ class TestMarathonLatentWorker(unittest.TestCase, TestReactorMixin):
                 'id': 'buildbot-worker/buildbot-bot-masterhash',
                 'env': {
                     'BUILDMASTER': "master",
+                    'BUILDMASTER_PROTOCOL': 'pb',
                     'BUILDMASTER_PORT': '1234',
                     'WORKERNAME': 'bot',
                     'WORKERPASS': "pass",

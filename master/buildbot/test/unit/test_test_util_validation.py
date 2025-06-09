@@ -26,13 +26,13 @@ from buildbot.util import UTC
 class VerifyDict(unittest.TestCase):
     def doValidationTest(self, validator, good, bad):
         for g in good:
-            log.msg(f'expect {repr(g)} to be good')
+            log.msg(f'expect {g!r} to be good')
             msgs = list(validator.validate('g', g))
-            self.assertEqual(msgs, [], f'messages for {repr(g)}')
+            self.assertEqual(msgs, [], f'messages for {g!r}')
         for b in bad:
-            log.msg(f'expect {repr(b)} to be bad')
+            log.msg(f'expect {b!r} to be bad')
             msgs = list(validator.validate('b', b))
-            self.assertNotEqual(msgs, [], f'no messages for {repr(b)}')
+            self.assertNotEqual(msgs, [], f'no messages for {b!r}')
             log.msg('..got messages:')
             for msg in msgs:
                 log.msg("  " + msg)
@@ -79,7 +79,7 @@ class VerifyDict(unittest.TestCase):
             # Default encoding of Windows console is 'cp1252'
             # which cannot encode the snowman.
             raise unittest.SkipTest(
-                "Cannot encode weird unicode " f"on this platform with {os_encoding}"
+                f"Cannot encode weird unicode on this platform with {os_encoding}"
             ) from e
 
         self.doValidationTest(

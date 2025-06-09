@@ -42,8 +42,8 @@ from buildbot.process.results import RETRY
 from buildbot.process.results import SKIPPED
 from buildbot.process.results import SUCCESS
 from buildbot.process.results import WARNINGS
+from buildbot.test import fakedb
 from buildbot.test.fake import fakebuild
-from buildbot.test.fake import fakemaster
 from buildbot.test.fake import worker
 from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.steps import ExpectGlob
@@ -118,9 +118,6 @@ class TestBuildStep(
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     # support
 
     def _setupWaterfallTest(self, hideStepIf, expect, expectedResult=SUCCESS):
@@ -184,8 +181,7 @@ class TestBuildStep(
         updateBuildSummaryPolicy raise ConfigError in case of bad type
         """
         with self.assertRaisesConfigError(
-            "BuildStep updateBuildSummaryPolicy must be "
-            "a list of result ids or boolean but it is 2"
+            "BuildStep updateBuildSummaryPolicy must be a list of result ids or boolean but it is 2"
         ):
             buildstep.BuildStep(updateBuildSummaryPolicy=FAILURE)
 
@@ -738,6 +734,7 @@ class TestBuildStep(
         step.setStatistic('ba', 0.298)
         self.assertEqual(step.getStatistics(), {'rbi': 13, 'ba': 0.298})
 
+    @defer.inlineCallbacks
     def setup_summary_test(self):
         self.patch(NewStyleStep, 'getCurrentSummary', lambda self: defer.succeed({'step': 'C'}))
         self.patch(
@@ -746,59 +743,82 @@ class TestBuildStep(
             lambda self: defer.succeed({'step': 'CS', 'build': 'CB'}),
         )
         step = create_step_from_step_or_factory(NewStyleStep())
-        step.master = fakemaster.make_master(self, wantData=True, wantDb=True)
+        step.master = self.master
         step.stepid = 13
         step.build = fakebuild.FakeBuild()
+
+        yield step.master.db.insert_test_data([
+            fakedb.Builder(id=77),
+            fakedb.Worker(id=13, name='wrk'),
+            fakedb.Master(id=88),
+            fakedb.Buildset(id=8822),
+            fakedb.BuildRequest(id=82, builderid=77, buildsetid=8822),
+            fakedb.Build(
+                id=14, builderid=77, masterid=88, workerid=13, buildrequestid=82, number=3
+            ),
+            fakedb.Step(id=13, buildid=14, number=9, name='make'),
+        ])
         return step
 
+    @defer.inlineCallbacks
     def test_updateSummary_running(self):
-        step = self.setup_summary_test()
+        step = yield self.setup_summary_test()
         step._running = True
         step.updateSummary()
         self.reactor.advance(1)
-        self.assertEqual(step.master.data.updates.stepStateString[13], 'C')
+        step_data = yield self.master.data.get(('steps', 13))
+        self.assertEqual(step_data['state_string'], 'C')
 
+    @defer.inlineCallbacks
     def test_updateSummary_running_empty_dict(self):
-        step = self.setup_summary_test()
+        step = yield self.setup_summary_test()
         step.getCurrentSummary = lambda: {}
         step._running = True
         step.updateSummary()
         self.reactor.advance(1)
-        self.assertEqual(step.master.data.updates.stepStateString[13], 'finished')
+        step_data = yield self.master.data.get(('steps', 13))
+        self.assertEqual(step_data['state_string'], 'finished')
 
+    @defer.inlineCallbacks
     def test_updateSummary_running_not_unicode(self):
-        step = self.setup_summary_test()
+        step = yield self.setup_summary_test()
         step.getCurrentSummary = lambda: {'step': b'bytestring'}
         step._running = True
         step.updateSummary()
         self.reactor.advance(1)
         self.assertEqual(len(self.flushLoggedErrors(TypeError)), 1)
 
+    @defer.inlineCallbacks
     def test_updateSummary_running_not_dict(self):
-        step = self.setup_summary_test()
+        step = yield self.setup_summary_test()
         step.getCurrentSummary = lambda: 'foo!'
         step._running = True
         step.updateSummary()
         self.reactor.advance(1)
         self.assertEqual(len(self.flushLoggedErrors(TypeError)), 1)
 
+    @defer.inlineCallbacks
     def test_updateSummary_finished(self):
-        step = self.setup_summary_test()
+        step = yield self.setup_summary_test()
         step._running = False
         step.updateSummary()
         self.reactor.advance(1)
-        self.assertEqual(step.master.data.updates.stepStateString[13], 'CS')
+        step_data = yield self.master.data.get(('steps', 13))
+        self.assertEqual(step_data['state_string'], 'CS')
 
+    @defer.inlineCallbacks
     def test_updateSummary_finished_empty_dict(self):
-        step = self.setup_summary_test()
+        step = yield self.setup_summary_test()
         step.getResultSummary = lambda: {}
         step._running = False
         step.updateSummary()
         self.reactor.advance(1)
-        self.assertEqual(step.master.data.updates.stepStateString[13], 'finished')
+        step_data = yield self.master.data.get(('steps', 13))
+        self.assertEqual(step_data['state_string'], 'finished')
 
+    @defer.inlineCallbacks
     def test_updateSummary_finished_not_dict(self):
-        step = self.setup_summary_test()
+        step = yield self.setup_summary_test()
         step.getResultSummary = lambda: 'foo!'
         step._running = False
         step.updateSummary()
@@ -948,6 +968,7 @@ class TestBuildStep(
         step.master = mock.Mock()
         step.master.reactor = self.reactor
         step.build = mock.Mock()
+        step.build.setUniqueStepName = lambda name: name
         step.build._locks_to_acquire = []
         step.build.properties.cleanupTextFromSecrets = lambda s: s
         step.build.builder.botmaster.getLockFromLockAccesses = mock.Mock(return_value=[])
@@ -1079,10 +1100,11 @@ class InterfaceTests(interfaces.InterfaceTests):
             pass
 
 
-class TestFakeItfc(unittest.TestCase, TestBuildStepMixin, TestReactorMixin, InterfaceTests):
+class TestFakeItfc(TestBuildStepMixin, TestReactorMixin, InterfaceTests, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setup_test_build_step()
+        yield self.setup_test_build_step()
         self.setup_step(buildstep.BuildStep())
 
 
@@ -1108,9 +1130,6 @@ class TestCommandMixin(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         yield self.setup_test_build_step()
         self.setup_step(CommandMixinExample())
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     @defer.inlineCallbacks
     def test_runRmdir(self):
@@ -1224,9 +1243,6 @@ class TestShellMixin(
     def setUp(self):
         self.setup_test_reactor()
         yield self.setup_test_build_step(with_secrets={"s3cr3t": "really_safe_string"})
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     def test_setupShellMixin_bad_arg(self):
         mixin = SimpleShellCommand()
@@ -1439,7 +1455,7 @@ class TestShellMixin(
     @defer.inlineCallbacks
     def test_env(self):
         self.setup_step(SimpleShellCommand(command=['cmd', 'arg'], env={'BAR': 'BAR'}))
-        self.build.builder.config.env = {'FOO': 'FOO'}
+        self.build.env = {'FOO': 'FOO'}
         self.expect_commands(
             ExpectShell(
                 workdir='wkdir', command=['cmd', 'arg'], env={'FOO': 'FOO', 'BAR': 'BAR'}

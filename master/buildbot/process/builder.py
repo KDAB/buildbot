@@ -18,6 +18,8 @@ from __future__ import annotations
 import warnings
 import weakref
 from typing import TYPE_CHECKING
+from typing import Any
+from typing import Callable
 
 from twisted.application import service
 from twisted.internet import defer
@@ -38,8 +40,18 @@ from buildbot.util import service as util_service
 from buildbot.util.render_description import render_description
 
 if TYPE_CHECKING:
+    from twisted.internet.defer import Deferred
+
     from buildbot.config.builder import BuilderConfig
     from buildbot.config.master import MasterConfig
+    from buildbot.data.buildrequests import BuildRequestData
+    from buildbot.data.workers import Worker
+    from buildbot.master import BuildMaster
+
+    CollapseRequestFn = Callable[
+        [BuildMaster, "Builder", BuildRequestData, BuildRequestData],
+        "bool | Deferred[bool]",
+    ]
 
 
 def enforceChosenWorker(bldr, workerforbuilder, breq):
@@ -52,17 +64,16 @@ def enforceChosenWorker(bldr, workerforbuilder, breq):
 
 
 class Builder(util_service.ReconfigurableServiceMixin, service.MultiService):
-    # reconfigure builders before workers
-    reconfig_priority = 196
+    master: BuildMaster | None = None
 
     @property
     def expectations(self):
         warnings.warn("'Builder.expectations' is deprecated.", stacklevel=2)
         return None
 
-    def __init__(self, name):
+    def __init__(self, name: str) -> None:
         super().__init__()
-        self.name = name
+        self.name: str | None = name  # type: ignore[assignment]
 
         # this is filled on demand by getBuilderId; don't access it directly
         self._builderid = None
@@ -70,18 +81,18 @@ class Builder(util_service.ReconfigurableServiceMixin, service.MultiService):
         # build/wannabuild slots: Build objects move along this sequence
         self.building: list[Build] = []
         # old_building holds active builds that were stolen from a predecessor
-        self.old_building = weakref.WeakKeyDictionary()
+        self.old_building: weakref.WeakKeyDictionary[Build, Any] = weakref.WeakKeyDictionary()
 
         # workers which have connected but which are not yet available.
         # These are always in the ATTACHING state.
-        self.attaching_workers = []
+        self.attaching_workers: list[Worker] = []
 
         # workers at our disposal. Each WorkerForBuilder instance has a
         # .state that is IDLE, PINGING, or BUILDING. "PINGING" is used when a
         # Build is about to start, to make sure that they're still alive.
-        self.workers = []
+        self.workers: list[Worker] = []
 
-        self.config = None
+        self.config: BuilderConfig | None = None
 
         # Updated in reconfigServiceWithBuildbotConfig
         self.project_name = None
@@ -151,7 +162,7 @@ class Builder(util_service.ReconfigurableServiceMixin, service.MultiService):
         return False
 
     def __repr__(self):
-        return f"<Builder '{repr(self.name)}' at {id(self)}>"
+        return f"<Builder '{self.name!r}' at {id(self)}>"
 
     def getBuilderIdForName(self, name):
         # buildbot.config should ensure this is already unicode, but it doesn't
@@ -470,16 +481,13 @@ class Builder(util_service.ReconfigurableServiceMixin, service.MultiService):
         if wfb.worker:
             wfb.worker.releaseLocks()
 
+    @defer.inlineCallbacks
     def _resubmit_buildreqs(self, build):
         brids = [br.id for br in build.requests]
-        d = self.master.data.updates.unclaimBuildRequests(brids)
+        yield self.master.data.updates.unclaimBuildRequests(brids)
 
-        @d.addCallback
-        def notify(_):
-            pass  # XXX method does not exist
-            # self._msg_buildrequests_unclaimed(build.requests)
-
-        return d
+        # XXX method does not exist
+        # self._msg_buildrequests_unclaimed(build.requests)
 
     # Build Creation
 
@@ -503,24 +511,33 @@ class Builder(util_service.ReconfigurableServiceMixin, service.MultiService):
     # a few utility functions to make the maybeStartBuild a bit shorter and
     # easier to read
 
-    def getCollapseRequestsFn(self):
+    def getCollapseRequestsFn(
+        self,
+    ) -> CollapseRequestFn | None:
         """Helper function to determine which collapseRequests function to use
         from L{_collapseRequests}, or None for no merging"""
         # first, seek through builder, global, and the default
-        collapseRequests_fn = self.config.collapseRequests
+        assert self.config is not None
+        collapseRequests_fn: CollapseRequestFn | bool | None = self.config.collapseRequests
         if collapseRequests_fn is None:
+            assert self.master is not None
             collapseRequests_fn = self.master.config.collapseRequests
         if collapseRequests_fn is None:
             collapseRequests_fn = True
 
         # then translate False and True properly
         if collapseRequests_fn is False:
-            collapseRequests_fn = None
+            return None
         elif collapseRequests_fn is True:
-            collapseRequests_fn = self._defaultCollapseRequestFn
+            return self._defaultCollapseRequestFn
 
         return collapseRequests_fn
 
     @staticmethod
-    def _defaultCollapseRequestFn(master, builder, brdict1, brdict2):
+    def _defaultCollapseRequestFn(
+        master: BuildMaster,
+        builder: Builder,
+        brdict1: BuildRequestData,
+        brdict2: BuildRequestData,
+    ) -> defer.Deferred[bool]:
         return buildrequest.BuildRequest.canBeCollapsed(master, brdict1, brdict2)

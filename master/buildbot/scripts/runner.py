@@ -19,9 +19,12 @@
 # Also don't forget to mirror your changes on command-line options in manual
 # pages and reStructuredText documentation.
 
+from __future__ import annotations
+
 import getpass
 import sys
 import textwrap
+from typing import Any
 
 import sqlalchemy as sa
 from twisted.python import reflect
@@ -65,7 +68,7 @@ class UpgradeMasterOptions(base.BasedirMixin, base.SubcommandOptions):
         ],
         ["replace", "r", "Replace any modified files without confirmation."],
     ]
-    optParameters = []
+    optParameters: list[tuple[str, str | None, Any, str]] = []
 
     def getSynopsis(self):
         return "Usage:    buildbot upgrade-master [options] [<basedir>]"
@@ -616,13 +619,13 @@ class UserOptions(base.SubcommandOptions):
     def _checkValidTypes(self, info):
         from buildbot.process.users import users
 
-        valid = set(['identifier', 'email'] + users.srcs)
+        valid = set(["identifier", "email", *users.srcs])
 
         for user in info:
             for attr_type in user:
                 if attr_type not in valid:
                     raise usage.UsageError(
-                        "Type not a valid attr_type, must be in: " f"{', '.join(valid)}"
+                        f"Type not a valid attr_type, must be in: {', '.join(valid)}"
                     )
 
     def postOptions(self):
@@ -634,7 +637,7 @@ class UserOptions(base.SubcommandOptions):
         if not op:
             raise usage.UsageError("you must specify an operation: add, remove, update, get")
         if op not in ['add', 'remove', 'update', 'get']:
-            raise usage.UsageError(f"bad op {repr(op)}, use 'add', 'remove', 'update', " "or 'get'")
+            raise usage.UsageError(f"bad op {op!r}, use 'add', 'remove', 'update', or 'get'")
 
         if not self.get('username') or not self.get('passwd'):
             raise usage.UsageError("A username and password must be given")
@@ -662,8 +665,7 @@ class UserOptions(base.SubcommandOptions):
                 for user in info:
                     if 'identifier' not in user:
                         raise usage.UsageError(
-                            "no ids found in update info; "
-                            "use: --info=id:type=value,type=value,.."
+                            "no ids found in update info; use: --info=id:type=value,type=value,.."
                         )
             if op == 'add':
                 for user in info:
@@ -685,16 +687,6 @@ class DataSpecOption(base.BasedirMixin, base.SubcommandOptions):
 
     def getSynopsis(self):
         return "Usage:   buildbot dataspec [options]"
-
-
-class GenGraphQLOption(base.BasedirMixin, base.SubcommandOptions):
-    subcommandFunction = "buildbot.scripts.gengraphql.gengraphql"
-    optParameters = [
-        ['out', 'o', "graphql.schema", "output to specified path"],
-    ]
-
-    def getSynopsis(self):
-        return "Usage:   buildbot graphql-schema [options]"
 
 
 class DevProxyOptions(base.BasedirMixin, base.SubcommandOptions):
@@ -738,7 +730,7 @@ class CleanupDBOptions(base.BasedirMixin, base.SubcommandOptions):
         # when this command has several maintenance jobs, we should make
         # them optional here. For now there is only one.
     ]
-    optParameters = []
+    optParameters: list[tuple[str, str | None, Any, str]] = []
 
     def getSynopsis(self):
         return "Usage:    buildbot cleanupdb [options] [<basedir>]"
@@ -755,6 +747,8 @@ class CleanupDBOptions(base.BasedirMixin, base.SubcommandOptions):
     This command uses the database specified in
     the master configuration file.  If you wish to use a database other than
     the default (sqlite), be sure to set that parameter before upgrading.
+    This command runs for as long as it takes to finish the job including the
+    time needed to check the master configuration file.
     """)
 
 
@@ -763,6 +757,7 @@ class CopyDBOptions(base.BasedirMixin, base.SubcommandOptions):
 
     optFlags = [
         ('quiet', 'q', "Don't display error messages or tracebacks"),
+        ('ignore-fk-error-rows', None, 'Ignore rows that have foreign key constraint errors'),
     ]
 
     def getSynopsis(self):
@@ -837,7 +832,6 @@ class Options(usage.Options):
             DevProxyOptions,
             "Run a fake web server serving the local ui frontend and a distant rest and websocket api.",
         ],
-        ['graphql-schema', None, GenGraphQLOption, "Output graphql api schema"],
         ['cleanupdb', None, CleanupDBOptions, "cleanup the database"],
         ["copy-db", None, CopyDBOptions, "copy the database"],
     ]

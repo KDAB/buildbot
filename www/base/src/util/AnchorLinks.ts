@@ -15,33 +15,36 @@
   Copyright Buildbot Team Members
 */
 
-import { useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import {useEffect, useRef} from 'react';
+import {useLocation} from 'react-router-dom';
 
-export function useScrollToAnchor(dependencies: (string|number)[]) {
+export function useScrollToAnchor(dependencies: (string | number)[]) {
   const location = useLocation();
-  const highlightedElement = useRef<HTMLElement|null>(null);
+  const highlightedElement = useRef<HTMLElement | null>(null);
 
   const clearCurrentHighlightedElement = () => {
     if (highlightedElement.current !== null) {
-      highlightedElement.current.className =
-        highlightedElement.current.className.replaceAll(" bb-anchor-target", "");
+      highlightedElement.current.className = highlightedElement.current.className.replaceAll(
+        ' bb-anchor-target',
+        '',
+      );
       highlightedElement.current = null;
     }
-  }
+  };
 
+  const dependencyString = dependencies.join('-');
   useEffect(() => {
-    var anchorName = '';
+    let anchorName = '';
     if (location.hash) {
       anchorName = location.hash.slice(1);
     }
 
-    if (anchorName === "") {
+    if (anchorName === '') {
       clearCurrentHighlightedElement();
       return;
     }
 
-    var el = document.getElementById(anchorName);
+    const el = document.getElementById(anchorName);
     if (el === null) {
       clearCurrentHighlightedElement();
       return;
@@ -54,10 +57,10 @@ export function useScrollToAnchor(dependencies: (string|number)[]) {
     clearCurrentHighlightedElement();
 
     highlightedElement.current = el;
-    el.className += " bb-anchor-target";
+    el.className += ' bb-anchor-target';
 
     setTimeout(() => {
-      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el?.scrollIntoView({behavior: 'smooth', block: 'start'});
     }, 100);
-  }, [location, dependencies.join("-")]);
+  }, [location, dependencyString]);
 }

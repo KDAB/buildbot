@@ -12,7 +12,7 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
-
+from __future__ import annotations
 
 from twisted import trial
 from twisted.internet import defer
@@ -30,17 +30,16 @@ class EndpointMixin(TestReactorMixin, interfaces.InterfaceTests):
     # test mixin for testing Endpoint subclasses
 
     # class being tested
-    endpointClass = None
+    endpointClass: type[base.Endpoint] | None = None
 
     # the corresponding resource type - this will be instantiated at
     # self.data.rtypes[rtype.type] and self.rtype
-    resourceTypeClass = None
+    resourceTypeClass: type[base.ResourceType] | None = None
 
+    @defer.inlineCallbacks
     def setUpEndpoint(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
-        self.db = self.master.db
-        self.mq = self.master.mq
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
         self.data = self.master.data
         self.matcher = pathmatch.Matcher()
 
@@ -51,12 +50,12 @@ class EndpointMixin(TestReactorMixin, interfaces.InterfaceTests):
 
         # this usually fails when a single-element pathPattern does not have a
         # trailing comma
-        pathPatterns = self.ep.pathPatterns.split()
+        pathPatterns = self.ep.pathPatterns
         for pp in pathPatterns:
             if pp == '/':
                 continue
             if not pp.startswith('/') or pp.endswith('/'):
-                raise AssertionError(f"invalid pattern {repr(pp)}")
+                raise AssertionError(f"invalid pattern {pp!r}")
         pathPatterns = [tuple(pp.split('/')[1:]) for pp in pathPatterns]
         for pp in pathPatterns:
             self.matcher[pp] = self.ep
@@ -66,9 +65,6 @@ class EndpointMixin(TestReactorMixin, interfaces.InterfaceTests):
             for pp in pathPatterns
             if pp is not None
         ]
-
-    def tearDownEndpoint(self):
-        pass
 
     def validateData(self, object):
         validation.verifyData(self, self.rtype.entityType, {}, object)

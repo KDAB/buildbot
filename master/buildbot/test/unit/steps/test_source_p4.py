@@ -16,6 +16,7 @@
 
 import platform
 import textwrap
+from pathlib import PureWindowsPath
 
 from twisted.internet import error
 from twisted.python import reflect
@@ -37,10 +38,7 @@ _is_windows = platform.system() == 'Windows'
 class TestP4(sourcesteps.SourceStepMixin, TestReactorMixin, ConfigErrorsMixin, unittest.TestCase):
     def setUp(self):
         self.setup_test_reactor()
-        return self.setUpSourceStep()
-
-    def tearDown(self):
-        return self.tearDownSourceStep()
+        return self.setup_test_build_step()
 
     def setup_step(self, step, args=None, patch=None, **kwargs):
         if args is None:
@@ -54,6 +52,7 @@ class TestP4(sourcesteps.SourceStepMixin, TestReactorMixin, ConfigErrorsMixin, u
         if _is_windows:
             workspace_dir = r'C:\Users\username\Workspace'
             self.build.path_module = reflect.namedModule("ntpath")
+            self.build.path_cls = PureWindowsPath
         self.build.setProperty('builddir', workspace_dir, 'P4')
 
     def test_no_empty_step_config(self):
@@ -267,21 +266,20 @@ class TestP4(sourcesteps.SourceStepMixin, TestReactorMixin, ConfigErrorsMixin, u
             ExpectShell(
                 workdir=workdir,
                 timeout=timeout,
-                command=(
-                    [
-                        'p4',
-                        '-p',
-                        'localhost:12000',
-                        '-u',
-                        'user',
-                        '-P',
-                        ('obfuscated', 'pass', 'XXXXXX'),
-                        '-c',
-                        'p4_client1',
-                    ]
-                    + extra_args
-                    + ['sync', '//p4_client1/...@100']
-                ),
+                command=([
+                    'p4',
+                    '-p',
+                    'localhost:12000',
+                    '-u',
+                    'user',
+                    '-P',
+                    ('obfuscated', 'pass', 'XXXXXX'),
+                    '-c',
+                    'p4_client1',
+                    *extra_args,
+                    'sync',
+                    '//p4_client1/...@100',
+                ]),
             ).exit(0),
         )
         self.expect_outcome(result=SUCCESS)
@@ -729,9 +727,10 @@ class TestP4(sourcesteps.SourceStepMixin, TestReactorMixin, ConfigErrorsMixin, u
                     expected_pass,
                     '-c',
                     p4client,
-                ]
-                + extra_args
-                + ['sync', '#none'],
+                    *extra_args,
+                    'sync',
+                    '#none',
+                ],
             ).exit(0),
             ExpectRmdir(dir=workdir, log_environ=True).exit(0),
             ExpectShell(
@@ -746,9 +745,10 @@ class TestP4(sourcesteps.SourceStepMixin, TestReactorMixin, ConfigErrorsMixin, u
                     expected_pass,
                     '-c',
                     p4client,
-                ]
-                + extra_args
-                + ['sync', f'//{p4client}/...@100'],
+                    *extra_args,
+                    'sync',
+                    f'//{p4client}/...@100',
+                ],
             ).exit(0),
         )
         self.expect_outcome(result=SUCCESS)

@@ -1,10 +1,9 @@
 import './globals';
 import './globals2';
-import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import {initializeGlobalSetup} from "./plugins/GlobalSetup";
-import "buildbot-plugin-support";
+import {initializeGlobalSetup} from './plugins/GlobalSetup';
+import 'buildbot-plugin-support';
 import {App} from './App';
 import {
   DataClient,
@@ -14,33 +13,31 @@ import {
   getBaseUrl,
   getRestUrl,
   getWebSocketUrl,
-} from "buildbot-data-js";
+} from 'buildbot-data-js';
 import {
   Config,
   ConfigContext,
   TimeContext,
   TimeStore,
   TopbarContext,
-  TopbarStore
-} from "buildbot-ui";
-import {HashRouter} from "react-router-dom";
-import {SidebarStore} from "./stores/SidebarStore";
-import { StoresContext } from './contexts/Stores';
-import {globalSettings} from "./plugins/GlobalSettings";
-import moment from "moment";
-import axios from "axios";
+  TopbarStore,
+} from 'buildbot-ui';
+import {HashRouter} from 'react-router-dom';
+import {SidebarStore} from './stores/SidebarStore';
+import {StoresContext} from './contexts/Stores';
+import moment from 'moment';
+import axios from 'axios';
 
 const doRender = (buildbotFrontendConfig: Config) => {
-  const root = ReactDOM.createRoot(
-    document.getElementById('root') as HTMLElement
-  );
+  const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 
   const restClient = new RestClient(getRestUrl(window.location));
-  const webSocketClient = new WebSocketClient(getWebSocketUrl(window.location),
-    url => new WebSocket(url));
+  const webSocketClient = new WebSocketClient(
+    getWebSocketUrl(window.location),
+    (url) => new WebSocket(url),
+  );
 
   const dataClient = new DataClient(restClient, webSocketClient);
-
 
   const timeStore = new TimeStore();
   timeStore.setTime(moment().unix());
@@ -68,28 +65,35 @@ const doRender = (buildbotFrontendConfig: Config) => {
       <ConfigContext.Provider value={buildbotFrontendConfig}>
         <TimeContext.Provider value={timeStore}>
           <TopbarContext.Provider value={topbarStore}>
-            <StoresContext.Provider value={{
-              sidebar: sidebarStore,
-            }}>
+            <StoresContext.Provider
+              value={{
+                sidebar: sidebarStore,
+              }}
+            >
               <HashRouter>
-                <App/>
+                <App />
               </HashRouter>
             </StoresContext.Provider>
           </TopbarContext.Provider>
         </TimeContext.Provider>
       </ConfigContext.Provider>
-    </DataClientContext.Provider>
+    </DataClientContext.Provider>,
   );
 };
 
 const windowAny: any = window;
-if ("buildbotFrontendConfig" in windowAny) {
+if ('buildbotFrontendConfig' in windowAny) {
   doRender(windowAny.buildbotFrontendConfig);
 } else {
   // fallback during development
-  axios.get("config").then(response => {
-    const config: Config = response.data;
-    config.isProxy = true;
-    doRender(config);
-  });
+  axios
+    .get('config')
+    .then((response) => {
+      const config: Config = response.data;
+      config.isProxy = true;
+      doRender(config);
+    })
+    .catch((error) => {
+      console.error('Error fetching config:', error);
+    });
 }

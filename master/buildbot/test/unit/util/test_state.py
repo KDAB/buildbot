@@ -18,6 +18,7 @@ from twisted.trial import unittest
 
 from buildbot.test.fake import fakemaster
 from buildbot.test.reactor import TestReactorMixin
+from buildbot.test.util.state import StateTestMixin
 from buildbot.util import state
 
 
@@ -28,17 +29,18 @@ class FakeObject(state.StateMixin):
         self.master = master
 
 
-class TestStateMixin(TestReactorMixin, unittest.TestCase):
+class TestStateMixin(TestReactorMixin, StateTestMixin, unittest.TestCase):
     OBJECTID = 19
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantDb=True)
+        self.master = yield fakemaster.make_master(self, wantDb=True)
         self.object = FakeObject(self.master)
 
     @defer.inlineCallbacks
     def test_getState(self):
-        self.master.db.state.set_fake_state(self.object, 'fav_color', ['red', 'purple'])
+        yield self.set_fake_state(self.object, 'fav_color', ['red', 'purple'])
         res = yield self.object.getState('fav_color')
 
         self.assertEqual(res, ['red', 'purple'])
@@ -49,28 +51,22 @@ class TestStateMixin(TestReactorMixin, unittest.TestCase):
 
         self.assertEqual(res, 'black')
 
+    @defer.inlineCallbacks
     def test_getState_KeyError(self):
-        self.master.db.state.set_fake_state(self.object, 'fav_color', ['red', 'purple'])
-        d = self.object.getState('fav_book')
-
-        def cb(_):
-            self.fail("should not succeed")
-
-        def check_exc(f):
-            f.trap(KeyError)
-
-        d.addCallbacks(cb, check_exc)
-        return d
+        yield self.set_fake_state(self.object, 'fav_color', ['red', 'purple'])
+        with self.assertRaises(KeyError):
+            yield self.object.getState('fav_book')
+        self.flushLoggedErrors(KeyError)
 
     @defer.inlineCallbacks
     def test_setState(self):
         yield self.object.setState('y', 14)
 
-        self.master.db.state.assertStateByClass('fake-name', 'FakeObject', y=14)
+        yield self.assert_state_by_class('fake-name', 'FakeObject', y=14)
 
     @defer.inlineCallbacks
     def test_setState_existing(self):
-        self.master.db.state.set_fake_state(self.object, 'x', 13)
+        yield self.set_fake_state(self.object, 'x', 13)
         yield self.object.setState('x', 14)
 
-        self.master.db.state.assertStateByClass('fake-name', 'FakeObject', x=14)
+        yield self.assert_state_by_class('fake-name', 'FakeObject', x=14)

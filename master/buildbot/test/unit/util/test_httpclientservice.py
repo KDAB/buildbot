@@ -143,6 +143,28 @@ class HTTPClientServiceTestTxRequest(HTTPClientServiceTestBase):
             headers={'Content-Type': 'application/json'},
         )
 
+    @defer.inlineCallbacks
+    def test_post_mtls(self):
+        self._http = yield httpclientservice.HTTPClientService.getService(
+            self.parent,
+            'http://foo',
+            verify='/etc/pki/certbundle.pem',
+            cert=('/etc/pki/cert.pem', '/etc/pki/key.pem'),
+        )
+        with assertProducesWarning(DeprecationWarning):
+            yield self._http.post('/bar', json={'foo': 'bar'})
+        jsonStr = json.dumps({"foo": 'bar'})
+        jsonBytes = unicode2bytes(jsonStr)
+        self._http._txrequests_sessions[0].request.assert_called_once_with(
+            'post',
+            'http://foo/bar',
+            background_callback=mock.ANY,
+            data=jsonBytes,
+            verify='/etc/pki/certbundle.pem',
+            cert=('/etc/pki/cert.pem', '/etc/pki/key.pem'),
+            headers={'Content-Type': 'application/json'},
+        )
+
 
 class HTTPClientServiceTestTxRequestNoEncoding(HTTPClientServiceTestBase):
     @defer.inlineCallbacks
@@ -355,19 +377,18 @@ class HTTPClientServiceTestTxRequestE2E(unittest.TestCase):
         if httpclientservice.txrequests is None or httpclientservice.treq is None:
             raise unittest.SkipTest('this test requires txrequests and treq')
         self.site = SiteWithClose(MyResource())
+        self.addCleanup(self.site.close_connections)
+        self.addCleanup(self.site.stopFactory)
+
         self.listenport = reactor.listenTCP(0, self.site)
+        self.addCleanup(self.listenport.stopListening)
+
         self.port = self.listenport.getHost().port
         self.parent = parent = service.MasterService()
         self.parent.reactor = reactor
         yield parent.startService()
+        self.addCleanup(self.parent.stopService)
         self._http = yield self.httpFactory(parent)
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.listenport.stopListening()
-        yield self.site.stopFactory()
-        yield self.site.close_connections()
-        yield self.parent.stopService()
 
     @defer.inlineCallbacks
     def test_content(self):
@@ -435,7 +456,7 @@ class HTTPClientServiceTestTxRequestE2E(unittest.TestCase):
 
     # note that freebsd workers will not like when there are too many parallel connections
     # we can change this test via environment variable
-    NUM_PARALLEL = os.environ.get("BBTEST_NUM_PARALLEL", 5)
+    NUM_PARALLEL = int(os.environ.get("BBTEST_NUM_PARALLEL", "5"))
 
     @defer.inlineCallbacks
     def test_lots(self):
@@ -467,7 +488,7 @@ class HTTPClientServiceTestTxRequestE2E(unittest.TestCase):
             return d
 
         dl = [oneReq() for i in range(self.NUM_PARALLEL)]
-        yield defer.gatherResults(dl)
+        yield defer.gatherResults(dl, consumeErrors=True)
 
 
 class HTTPClientServiceTestTReqE2E(HTTPClientServiceTestTxRequestE2E):

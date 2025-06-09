@@ -43,9 +43,10 @@ class TestGerritVerifyStatusPush(
         self.setup_reporter_test()
         self.reporter_test_props = {'gerrit_changes': [{'change_id': 12, 'revision_id': 2}]}
 
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def createGerritStatus(self, **kwargs):
@@ -56,9 +57,6 @@ class TestGerritVerifyStatusPush(
         )
         self.sp = GerritVerifyStatusPush("gerrit", auth=auth, **kwargs)
         yield self.sp.setServiceParent(self.master)
-
-    def tearDown(self):
-        return self.master.stopService()
 
     @defer.inlineCallbacks
     def test_basic(self):

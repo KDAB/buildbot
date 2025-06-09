@@ -13,7 +13,11 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
 import abc
+from typing import TYPE_CHECKING
+from typing import ClassVar
 
 from twisted.internet import defer
 from twisted.python import log
@@ -23,6 +27,9 @@ from buildbot.reporters import utils
 from buildbot.util import service
 from buildbot.util import tuplematch
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 ENCODING = 'utf-8'
 
 
@@ -30,7 +37,7 @@ class ReporterBase(service.BuildbotService):
     name = None
     __meta__ = abc.ABCMeta
 
-    compare_attrs = ['generators']
+    compare_attrs: ClassVar[Sequence[str]] = ['generators']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -21,9 +21,12 @@ import json
 import re
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
+from typing import Any
+from typing import Callable
 from urllib.parse import urlparse
 
 from twisted.internet import defer
+from twisted.internet import threads
 from twisted.internet.error import ConnectionDone
 from twisted.python import log
 from twisted.web.error import Error
@@ -32,6 +35,7 @@ from twisted.web.server import GzipEncoderFactory
 
 from buildbot.data import exceptions
 from buildbot.data.base import EndpointKind
+from buildbot.data.resultspec import ResultSpec
 from buildbot.util import bytes2unicode
 from buildbot.util import toJson
 from buildbot.util import unicode2bytes
@@ -41,16 +45,19 @@ from buildbot.www.encoding import BrotliEncoderFactory
 from buildbot.www.encoding import ZstandardEncoderFactory
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from typing import Any
 
     from twisted.web import server
 
     from buildbot.data.base import Endpoint
     from buildbot.data.resultspec import ResultSpec
+    from buildbot.master import BuildMaster
+    from buildbot.util.twisted import InlineCallbacksType
 
 
 class BadJsonRpc2(Exception):
-    def __init__(self, message, jsonrpccode):
+    def __init__(self, message: str, jsonrpccode: int) -> None:
         self.message = message
         self.jsonrpccode = jsonrpccode
 
@@ -65,19 +72,25 @@ class ContentTypeParser:
         return bytes2unicode(self.typeheader).split(';', 1)[0]
 
 
+def _is_request_finished(request: server.Request) -> bool:
+    # In case of lost connection, request is not marked as finished
+    # detect this case with `channel` being None
+    return bool(request.finished) or request.channel is None
+
+
 URL_ENCODED = b"application/x-www-form-urlencoded"
 JSON_ENCODED = b"application/json"
 
 
 class RestRootResource(resource.Resource):
-    version_classes = {}
+    version_classes: dict[int, type[V2RootResource]] = {}
 
     @classmethod
-    def addApiVersion(cls, version, version_cls):
+    def addApiVersion(cls, version: int, version_cls: type[V2RootResource]) -> None:
         cls.version_classes[version] = version_cls
-        version_cls.apiVersion = version
+        version_cls.apiVersion = version  # type: ignore[attr-defined]
 
-    def __init__(self, master):
+    def __init__(self, master: BuildMaster) -> None:
         super().__init__(master)
 
         min_vers = master.config.www.get('rest_minimum_version', 0)
@@ -93,12 +106,11 @@ class RestRootResource(resource.Resource):
                 continue
             child = EncodingResourceWrapper(klass(master), encoders)
             child_path = f'v{version}'
-            child_path = unicode2bytes(child_path)
-            self.putChild(child_path, child)
+            self.putChild(unicode2bytes(child_path), child)
             if version == latest:
                 self.putChild(b'latest', child)
 
-    def render(self, request):
+    def render(self, request: server.Request) -> bytes:
         request.setHeader(b"content-type", JSON_ENCODED)
         min_vers = self.master.config.www.get('rest_minimum_version', 0)
         api_versions = dict(
@@ -137,15 +149,18 @@ class V2RootResource(resource.Resource):
     needsReconfig = True
 
     @defer.inlineCallbacks
-    def getEndpoint(self, request, method, params):
+    def getEndpoint(
+        self, request: server.Request, method: str, params: dict[str, Any]
+    ) -> InlineCallbacksType[tuple[Endpoint, dict[str, Any]]]:
         # note that trailing slashes are not allowed
+        assert request.postpath is not None
         request_postpath = tuple(bytes2unicode(p) for p in request.postpath)
         yield self.master.www.assertUserAllowed(request, request_postpath, method, params)
         ret = yield self.master.data.getEndpoint(request_postpath)
         return ret
 
     @contextmanager
-    def handleErrors(self, writeError):
+    def handleErrors(self, writeError: Callable[[str | bytes, int, int], None]) -> Iterator[None]:
         try:
             yield
         except ConnectionDone:
@@ -153,45 +168,37 @@ class V2RootResource(resource.Resource):
             pass
         except exceptions.InvalidPathError as e:
             msg = unicode2bytes(e.args[0])
-            writeError(
-                msg or b"invalid path", errcode=404, jsonrpccode=JSONRPC_CODES['invalid_request']
-            )
+            writeError(msg or b"invalid path", 404, JSONRPC_CODES['invalid_request'])
             return
         except exceptions.InvalidControlException as e:
             msg = unicode2bytes(str(e))
-            writeError(
-                msg or b"invalid control action",
-                errcode=501,
-                jsonrpccode=JSONRPC_CODES["method_not_found"],
-            )
+            writeError(msg or b"invalid control action", 501, JSONRPC_CODES["method_not_found"])
             return
         except exceptions.InvalidQueryParameter as e:
             msg = unicode2bytes(e.args[0])
-            writeError(
-                msg or b"invalid request",
-                errcode=400,
-                jsonrpccode=JSONRPC_CODES["method_not_found"],
-            )
+            writeError(msg or b"invalid request", 400, JSONRPC_CODES["method_not_found"])
             return
         except BadJsonRpc2 as e:
             msg = unicode2bytes(e.message)
-            writeError(msg, errcode=400, jsonrpccode=e.jsonrpccode)
+            writeError(msg, 400, e.jsonrpccode)
             return
         except Forbidden as e:
             # There is nothing in jsonrc spec about forbidden error, so pick
             # invalid request
-            msg = unicode2bytes(e.message)
-            writeError(msg, errcode=403, jsonrpccode=JSONRPC_CODES["invalid_request"])
+            msg = unicode2bytes(e.message or '')
+            writeError(msg, 403, JSONRPC_CODES["invalid_request"])
             return
         except Exception as e:
             log.err(_why='while handling API request')
             msg = unicode2bytes(repr(e))
-            writeError(repr(e), errcode=500, jsonrpccode=JSONRPC_CODES["internal_error"])
+            writeError(repr(e), 500, JSONRPC_CODES["internal_error"])
             return
 
     # JSONRPC2 support
 
-    def decodeJsonRPC2(self, request: server.Request):
+    def decodeJsonRPC2(
+        self, request: server.Request
+    ) -> tuple[str, str | int | None, dict[str, Any]]:
         # Verify the content-type.  Browsers are easily convinced to send
         # POST data to arbitrary URLs via 'form' elements, but they won't
         # use the application/json content-type.
@@ -201,9 +208,10 @@ class V2RootResource(resource.Resource):
             )
 
         try:
+            assert request.content is not None
             data = json.loads(bytes2unicode(request.content.read()))
         except Exception as e:
-            raise BadJsonRpc2(f"JSON parse error: {str(e)}", JSONRPC_CODES["parse_error"]) from e
+            raise BadJsonRpc2(f"JSON parse error: {e!s}", JSONRPC_CODES["parse_error"]) from e
 
         if isinstance(data, list):
             raise BadJsonRpc2(
@@ -229,10 +237,12 @@ class V2RootResource(resource.Resource):
         return data["method"], data["id"], data['params']
 
     @defer.inlineCallbacks
-    def renderJsonRpc(self, request):
-        jsonRpcReply = {'jsonrpc': "2.0"}
+    def renderJsonRpc(self, request: server.Request) -> InlineCallbacksType[None]:
+        jsonRpcReply: dict[str, Any] = {'jsonrpc': "2.0"}
 
-        def writeError(msg, errcode=399, jsonrpccode=JSONRPC_CODES["internal_error"]):
+        def writeError(
+            msg: str | bytes, errcode: int = 399, jsonrpccode: int = JSONRPC_CODES["internal_error"]
+        ) -> None:
             if isinstance(msg, bytes):
                 msg = bytes2unicode(msg)
             if self.debug:
@@ -242,15 +252,14 @@ class V2RootResource(resource.Resource):
             if "error" not in jsonRpcReply:  # already filled in by caller
                 jsonRpcReply['error'] = {"code": jsonrpccode, "message": msg}
             data = json.dumps(jsonRpcReply)
-            data = unicode2bytes(data)
-            request.write(data)
+            request.write(unicode2bytes(data))
 
         with self.handleErrors(writeError):
             method, id, params = self.decodeJsonRPC2(request)
             jsonRpcReply['id'] = id
             ep, kwargs = yield self.getEndpoint(request, method, params)
             userinfos = self.master.www.getUserInfos(request)
-            if 'anonymous' in userinfos and userinfos['anonymous']:
+            if userinfos.get('anonymous'):
                 owner = "anonymous"
             else:
                 for field in ('email', 'username', 'full_name'):
@@ -269,25 +278,25 @@ class V2RootResource(resource.Resource):
                 request.setHeader(b"content-length", unicode2bytes(str(len(data))))
                 request.write(b'')
             else:
-                data = unicode2bytes(data)
-                request.write(data)
+                request.write(unicode2bytes(data))
 
-    def decodeResultSpec(self, request, endpoint):
+    def decodeResultSpec(self, request: server.Request, endpoint: Endpoint) -> ResultSpec:
         args = request.args
         entityType = endpoint.rtype.entityType
         return self.master.data.resultspec_from_jsonapi(
             args, entityType, endpoint.kind == EndpointKind.COLLECTION
         )
 
-    def _write_rest_error(self, request: server.Request, msg, errcode: int = 404):
+    def _write_rest_error(
+        self, request: server.Request, msg: str | bytes, errcode: int = 404
+    ) -> None:
         if self.debug:
-            log.msg(f"REST error: {msg}")
+            log.msg(f"REST error: {msg!r}")
         request.setResponseCode(errcode)
         request.setHeader(b'content-type', b'text/plain; charset=utf-8')
         msg = bytes2unicode(msg)
-        data = json.dumps({"error": msg})
-        data = unicode2bytes(data)
-        request.write(data)
+        json_data = json.dumps({"error": msg})
+        request.write(unicode2bytes(json_data))
 
     def _write_not_found_rest_error(
         self,
@@ -295,13 +304,10 @@ class V2RootResource(resource.Resource):
         ep: Endpoint,
         rspec: ResultSpec,
         kwargs: dict[str, Any],
-    ):
+    ) -> None:
         self._write_rest_error(
             request=request,
-            msg=(
-                f"not found while getting from {repr(ep)} with "
-                f"arguments {repr(rspec)} and {str(kwargs)}"
-            ),
+            msg=(f"not found while getting from {ep!r} with arguments {rspec!r} and {kwargs!s}"),
         )
 
     async def _render_raw(
@@ -310,7 +316,7 @@ class V2RootResource(resource.Resource):
         ep: Endpoint,
         rspec: ResultSpec,
         kwargs: dict[str, Any],
-    ):
+    ) -> None:
         assert ep.kind in (EndpointKind.RAW, EndpointKind.RAW_INLINE)
 
         is_stream_data = False
@@ -335,15 +341,15 @@ class V2RootResource(resource.Resource):
             return
 
         async for chunk in data['raw']:
-            if request.finished or request.channel is None:
-                # In case of lost connection, request is not marked as finished
-                # detect this case with `channel` being None
+            if _is_request_finished(request):
                 return
             request.write(unicode2bytes(chunk))
 
     @defer.inlineCallbacks
-    def renderRest(self, request: server.Request):
-        def writeError(msg, errcode=404, jsonrpccode=None):
+    def renderRest(self, request: server.Request) -> InlineCallbacksType[None]:
+        def writeError(
+            msg: str | bytes, errcode: int = 404, jsonrpccode: int | None = None
+        ) -> None:
             self._write_rest_error(request, msg=msg, errcode=errcode)
 
         with self.handleErrors(writeError):
@@ -357,6 +363,9 @@ class V2RootResource(resource.Resource):
             data = yield ep.get(rspec, kwargs)
             if data is None:
                 self._write_not_found_rest_error(request, ep, rspec=rspec, kwargs=kwargs)
+                return
+
+            if _is_request_finished(request):
                 return
 
             # post-process any remaining parts of the resultspec
@@ -407,14 +416,9 @@ class V2RootResource(resource.Resource):
             else:
                 encoder.indent = 2
 
-            content_length = sum(len(unicode2bytes(chunk)) for chunk in encoder.iterencode(data))
-            request.setHeader(b"content-length", unicode2bytes(str(content_length)))
+            yield threads.deferToThread(V2RootResource._write_json_data, request, encoder, data)
 
-            if request.method != b"HEAD":
-                for chunk in encoder.iterencode(data):
-                    request.write(unicode2bytes(chunk))
-
-    def reconfigResource(self, new_config):
+    def reconfigResource(self, new_config: Any) -> None:
         # buildbotURL may contain reverse proxy path, Origin header is just
         # scheme + host + port
         buildbotURL = urlparse(unicode2bytes(new_config.buildbotURL))
@@ -429,8 +433,8 @@ class V2RootResource(resource.Resource):
         self.debug = new_config.www.get('debug')
         self.cache_seconds = new_config.www.get('json_cache_seconds', 0)
 
-    def render(self, request):
-        def writeError(msg, errcode=400):
+    def render(self, request: server.Request) -> int:
+        def writeError(msg: str | bytes, errcode: int = 400) -> None:
             msg = bytes2unicode(msg)
             if self.debug:
                 log.msg(f"HTTP error: {msg}")
@@ -439,18 +443,16 @@ class V2RootResource(resource.Resource):
             if request.method == b'POST':
                 # jsonRPC callers want the error message in error.message
                 data = json.dumps({"error": {"message": msg}})
-                data = unicode2bytes(data)
-                request.write(data)
+                request.write(unicode2bytes(data))
             else:
                 data = json.dumps({"error": msg})
-                data = unicode2bytes(data)
-                request.write(data)
+                request.write(unicode2bytes(data))
             request.finish()
 
         return self.asyncRenderHelper(request, self.asyncRender, writeError)
 
     @defer.inlineCallbacks
-    def asyncRender(self, request):
+    def asyncRender(self, request: server.Request) -> InlineCallbacksType[bytes | None]:
         # Handle CORS, if necessary.
         origins = self.origins
         if origins is not None:
@@ -490,6 +492,25 @@ class V2RootResource(resource.Resource):
             raise Error(400, b"invalid HTTP method")
 
         return res
+
+    @staticmethod
+    def _write_json_data(
+        request: server.Request,
+        encoder: json.encoder.JSONEncoder,
+        data: Any,
+    ) -> None:
+        content_length = 0
+        for chunk in encoder.iterencode(data):
+            if _is_request_finished(request):
+                return
+            content_length += len(unicode2bytes(chunk))
+        request.setHeader(b"content-length", unicode2bytes(str(content_length)))
+
+        if request.method != b"HEAD":
+            for chunk in encoder.iterencode(data):
+                if _is_request_finished(request):
+                    return
+                request.write(unicode2bytes(chunk))
 
 
 RestRootResource.addApiVersion(2, V2RootResource)

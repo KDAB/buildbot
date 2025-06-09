@@ -28,6 +28,8 @@ from buildbot.data import types
 from buildbot.test.fake import fakemaster
 from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.util import interfaces
+from buildbot.test.util.warnings import assertProducesWarnings
+from buildbot.warnings import DeprecatedApiWarning
 
 
 class Tests(interfaces.InterfaceTests):
@@ -110,9 +112,10 @@ class Tests(interfaces.InterfaceTests):
 
 
 class TestFakeData(TestReactorMixin, unittest.TestCase, Tests):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantData=True, wantDb=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantData=True, wantDb=True)
         self.data = self.master.data
 
 
@@ -120,7 +123,7 @@ class TestDataConnector(TestReactorMixin, unittest.TestCase, Tests):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True)
         self.data = connector.DataConnector()
         yield self.data.setServiceParent(self.master)
 
@@ -131,7 +134,7 @@ class DataConnector(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self)
+        self.master = yield fakemaster.make_master(self)
         # don't load by default
         self.patch(connector.DataConnector, 'submodules', [])
         self.data = connector.DataConnector()
@@ -187,6 +190,21 @@ class DataConnector(TestReactorMixin, unittest.TestCase):
         # and that it added an attribute
         self.assertIsInstance(self.data.rtypes.test, TestResourceType)
 
+    def test_scanModule_path_pattern_multiline_string_deprecation(self):
+        mod = reflect.namedModule('buildbot.test.unit.data.test_connector')
+
+        TestEndpoint.pathPatterns = """
+            /test/n:testid
+            /test/n:testid/p1
+            /test/n:testid/p2
+        """
+
+        with assertProducesWarnings(
+            DeprecatedApiWarning,
+            message_pattern='.*Endpoint.pathPatterns as a multiline string is deprecated.*',
+        ):
+            self.data._scanModule(mod)
+
     def test_getEndpoint(self):
         ep = self.patchFooPattern()
         got = self.data.getEndpoint(('foo', '10', 'bar'))
@@ -237,7 +255,9 @@ class DataConnector(TestReactorMixin, unittest.TestCase):
 
 
 class TestsEndpoint(base.Endpoint):
-    pathPatterns = "/tests"
+    pathPatterns = [
+        "/tests",
+    ]
     rootLinkName = 'tests'
 
 
@@ -246,15 +266,17 @@ class TestsEndpointParentClass(base.Endpoint):
 
 
 class TestsEndpointSubclass(TestsEndpointParentClass):
-    pathPatterns = "/test/foo"
+    pathPatterns = [
+        "/test/foo",
+    ]
 
 
 class TestEndpoint(base.Endpoint):
-    pathPatterns = """
-        /test/n:testid
-        /test/n:testid/p1
-        /test/n:testid/p2
-    """
+    pathPatterns = [
+        "/test/n:testid",
+        "/test/n:testid/p1",
+        "/test/n:testid/p2",
+    ]
 
 
 class TestResourceType(base.ResourceType):
@@ -262,12 +284,11 @@ class TestResourceType(base.ResourceType):
     plural = 'tests'
 
     endpoints = [TestsEndpoint, TestEndpoint, TestsEndpointSubclass]
-    keyField = 'testid'
 
     class EntityType(types.Entity):
         testid = types.Integer()
 
-    entityType = EntityType(name, 'Test')
+    entityType = EntityType(name)
 
     @base.updateMethod
     def testUpdate(self):

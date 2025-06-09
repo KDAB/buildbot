@@ -13,6 +13,10 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import ClassVar
 from unittest import mock
 
 from twisted.internet import defer
@@ -21,6 +25,11 @@ from twisted.trial import unittest
 from buildbot.db.schedulers import SchedulerModel
 from buildbot.schedulers import base
 from buildbot.schedulers import manager
+from buildbot.test.util.warnings import assertProducesWarnings
+from buildbot.warnings import DeprecatedApiWarning
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 class SchedulerManager(unittest.TestCase):
@@ -68,7 +77,7 @@ class SchedulerManager(unittest.TestCase):
 
     class Sched(base.BaseScheduler):
         # changing sch.attr should make a scheduler look "updated"
-        compare_attrs = ('attr',)
+        compare_attrs: ClassVar[Sequence[str]] = ('attr',)
         already_started = False
         reconfig_count = 0
 
@@ -99,7 +108,10 @@ class SchedulerManager(unittest.TestCase):
         pass
 
     def makeSched(self, cls, name, attr='alpha'):
-        sch = cls(name=name, builderNames=['x'], properties={})
+        with assertProducesWarnings(
+            DeprecatedApiWarning, message_pattern='.*BaseScheduler has been deprecated.*'
+        ):
+            sch = cls(name=name, builderNames=['x'], properties={})
         sch.attr = attr
         return sch
 
@@ -174,7 +186,10 @@ class SchedulerManager(unittest.TestCase):
         sch1_new = self.makeSched(self.Sched, 'sch1', attr='alpha')
         self.new_config.schedulers = {"sch1": sch1_new}
 
-        yield self.sm.reconfigServiceWithBuildbotConfig(self.new_config)
+        with assertProducesWarnings(
+            DeprecatedApiWarning, message_pattern='.*raising NotImplementedError.*'
+        ):
+            yield self.sm.reconfigServiceWithBuildbotConfig(self.new_config)
 
         # sch1 had parameter change but is not reconfigurable, so sch1_new is now the active
         # instance

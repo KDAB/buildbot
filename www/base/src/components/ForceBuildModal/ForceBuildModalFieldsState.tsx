@@ -15,7 +15,7 @@
   Copyright Buildbot Team Members
 */
 
-import {action, makeObservable, observable} from "mobx";
+import {action, makeObservable, observable} from 'mobx';
 
 export class ForceBuildfieldsState {
   @observable value: any = undefined;
@@ -55,12 +55,12 @@ export class ForceBuildModalFieldsState {
   @action setValue(name: string, value: any) {
     const field = this.fields.get(name);
     if (field === undefined) {
-      throw Error(`Field with name ${name} does not exist`)
+      throw Error(`Field with name ${name} does not exist`);
     }
     field.setValue(value);
   }
 
-  getValue(name: string): any | null {
+  getValue(name: string): any {
     const field = this.fields.get(name);
     if (field === undefined) {
       return null;
@@ -69,13 +69,15 @@ export class ForceBuildModalFieldsState {
   }
 
   @action clearErrors() {
-    this.fields.forEach(e => { e.setErrors([]); });
+    this.fields.forEach((e) => {
+      e.setErrors([]);
+    });
   }
 
   @action addError(name: string, error: string) {
     const field = this.fields.get(name);
     if (field === undefined) {
-      throw Error(`Filed with name ${name} does not exist`)
+      throw Error(`Filed with name ${name} does not exist`);
     }
     field.pushError(error);
   }

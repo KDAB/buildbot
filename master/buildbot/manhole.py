@@ -13,10 +13,14 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
 import base64
 import binascii
 import os
 import types
+from typing import TYPE_CHECKING
+from typing import ClassVar
 
 from twisted.application import strports
 from twisted.conch import manhole
@@ -33,17 +37,17 @@ from buildbot.util import ComparableMixin
 from buildbot.util import service
 from buildbot.util import unicode2bytes
 
-try:
-    from twisted.conch import checkers as conchc
-    from twisted.conch import manhole_ssh
-    from twisted.conch.openssh_compat.factory import OpenSSHFactory
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
-    _hush_pyflakes = [manhole_ssh, conchc, OpenSSHFactory]
-    del _hush_pyflakes
+try:
+    from twisted.conch import manhole_ssh
+    from twisted.conch.checkers import SSHPublicKeyDatabase
+    from twisted.conch.openssh_compat.factory import OpenSSHFactory
 except ImportError:
-    manhole_ssh = None
-    conchc = None
-    OpenSSHFactory = None
+    manhole_ssh = None  # type: ignore
+    OpenSSHFactory = None  # type: ignore
+    SSHPublicKeyDatabase = None  # type: ignore
 
 
 # makeTelnetProtocol and _TelnetRealm are for the TelnetManhole
@@ -87,9 +91,9 @@ class chainedProtocolFactory:
         return insults.ServerProtocol(manhole.ColoredManhole, self.namespace)
 
 
-if conchc:
+if SSHPublicKeyDatabase is not None:
 
-    class AuthorizedKeysChecker(conchc.SSHPublicKeyDatabase):
+    class AuthorizedKeysChecker(SSHPublicKeyDatabase):
         """Accept connections using SSH keys from a given file.
 
         SSHPublicKeyDatabase takes the username that the prospective client has
@@ -179,15 +183,18 @@ class _BaseManhole(service.AsyncMultiService):
             self.using_ssh = True
             if not self.ssh_hostkey_dir:
                 raise ValueError("Most specify a value for ssh_hostkey_dir")
+            assert manhole_ssh is not None, "cryptography required for ssh mahole."
             r = manhole_ssh.TerminalRealm()
             r.chainedProtocolFactory = makeProtocol
             p = portal.Portal(r, [self.checker])
             f = manhole_ssh.ConchFactory(p)
+            assert OpenSSHFactory is not None, "cryptography required for ssh mahole."
             openSSHFactory = OpenSSHFactory()
             openSSHFactory.dataRoot = self.ssh_hostkey_dir
-            openSSHFactory.dataModuliRoot = self.ssh_hostkey_dir
+            openSSHFactory.moduliRoot = self.ssh_hostkey_dir
             f.publicKeys = openSSHFactory.getPublicKeys()
             f.privateKeys = openSSHFactory.getPrivateKeys()
+            f.primes = openSSHFactory.getPrimes()
         else:
             self.using_ssh = False
             r = _TelnetRealm(makeNamespace)
@@ -207,7 +214,7 @@ class _BaseManhole(service.AsyncMultiService):
 
 
 class TelnetManhole(_BaseManhole, ComparableMixin):
-    compare_attrs = ("port", "username", "password")
+    compare_attrs: ClassVar[Sequence[str]] = ("port", "username", "password")
 
     def __init__(self, port, username, password):
         self.username = username
@@ -220,7 +227,7 @@ class TelnetManhole(_BaseManhole, ComparableMixin):
 
 
 class PasswordManhole(_BaseManhole, ComparableMixin):
-    compare_attrs = ("port", "username", "password", "ssh_hostkey_dir")
+    compare_attrs: ClassVar[Sequence[str]] = ("port", "username", "password", "ssh_hostkey_dir")
 
     def __init__(self, port, username, password, ssh_hostkey_dir):
         if not manhole_ssh:
@@ -236,7 +243,7 @@ class PasswordManhole(_BaseManhole, ComparableMixin):
 
 
 class AuthorizedKeysManhole(_BaseManhole, ComparableMixin):
-    compare_attrs = ("port", "keyfile", "ssh_hostkey_dir")
+    compare_attrs: ClassVar[Sequence[str]] = ("port", "keyfile", "ssh_hostkey_dir")
 
     def __init__(self, port, keyfile, ssh_hostkey_dir):
         if not manhole_ssh:
@@ -253,7 +260,7 @@ class ArbitraryCheckerManhole(_BaseManhole, ComparableMixin):
     """This Manhole accepts ssh connections, but uses an arbitrary
     user-supplied 'checker' object to perform authentication."""
 
-    compare_attrs = ("port", "checker")
+    compare_attrs: ClassVar[Sequence[str]] = ("port", "checker")
 
     def __init__(self, port, checker):
         """
@@ -278,7 +285,7 @@ class ArbitraryCheckerManhole(_BaseManhole, ComparableMixin):
 
 def show(x):
     """Display the data attributes of an object in a readable format"""
-    print(f"data attributes of {repr(x)}")
+    print(f"data attributes of {x!r}")
     names = dir(x)
     maxlen = max([0] + [len(n) for n in names])
     for k in names:

@@ -35,11 +35,10 @@ from buildbot.worker import AbstractLatentWorker
 
 
 class BuilderMixin:
+    @defer.inlineCallbacks
     def setUpBuilderMixin(self):
         self.factory = factory.BuildFactory()
-        self.master = fakemaster.make_master(self, wantData=True)
-        self.mq = self.master.mq
-        self.db = self.master.db
+        self.master = yield fakemaster.make_master(self, wantData=True)
 
     # returns a Deferred that returns None
     def makeBuilder(self, name="bldr", patch_random=False, noReconfig=False, **config_kwargs):
@@ -105,11 +104,13 @@ class FakeLatentWorker(AbstractLatentWorker):
 
 
 class TestBuilder(TestReactorMixin, BuilderMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
         # a collection of rows that would otherwise clutter up every test
-        self.setUpBuilderMixin()
+        yield self.setUpBuilderMixin()
         self.base_rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
             fakedb.SourceStamp(id=21),
             fakedb.Buildset(id=11, reason='because'),
             fakedb.BuildsetSourceStamp(buildsetid=11, sourcestampid=21),
@@ -434,7 +435,7 @@ class TestBuilder(TestReactorMixin, BuilderMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def test_getBuilderId(self):
         self.factory = factory.BuildFactory()
-        self.master = fakemaster.make_master(self, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantData=True)
         # only include the necessary required config, plus user-requested
         self.bldr = builder.Builder('bldr')
         self.bldr.master = self.master
@@ -476,9 +477,10 @@ class TestBuilder(TestReactorMixin, BuilderMixin, unittest.TestCase):
 
 
 class TestGetBuilderId(TestReactorMixin, BuilderMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpBuilderMixin()
+        yield self.setUpBuilderMixin()
 
     @defer.inlineCallbacks
     def test_getBuilderId(self):
@@ -501,11 +503,12 @@ class TestGetOldestRequestTime(TestReactorMixin, BuilderMixin, unittest.TestCase
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpBuilderMixin()
+        yield self.setUpBuilderMixin()
 
         # a collection of rows that would otherwise clutter up every test
-        master_id = fakedb.FakeBuildRequestsComponent.MASTER_ID
+        master_id = fakedb.FakeDBConnector.MASTER_ID
         self.base_rows = [
+            fakedb.Master(id=master_id),
             fakedb.SourceStamp(id=21),
             fakedb.Buildset(id=11, reason='because'),
             fakedb.BuildsetSourceStamp(buildsetid=11, sourcestampid=21),
@@ -520,7 +523,7 @@ class TestGetOldestRequestTime(TestReactorMixin, BuilderMixin, unittest.TestCase
             fakedb.BuildRequestClaim(brid=444, masterid=master_id, claimed_at=2501),
             fakedb.BuildRequest(id=555, submitted_at=2800, builderid=182, buildsetid=11),
         ]
-        yield self.db.insert_test_data(self.base_rows)
+        yield self.master.db.insert_test_data(self.base_rows)
 
     @defer.inlineCallbacks
     def test_gort_unclaimed(self):
@@ -546,11 +549,12 @@ class TestGetNewestCompleteTime(TestReactorMixin, BuilderMixin, unittest.TestCas
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpBuilderMixin()
+        yield self.setUpBuilderMixin()
 
         # a collection of rows that would otherwise clutter up every test
-        master_id = fakedb.FakeBuildRequestsComponent.MASTER_ID
+        master_id = fakedb.FakeDBConnector.MASTER_ID
         self.base_rows = [
+            fakedb.Master(id=master_id),
             fakedb.SourceStamp(id=21),
             fakedb.Buildset(id=11, reason='because'),
             fakedb.BuildsetSourceStamp(buildsetid=11, sourcestampid=21),
@@ -568,7 +572,7 @@ class TestGetNewestCompleteTime(TestReactorMixin, BuilderMixin, unittest.TestCas
             fakedb.BuildRequest(id=444, submitted_at=2500, builderid=78, buildsetid=11),
             fakedb.BuildRequestClaim(brid=444, masterid=master_id, claimed_at=2501),
         ]
-        yield self.db.insert_test_data(self.base_rows)
+        yield self.master.db.insert_test_data(self.base_rows)
 
     @defer.inlineCallbacks
     def test_gnct_completed(self):
@@ -587,11 +591,12 @@ class TestGetHighestPriority(TestReactorMixin, BuilderMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpBuilderMixin()
+        yield self.setUpBuilderMixin()
 
         # a collection of rows that would otherwise clutter up every test
-        master_id = fakedb.FakeBuildRequestsComponent.MASTER_ID
+        master_id = fakedb.FakeDBConnector.MASTER_ID
         self.base_rows = [
+            fakedb.Master(id=master_id),
             fakedb.SourceStamp(id=21),
             fakedb.Buildset(id=11, reason='because'),
             fakedb.BuildsetSourceStamp(buildsetid=11, sourcestampid=21),
@@ -607,7 +612,7 @@ class TestGetHighestPriority(TestReactorMixin, BuilderMixin, unittest.TestCase):
             fakedb.BuildRequest(id=555, submitted_at=2500, builderid=78, buildsetid=11),
             fakedb.BuildRequestClaim(brid=555, masterid=master_id, claimed_at=2501),
         ]
-        yield self.db.insert_test_data(self.base_rows)
+        yield self.master.db.insert_test_data(self.base_rows)
 
     @defer.inlineCallbacks
     def test_ghp_unclaimed(self):
@@ -628,9 +633,9 @@ class TestReconfig(TestReactorMixin, BuilderMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpBuilderMixin()
+        yield self.setUpBuilderMixin()
 
-        yield self.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Project(id=301, name='old_project'),
             fakedb.Project(id=302, name='new_project'),
         ])

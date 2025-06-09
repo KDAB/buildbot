@@ -79,6 +79,7 @@ class TestSetupPyEntryPoints(unittest.TestCase):
             'buildbot.schedulers.timed.Timed',
             'buildbot.schedulers.trysched.TryBase',
             'buildbot.schedulers.base.BaseScheduler',
+            'buildbot.schedulers.base.ReconfigurableBaseScheduler',
             'buildbot.schedulers.timed.NightlyBase',
             'buildbot.schedulers.basic.Scheduler',
         }
@@ -153,6 +154,7 @@ class TestSetupPyEntryPoints(unittest.TestCase):
             'buildbot.util.service.BuildbotService',
             'buildbot.util.service.BuildbotServiceManager',
             'buildbot.util.service.ClusteredBuildbotService',
+            'buildbot.util.service.IndependentAsyncMultiService',
             'buildbot.util.service.MasterService',
             'buildbot.util.service.ReconfigurableServiceMixin',
             'buildbot.util.service.SharedService',
@@ -161,6 +163,7 @@ class TestSetupPyEntryPoints(unittest.TestCase):
             'buildbot.util.subscription.SubscriptionPoint',
             'buildbot.util.test_result_submitter.TestResultSubmitter',
             "buildbot.util.watchdog.Watchdog",
+            "buildbot.util.twisted.ThreadPool",
         }
         self.verify_plugins_registered('util', 'buildbot.util', None, known_not_exported)
 

@@ -58,9 +58,6 @@ class TestActions(
         self.setup_test_reactor()
         self.setup_master_run_process()
 
-    def tearDown(self):
-        pass
-
     @defer.inlineCallbacks
     def test_local_wake_action(self):
         self.expect_commands(

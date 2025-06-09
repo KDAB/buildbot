@@ -43,9 +43,6 @@ class TestDownloadFileSecretToWorkerCommand(
         self.temp_path = tempdir.path
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def testBasic(self):
         self.setup_step(
             DownloadSecretsToWorker([
@@ -85,9 +82,6 @@ class TestRemoveWorkerFileSecretCommand30(TestBuildStepMixin, TestReactorMixin, 
         self.temp_path = tempdir.path
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def testBasic(self):
         self.setup_build(worker_version={'*': '3.0'})
         self.setup_step(
@@ -124,9 +118,6 @@ class TestRemoveFileSecretToWorkerCommand(
         tempdir.createDirectory()
         self.temp_path = tempdir.path
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     def testBasic(self):
         self.setup_step(

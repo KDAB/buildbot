@@ -13,25 +13,39 @@
 #
 # Copyright Buildbot Team Members
 
-import asyncio
+from typing import TYPE_CHECKING
 
 from twisted.internet import threads
 from twisted.python import threadpool
 
-from buildbot.asyncio import AsyncIOLoopWithTwisted
 from buildbot.test.fake.reactor import NonThreadPool
 from buildbot.test.fake.reactor import TestReactor
+from buildbot.util import twisted
 from buildbot.util.eventual import _setReactor
+from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    from twisted.trial import unittest
+
+    _TestReactorMixinBase = unittest.TestCase
+else:
+    _TestReactorMixinBase = object
 
 
-class TestReactorMixin:
+class TestReactorMixin(_TestReactorMixinBase):
     """
     Mix this in to get TestReactor as self.reactor which is correctly cleaned up
     at the end
     """
 
-    def setup_test_reactor(self, use_asyncio=False):
+    def setup_test_reactor(self, use_asyncio=False, auto_tear_down=True) -> None:
+        if use_asyncio:
+            warn_deprecated('4.2.0', 'use_asyncio=True is deprecated')
+        if not auto_tear_down:
+            warn_deprecated('4.2.0', 'auto_tear_down=False is deprecated')
+
         self.patch(threadpool, 'ThreadPool', NonThreadPool)
+        self.patch(twisted, 'ThreadPool', NonThreadPool)
         self.reactor = TestReactor()
         self.reactor.set_test_case(self)
 
@@ -44,21 +58,19 @@ class TestReactorMixin:
 
         self.patch(threads, 'deferToThread', deferToThread)
 
-        # During shutdown sequence we must first stop the reactor and only then
-        # set unset the reactor used for eventually() because any callbacks
-        # that are run during reactor.stop() may use eventually() themselves.
-        self.addCleanup(_setReactor, None)
-        self.addCleanup(self.reactor.assert_no_remaining_calls)
-        self.addCleanup(self.reactor.stop)
+        if auto_tear_down:
+            self.addCleanup(self.tear_down_test_reactor)
+        self._reactor_tear_down_called = False
 
-        if use_asyncio:
-            self.asyncio_loop = AsyncIOLoopWithTwisted(self.reactor)
-            asyncio.set_event_loop(self.asyncio_loop)
-            self.asyncio_loop.start()
+    def tear_down_test_reactor(self) -> None:
+        if self._reactor_tear_down_called:
+            return
 
-            def stop():
-                self.asyncio_loop.stop()
-                self.asyncio_loop.close()
-                asyncio.set_event_loop(None)
+        self._reactor_tear_down_called = True
 
-            self.addCleanup(stop)
+        # During shutdown sequence we must first stop the reactor and only then set unset the
+        # reactor used for eventually() because any callbacks that are run during reactor.stop()
+        # may use eventually() themselves.
+        self.reactor.stop()
+        self.reactor.assert_no_remaining_calls()
+        _setReactor(None)

@@ -19,6 +19,7 @@ import copy
 import math
 import random
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from twisted.internet import defer
 from twisted.python import log
@@ -33,6 +34,9 @@ from buildbot.util import epoch2datetime
 from buildbot.util import service
 from buildbot.util.async_sort import async_sort
 from buildbot.util.twisted import async_to_deferred
+
+if TYPE_CHECKING:
+    from buildbot.process.builder import Builder
 
 
 class BuildChooserBase:
@@ -162,9 +166,10 @@ class BuildChooserBase:
 
     def _getUnclaimedBuildRequests(self):
         # Retrieve the list of BuildRequest objects for all unclaimed builds
-        return defer.gatherResults([
-            self._getBuildRequestForBrdict(brdict) for brdict in self.unclaimedBrdicts
-        ])
+        return defer.gatherResults(
+            [self._getBuildRequestForBrdict(brdict) for brdict in self.unclaimedBrdicts],
+            consumeErrors=True,
+        )
 
 
 class BasicBuildChooser(BuildChooserBase):
@@ -374,11 +379,11 @@ class BuildRequestDistributor(service.AsyncMultiService):
 
     @async_to_deferred
     async def _maybeStartBuildsOn(self, new_builders: list[str]) -> None:
-        new_builders = set(new_builders)
+        new_builder_set = set(new_builders)
         existing_pending = set(self._pending_builders)
 
         # if we won't add any builders, there's nothing to do
-        if new_builders < existing_pending:
+        if new_builder_set < existing_pending:
             return
 
         # reset the list of pending builders
@@ -390,7 +395,7 @@ class BuildRequestDistributor(service.AsyncMultiService):
 
                 # then sort the new, expanded set of builders
                 self._pending_builders = await self._sortBuilders(
-                    list(existing_pending | new_builders)
+                    list(existing_pending | new_builder_set)
                 )
 
                 # start the activity loop, if we aren't already
@@ -457,7 +462,7 @@ class BuildRequestDistributor(service.AsyncMultiService):
     async def _activityLoop(self) -> None:
         self.active = True
 
-        pending_builders = []
+        pending_builders: list[Builder] = []
         while True:
             async with self.activity_lock:
                 if not self.can_distribute:
@@ -486,7 +491,7 @@ class BuildRequestDistributor(service.AsyncMultiService):
 
         self.active = False
 
-    async def _maybeStartBuildsOnBuilder(self, bldr):
+    async def _maybeStartBuildsOnBuilder(self, bldr: Builder) -> None:
         # create a chooser to give us our next builds
         # this object is temporary and will go away when we're done
         bc = self.createBuildChooser(bldr, self.master)
@@ -500,7 +505,7 @@ class BuildRequestDistributor(service.AsyncMultiService):
                 # parenting is a field of Buildset
                 # get the buildsets only for requests
                 # that are waited for
-                buildset_ids = set(br.bsid for br in breqs if br.waitedFor)
+                buildset_ids = set(br.bsid for br in breqs if br.waited_for)
                 if not buildset_ids:
                     continue
                 # get buildsets if they have a parent

@@ -40,10 +40,10 @@ def project_db_to_data(model: ProjectModel, active=None):
 
 class ProjectEndpoint(base.BuildNestingMixin, base.Endpoint):
     kind = base.EndpointKind.SINGLE
-    pathPatterns = """
-        /projects/n:projectid
-        /projects/i:projectname
-    """
+    pathPatterns = [
+        "/projects/n:projectid",
+        "/projects/i:projectname",
+    ]
 
     @defer.inlineCallbacks
     def get(self, result_spec, kwargs):
@@ -60,9 +60,9 @@ class ProjectEndpoint(base.BuildNestingMixin, base.Endpoint):
 class ProjectsEndpoint(base.Endpoint):
     kind = base.EndpointKind.COLLECTION
     rootLinkName = 'projects'
-    pathPatterns = """
-        /projects
-    """
+    pathPatterns = [
+        "/projects",
+    ]
 
     @defer.inlineCallbacks
     def get(self, result_spec, kwargs):
@@ -80,19 +80,14 @@ class ProjectsEndpoint(base.Endpoint):
 
         return [project_db_to_data(dbdict, active=active) for dbdict in dbdicts]
 
-    def get_kwargs_from_graphql(self, parent, resolve_info, args):
-        return {}
-
 
 class Project(base.ResourceType):
     name = "project"
     plural = "projects"
     endpoints = [ProjectEndpoint, ProjectsEndpoint]
-    keyField = 'projectid'
-    eventPathPatterns = """
-        /projects/:projectid
-    """
-    subresources = ["Builder"]
+    eventPathPatterns = [
+        "/projects/:projectid",
+    ]
 
     class EntityType(types.Entity):
         projectid = types.Integer()
@@ -103,7 +98,7 @@ class Project(base.ResourceType):
         description_format = types.NoneOk(types.String())
         description_html = types.NoneOk(types.String())
 
-    entityType = EntityType(name, 'Project')
+    entityType = EntityType(name)
 
     @defer.inlineCallbacks
     def generate_event(self, _id, event):
@@ -111,13 +106,18 @@ class Project(base.ResourceType):
         self.produceEvent(project, event)
 
     @base.updateMethod
-    def find_project_id(self, name):
-        return self.master.db.projects.find_project_id(name)
+    def find_project_id(self, name: str, auto_create: bool = True):
+        return self.master.db.projects.find_project_id(name, auto_create)
 
     @base.updateMethod
     @defer.inlineCallbacks
     def update_project_info(
-        self, projectid, slug, description, description_format, description_html
+        self,
+        projectid: int,
+        slug: str,
+        description: str | None,
+        description_format: str | None,
+        description_html: str | None,
     ):
         yield self.master.db.projects.update_project_info(
             projectid, slug, description, description_format, description_html

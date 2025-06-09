@@ -128,9 +128,6 @@ class BuildEPYDoc(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_sample(self):
         self.setup_step(python.BuildEPYDoc())
         self.expect_commands(
@@ -144,9 +141,6 @@ class PyLint(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     @parameterized.expand([('no_results', True), ('with_results', False)])
     def test_success(self, name, store_results):
@@ -442,9 +436,6 @@ class PyFlakes(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_success(self):
         self.setup_step(python.PyFlakes())
         self.expect_commands(ExpectShell(workdir='wkdir', command=['make', 'pyflakes']).exit(0))
@@ -527,9 +518,6 @@ class TestSphinx(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     def test_builddir_required(self):
         with self.assertRaises(config.ConfigErrors):

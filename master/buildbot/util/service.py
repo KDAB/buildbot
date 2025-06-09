@@ -16,10 +16,13 @@
 from __future__ import annotations
 
 import hashlib
+from typing import TYPE_CHECKING
+from typing import ClassVar
 
 from twisted.application import service
 from twisted.internet import defer
 from twisted.internet import task
+from twisted.logger import Logger
 from twisted.python import log
 from twisted.python import reflect
 from twisted.python.reflect import accumulateClassList
@@ -30,6 +33,10 @@ from buildbot.process.properties import Properties
 from buildbot.util import bytes2unicode
 from buildbot.util import config
 from buildbot.util import unicode2bytes
+from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 class ReconfigurableServiceMixin:
@@ -52,9 +59,9 @@ class ReconfigurableServiceMixin:
             yield svc.reconfigServiceWithBuildbotConfig(new_config)
 
 
-# twisted 16's Service is now an new style class, better put everybody new style
-# to catch issues even on twisted < 16
 class AsyncService(service.Service):
+    name: str | None  # type: ignore[assignment]
+
     # service.Service.setServiceParent does not wait for neither disownServiceParent nor addService
     # to complete
     @defer.inlineCallbacks
@@ -117,7 +124,7 @@ class AsyncMultiService(AsyncService, service.MultiService):
     def addService(self, service):
         if service.name is not None:
             if service.name in self.namedServices:
-                raise RuntimeError("cannot have two services with same name" f" '{service.name}'")
+                raise RuntimeError(f"cannot have two services with same name '{service.name}'")
             self.namedServices[service.name] = service
         self.services.append(service)
         if self.running:
@@ -127,6 +134,20 @@ class AsyncMultiService(AsyncService, service.MultiService):
         return defer.succeed(None)
 
 
+class IndependentAsyncMultiService(AsyncMultiService):
+    # Used in cases where lifetime must be managed differently than the parent
+
+    name: str | None  # type: ignore[assignment]
+    _master: None
+
+    def set_master(self, master):
+        self._master = master
+
+    @property
+    def master(self):
+        return self._master
+
+
 class MasterService(AsyncMultiService):
     # master service is the service that stops the master property recursion
 
@@ -134,10 +155,11 @@ class MasterService(AsyncMultiService):
     def master(self):
         return self
 
-    def get_db_url(self, new_config) -> defer.Deferred:
+    def get_db_config(self, new_config) -> defer.Deferred:
         p = Properties()
         p.master = self
-        return p.render(new_config.db['db_url'])
+
+        return p.render(new_config.db)
 
 
 class SharedService(AsyncMultiService):
@@ -183,10 +205,10 @@ class SharedService(AsyncMultiService):
 class BuildbotService(
     AsyncMultiService, config.ConfiguredMixin, util.ComparableMixin, ReconfigurableServiceMixin
 ):
-    compare_attrs = ('name', '_config_args', '_config_kwargs')
-    name = None
+    compare_attrs: ClassVar[Sequence[str]] = ('name', '_config_args', '_config_kwargs')
+    name: str | None = None  # type: ignore[assignment]
     configured = False
-    objectid = None
+    objectid: int | None = None
 
     def __init__(self, *args, **kwargs):
         name = kwargs.pop("name", None)
@@ -199,6 +221,8 @@ class BuildbotService(
         self._config_kwargs = kwargs
         self.rendered = False
         super().__init__()
+
+        self._logger = Logger(self.name)
 
     def getConfigDict(self):
         _type = type(self)
@@ -280,11 +304,11 @@ class ClusteredBuildbotService(BuildbotService):
     - return after it starts else.
     """
 
-    compare_attrs = ('name',)
+    compare_attrs: ClassVar[Sequence[str]] = ('name',)
 
     POLL_INTERVAL_SEC = 5 * 60  # 5 minutes
 
-    serviceid = None
+    serviceid: int | None = None
     active = False
 
     def __init__(self, *args, **kwargs):
@@ -357,9 +381,8 @@ class ClusteredBuildbotService(BuildbotService):
             try:
                 yield self.deactivate()
                 yield self._unclaimService()
-            except Exception as e:
-                msg = f"Caught exception while deactivating ClusteredService({self.name})"
-                log.err(e, _why=msg)
+            except Exception:
+                self._logger.failure("Caught exception while deactivating ClusteredService")
 
         yield super().stopService()
 
@@ -371,7 +394,12 @@ class ClusteredBuildbotService(BuildbotService):
         self._activityPollDeferred = d
 
         # this should never happen, but just in case:
-        d.addErrback(log.err, 'while polling for service activity:')
+        d.addErrback(
+            lambda fail: self._logger.failure(
+                'while polling for service activity:',
+                failure=fail,
+            )
+        )
 
     def _stopActivityPolling(self):
         if self._activityPollCall:
@@ -398,8 +426,7 @@ class ClusteredBuildbotService(BuildbotService):
             try:
                 claimed = yield self._claimService()
             except Exception:
-                msg = f'WARNING: ClusteredService({self.name}) got exception while trying to claim'
-                log.err(_why=msg)
+                self._logger.failure('ClusteredService got exception while trying to claim')
                 return
 
             if not claimed:
@@ -418,8 +445,7 @@ class ClusteredBuildbotService(BuildbotService):
                 yield self.activate()
             except Exception:
                 # this service is half-active, and noted as such in the db..
-                msg = f'WARNING: ClusteredService({self.name}) is only partially active'
-                log.err(_why=msg)
+                self._logger.failure('ClusteredService is only partially active')
             finally:
                 # cannot wait for its deactivation
                 # with yield self._stopActivityPolling
@@ -432,13 +458,12 @@ class ClusteredBuildbotService(BuildbotService):
         except Exception:
             # don't pass exceptions into LoopingCall, which can cause it to
             # fail
-            msg = f'WARNING: ClusteredService({self.name}) failed during activity poll'
-            log.err(_why=msg)
+            self._logger.failure('ClusteredService failed during activity poll')
 
 
 class BuildbotServiceManager(AsyncMultiService, config.ConfiguredMixin, ReconfigurableServiceMixin):
     config_attr = "services"
-    name = "services"
+    name: str | None = "services"  # type: ignore[assignment]
 
     def getConfigDict(self):
         return {
@@ -489,8 +514,7 @@ class BuildbotServiceManager(AsyncMultiService, config.ConfiguredMixin, Reconfig
 
         if removed_names or added_names:
             log.msg(
-                f"adding {len(added_names)} new {self.config_attr}, "
-                f"removing {len(removed_names)}"
+                f"adding {len(added_names)} new {self.config_attr}, removing {len(removed_names)}"
             )
 
             for n in removed_names:
@@ -534,6 +558,12 @@ class BuildbotServiceManager(AsyncMultiService, config.ConfiguredMixin, Reconfig
                 # so we implement switch of child when the service raises NotImplementedError
                 # Note this means that self will stop, and sibling will take ownership
                 # means that we have a small time where the service is unavailable.
+                warn_deprecated(
+                    '4.3.0',
+                    'raising NotImplementedError from '
+                    'reconfigServiceWithSibling() or reconfigService() has been deprecated',
+                )
+
                 yield svc.disownServiceParent()
                 config_sibling.objectid = svc.objectid
                 yield config_sibling.setServiceParent(self)

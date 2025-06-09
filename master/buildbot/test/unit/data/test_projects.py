@@ -35,14 +35,11 @@ class ProjectEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        yield self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Project(id=1, name='project1'),
             fakedb.Project(id=2, name='project2'),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get_existing_id(self):
@@ -77,8 +74,8 @@ class ProjectsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        yield self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Project(id=1, name='project1'),
             fakedb.Project(id=2, name='project2'),
             fakedb.Project(id=3, name='project3'),
@@ -87,9 +84,6 @@ class ProjectsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.Builder(id=201, projectid=3),
             fakedb.BuilderMaster(id=300, builderid=200, masterid=100),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @parameterized.expand([
         ('no_filter', None, [1, 2, 3]),
@@ -116,7 +110,7 @@ class Project(interfaces.InterfaceTests, TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
         self.rtype = projects.Project(self.master)
         yield self.master.db.insert_test_data([
             fakedb.Project(id=13, name="fake_project"),
@@ -127,7 +121,7 @@ class Project(interfaces.InterfaceTests, TestReactorMixin, unittest.TestCase):
             self.master.data.updates.find_project_id,  # fake
             self.rtype.find_project_id,
         )  # real
-        def find_project_id(self, name):
+        def find_project_id(self, name: str, auto_create: bool = True):
             pass
 
     def test_find_project_id(self):

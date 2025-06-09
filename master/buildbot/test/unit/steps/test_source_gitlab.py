@@ -33,7 +33,7 @@ class TestGitLab(
     def setUp(self):
         self.setup_test_reactor()
         self.sourceName = self.stepClass.__name__
-        return self.setUpSourceStep()
+        return self.setup_test_build_step()
 
     def setup_step(self, step, args, **kwargs):
         step = super().setup_step(step, args, **kwargs)
@@ -52,9 +52,6 @@ class TestGitLab(
         )
         step.build.properties.setProperty("target_project_id", 239, "gitlab target project ID")
         return step
-
-    def tearDown(self):
-        return self.tearDownSourceStep()
 
     def test_with_merge_branch(self):
         self.setup_step(
@@ -81,7 +78,7 @@ class TestGitLab(
                     'fetch',
                     '-f',
                     '--progress',
-                    'git@gitlab.example.com:build/awesome_project.git',
+                    'ssh://git@gitlab.example.com:22/build/awesome_project.git',
                     'ms-viewport',
                 ],
             ).exit(0),

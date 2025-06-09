@@ -42,11 +42,12 @@ class TestBuildRequestEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     COMPLETE_AT = datetime.datetime(1980, 6, 15, 12, 31, 15, tzinfo=UTC)
     COMPLETE_AT_EPOCH = 329920275
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=77, name='bbb'),
-            fakedb.Master(id=fakedb.FakeBuildRequestsComponent.MASTER_ID),
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
             fakedb.Worker(id=13, name='wrk'),
             fakedb.Buildset(id=8822),
             fakedb.BuildRequest(
@@ -65,13 +66,10 @@ class TestBuildRequestEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             ),
         ])
 
-    def tearDown(self):
-        self.tearDownEndpoint()
-
     @defer.inlineCallbacks
     def testGetExisting(self):
-        self.db.buildrequests.claimBuildRequests([44], claimed_at=self.CLAIMED_AT)
-        self.db.buildrequests.completeBuildRequests([44], 75, complete_at=self.COMPLETE_AT)
+        self.master.db.buildrequests.claimBuildRequests([44], claimed_at=self.CLAIMED_AT)
+        self.master.db.buildrequests.completeBuildRequests([44], 75, complete_at=self.COMPLETE_AT)
         buildrequest = yield self.callGet(('buildrequests', 44))
         self.validateData(buildrequest)
         # check data formatting:
@@ -81,9 +79,7 @@ class TestBuildRequestEndpoint(endpoint.EndpointMixin, unittest.TestCase):
         self.assertEqual(buildrequest['waited_for'], True)
         self.assertEqual(buildrequest['claimed_at'], self.CLAIMED_AT)
         self.assertEqual(buildrequest['results'], 75)
-        self.assertEqual(
-            buildrequest['claimed_by_masterid'], fakedb.FakeBuildRequestsComponent.MASTER_ID
-        )
+        self.assertEqual(buildrequest['claimed_by_masterid'], fakedb.FakeDBConnector.MASTER_ID)
         self.assertEqual(buildrequest['claimed'], True)
         self.assertEqual(buildrequest['submitted_at'], self.SUBMITTED_AT)
         self.assertEqual(buildrequest['complete_at'], self.COMPLETE_AT)
@@ -128,13 +124,14 @@ class TestBuildRequestsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     COMPLETE_AT = datetime.datetime(1980, 6, 15, 12, 31, 15, tzinfo=UTC)
     COMPLETE_AT_EPOCH = 329920275
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=77, name='bbb'),
             fakedb.Builder(id=78, name='ccc'),
             fakedb.Builder(id=79, name='ddd'),
-            fakedb.Master(id=fakedb.FakeBuildRequestsComponent.MASTER_ID),
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
             fakedb.Worker(id=13, name='wrk'),
             fakedb.Buildset(id=8822),
             fakedb.BuildRequest(
@@ -147,10 +144,9 @@ class TestBuildRequestsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             ),
             fakedb.BuildRequest(id=45, buildsetid=8822, builderid=77),
             fakedb.BuildRequest(id=46, buildsetid=8822, builderid=78),
+            fakedb.SourceStamp(id=100),
+            fakedb.BuildsetSourceStamp(buildsetid=8822, sourcestampid=100),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def testGetAll(self):
@@ -182,7 +178,7 @@ class TestBuildRequestsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def testGetProperties(self):
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.BuildsetProperty(
                 buildsetid=8822, property_name='prop1', property_value='["one", "fake1"]'
             ),
@@ -238,15 +234,13 @@ class TestBuildRequestsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
         getBuildRequestsMock = mock.Mock(return_value={})
         self.patch(self.master.db.buildrequests, 'getBuildRequests', getBuildRequestsMock)
         f1 = resultspec.Filter('claimed', 'eq', [True])
-        f2 = resultspec.Filter(
-            'claimed_by_masterid', 'eq', [fakedb.FakeBuildRequestsComponent.MASTER_ID]
-        )
+        f2 = resultspec.Filter('claimed_by_masterid', 'eq', [fakedb.FakeDBConnector.MASTER_ID])
         yield self.callGet(('buildrequests',), resultSpec=resultspec.ResultSpec(filters=[f1, f2]))
         getBuildRequestsMock.assert_called_with(
             builderid=None,
             bsid=None,
             complete=None,
-            claimed=fakedb.FakeBuildRequestsComponent.MASTER_ID,
+            claimed=fakedb.FakeDBConnector.MASTER_ID,
             resultSpec=resultspec.ResultSpec(filters=[f1]),
         )
 
@@ -272,9 +266,10 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
     class dBLayerException(Exception):
         pass
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
         self.rtype = buildrequests.BuildRequest(self.master)
 
     @defer.inlineCallbacks
@@ -296,7 +291,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
             except expectedException:
                 pass
             except Exception as e:
-                self.fail(f'{expectedException} exception should be raised, but got {repr(e)}')
+                self.fail(f'{expectedException} exception should be raised, but got {e!r}')
             else:
                 self.fail(f'{expectedException} exception should be raised')
         else:
@@ -315,9 +310,12 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
 
     @defer.inlineCallbacks
     def testFakeDataClaimBuildRequests(self):
-        self.master.db.insert_test_data([
-            fakedb.BuildRequest(id=44, buildsetid=8822),
-            fakedb.BuildRequest(id=55, buildsetid=8822),
+        yield self.master.db.insert_test_data([
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.Builder(id=123),
+            fakedb.Buildset(id=8822),
+            fakedb.BuildRequest(id=44, builderid=123, buildsetid=8822),
+            fakedb.BuildRequest(id=55, builderid=123, buildsetid=8822),
         ])
         res = yield self.master.data.updates.claimBuildRequests(
             [44, 55], claimed_at=self.CLAIMED_AT
@@ -331,8 +329,9 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
 
     @defer.inlineCallbacks
     def testClaimBuildRequests(self):
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=123),
+            fakedb.Buildset(id=8822),
             fakedb.BuildRequest(id=44, buildsetid=8822, builderid=123),
             fakedb.BuildRequest(id=55, buildsetid=8822, builderid=123),
         ])
@@ -437,8 +436,9 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
 
     @defer.inlineCallbacks
     def testUnclaimBuildRequests(self):
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=123),
+            fakedb.Buildset(id=8822),
             fakedb.BuildRequest(id=44, buildsetid=8822, builderid=123),
         ])
         unclaimBuildRequestsMock = mock.Mock(return_value=defer.succeed(None))
@@ -498,14 +498,28 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
             pass
 
     @defer.inlineCallbacks
-    def testFakeDataCompleteBuildRequests(self):
+    def test_complete_build_requests(self):
+        yield self.master.db.insert_test_data([
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.Builder(id=77),
+            fakedb.Buildset(id=8822),
+            fakedb.BuildRequest(id=101, buildsetid=8822, builderid=77),
+            fakedb.BuildRequest(id=102, buildsetid=8822, builderid=77),
+            fakedb.BuildRequestClaim(
+                brid=101, masterid=fakedb.FakeDBConnector.MASTER_ID, claimed_at=12345
+            ),
+            fakedb.BuildRequestClaim(
+                brid=102, masterid=fakedb.FakeDBConnector.MASTER_ID, claimed_at=12345
+            ),
+        ])
+
         res = yield self.master.data.updates.completeBuildRequests(
-            [44, 55], 12, complete_at=self.COMPLETE_AT
+            [101, 102], 12, complete_at=self.COMPLETE_AT
         )
         self.assertTrue(res)
 
     @defer.inlineCallbacks
-    def testFakeDataCompleteBuildRequestsNoneArgs(self):
+    def test_complete_build_requests_no_brids(self):
         res = yield self.master.data.updates.completeBuildRequests([], 0)
         self.assertTrue(res)
 
@@ -568,7 +582,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
 
     @defer.inlineCallbacks
     def testRebuildBuildrequest(self):
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=77, name='builder'),
             fakedb.Master(id=88),
             fakedb.Worker(id=13, name='wrk'),
@@ -592,13 +606,13 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
         self.assertEqual(
             buildrequest,
             {
-                'buildrequestid': 1001,
+                'buildrequestid': 83,
                 'complete': False,
                 'waited_for': False,
                 'claimed_at': None,
                 'results': -1,
                 'claimed': False,
-                'buildsetid': 200,
+                'buildsetid': 8823,
                 'complete_at': None,
                 'submitted_at': epoch2datetime(0),
                 'builderid': 77,
@@ -616,7 +630,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
         self.assertEqual(
             buildset,
             {
-                'bsid': 200,
+                'bsid': 8823,
                 'complete_at': None,
                 'submitted_at': 0,
                 'sourcestamps': None,
@@ -635,7 +649,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
 
     @defer.inlineCallbacks
     def test_rebuild_buildrequest_rebuilt_build(self):
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=77, name="builder"),
             fakedb.Master(id=88),
             fakedb.Worker(id=13, name="wrk"),
@@ -643,7 +657,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
             fakedb.SourceStamp(id=234),
             fakedb.BuildsetSourceStamp(buildsetid=8822, sourcestampid=234),
             fakedb.BuildRequest(id=82, buildsetid=8822, builderid=77),
-            fakedb.Build(id=123, buildrequestid=82),
+            fakedb.Build(id=123, builderid=77, workerid=13, buildrequestid=82, masterid=88),
         ])
         buildrequest = yield self.master.data.get(("buildrequests", 82))
         new_bsid, brid_dict = yield self.rtype.rebuildBuildrequest(buildrequest)
@@ -654,13 +668,13 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
         self.assertEqual(
             buildrequest,
             {
-                "buildrequestid": 1001,
+                "buildrequestid": 83,
                 "complete": False,
                 "waited_for": False,
                 "claimed_at": None,
                 "results": -1,
                 "claimed": False,
-                "buildsetid": 200,
+                "buildsetid": 8823,
                 "complete_at": None,
                 "submitted_at": epoch2datetime(0),
                 "builderid": 77,
@@ -678,7 +692,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
         self.assertEqual(
             buildset,
             {
-                "bsid": 200,
+                "bsid": 8823,
                 "complete_at": None,
                 "submitted_at": 0,
                 "sourcestamps": None,
@@ -694,7 +708,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
 
     @defer.inlineCallbacks
     def test_rebuild_buildrequest_repeated_rebuilt_build(self):
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=77, name="builder"),
             fakedb.Master(id=88),
             fakedb.Worker(id=13, name="wrk"),
@@ -705,8 +719,8 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
             fakedb.BuildsetSourceStamp(buildsetid=8822, sourcestampid=234),
             fakedb.BuildRequest(id=81, buildsetid=8821, builderid=77),
             fakedb.BuildRequest(id=82, buildsetid=8822, builderid=77),
-            fakedb.Build(id=122, buildrequestid=81),
-            fakedb.Build(id=123, buildrequestid=82),
+            fakedb.Build(id=122, builderid=77, workerid=13, buildrequestid=81, masterid=88),
+            fakedb.Build(id=123, builderid=77, workerid=13, buildrequestid=82, masterid=88),
         ])
         buildrequest = yield self.master.data.get(("buildrequests", 82))
         new_bsid, brid_dict = yield self.rtype.rebuildBuildrequest(buildrequest)
@@ -717,13 +731,13 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
         self.assertEqual(
             buildrequest,
             {
-                "buildrequestid": 1001,
+                "buildrequestid": 83,
                 "complete": False,
                 "waited_for": False,
                 "claimed_at": None,
                 "results": -1,
                 "claimed": False,
-                "buildsetid": 200,
+                "buildsetid": 8823,
                 "complete_at": None,
                 "submitted_at": epoch2datetime(0),
                 "builderid": 77,
@@ -741,7 +755,7 @@ class TestBuildRequest(interfaces.InterfaceTests, TestReactorMixin, unittest.Tes
         self.assertEqual(
             buildset,
             {
-                "bsid": 200,
+                "bsid": 8823,
                 "complete_at": None,
                 "submitted_at": 0,
                 "sourcestamps": None,

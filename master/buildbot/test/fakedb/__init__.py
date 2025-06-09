@@ -19,65 +19,48 @@ using a database.  These classes should pass the same tests as are applied to
 the real connector components.
 """
 
-from .base import FakeDBComponent
 from .build_data import BuildData
-from .build_data import FakeBuildDataComponent
 from .builders import Builder
 from .builders import BuilderMaster
 from .builders import BuildersTags
-from .builders import FakeBuildersComponent
 from .buildrequests import BuildRequest
 from .buildrequests import BuildRequestClaim
-from .buildrequests import FakeBuildRequestsComponent
 from .builds import Build
 from .builds import BuildProperty
-from .builds import FakeBuildsComponent
 from .buildsets import Buildset
 from .buildsets import BuildsetProperty
 from .buildsets import BuildsetSourceStamp
-from .buildsets import FakeBuildsetsComponent
 from .changes import Change
 from .changes import ChangeFile
 from .changes import ChangeProperty
 from .changes import ChangeUser
-from .changes import FakeChangesComponent
 from .changesources import ChangeSource
 from .changesources import ChangeSourceMaster
-from .changesources import FakeChangeSourcesComponent
+from .codebases import Codebase
+from .codebases import CodebaseBranch
+from .codebases import CodebaseCommit
 from .connector import FakeDBConnector
-from .logs import FakeLogsComponent
 from .logs import Log
 from .logs import LogChunk
-from .masters import FakeMastersComponent
 from .masters import Master
-from .projects import FakeProjectsComponent
 from .projects import Project
-from .schedulers import FakeSchedulersComponent
 from .schedulers import Scheduler
 from .schedulers import SchedulerChange
 from .schedulers import SchedulerMaster
-from .sourcestamps import FakeSourceStampsComponent
 from .sourcestamps import Patch
 from .sourcestamps import SourceStamp
-from .state import FakeStateComponent
 from .state import Object
 from .state import ObjectState
-from .steps import FakeStepsComponent
 from .steps import Step
-from .tags import FakeTagsComponent
 from .tags import Tag
-from .test_result_sets import FakeTestResultSetsComponent
 from .test_result_sets import TestResultSet
-from .test_results import FakeTestResultsComponent
 from .test_results import TestCodePath
 from .test_results import TestName
 from .test_results import TestResult
-from .users import FakeUsersComponent
 from .users import User
 from .users import UserInfo
 from .workers import ConfiguredWorker
 from .workers import ConnectedWorker
-from .workers import FakeWorkersComponent
 from .workers import Worker
 
 __all__ = [
@@ -98,29 +81,12 @@ __all__ = [
     'ChangeSource',
     'ChangeSourceMaster',
     'ChangeUser',
+    'Codebase',
+    'CodebaseBranch',
+    'CodebaseCommit',
     'ConfiguredWorker',
     'ConnectedWorker',
-    'FakeBuildRequestsComponent',
-    'FakeBuildersComponent',
-    'FakeBuildsComponent',
-    'FakeBuildsetsComponent',
-    'FakeBuildDataComponent',
-    'FakeChangeSourcesComponent',
-    'FakeChangesComponent',
-    'FakeDBComponent',
     'FakeDBConnector',
-    'FakeLogsComponent',
-    'FakeMastersComponent',
-    'FakeProjectsComponent',
-    'FakeSchedulersComponent',
-    'FakeSourceStampsComponent',
-    'FakeStateComponent',
-    'FakeStepsComponent',
-    'FakeTagsComponent',
-    'FakeTestResultSetsComponent',
-    'FakeTestResultsComponent',
-    'FakeUsersComponent',
-    'FakeWorkersComponent',
     'Log',
     'LogChunk',
     'Master',
@@ -136,8 +102,8 @@ __all__ = [
     'Tag',
     'TestCodePath',
     'TestName',
-    'TestResultSet',
     'TestResult',
+    'TestResultSet',
     'User',
     'UserInfo',
     'Worker',

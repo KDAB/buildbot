@@ -13,6 +13,12 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import ClassVar
+
 from twisted.internet import defer
 from twisted.python import failure
 from zope.interface import implementer
@@ -22,15 +28,33 @@ from buildbot.process.properties import Properties
 from buildbot.schedulers import base
 from buildbot.util import debounce
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 @implementer(ITriggerableScheduler)
-class Triggerable(base.BaseScheduler):
-    compare_attrs = base.BaseScheduler.compare_attrs + ('reason',)
+class Triggerable(base.ReconfigurableBaseScheduler):
+    compare_attrs: ClassVar[Sequence[str]] = (
+        *base.ReconfigurableBaseScheduler.compare_attrs,
+        'reason',
+    )
 
-    def __init__(self, name, builderNames, reason=None, **kwargs):
-        super().__init__(name, builderNames, **kwargs)
+    def __init__(self, name, builderNames, *args, **kwargs):
+        super().__init__(*args, name=name, builderNames=builderNames, **kwargs)
         self._waiters = {}
         self._buildset_complete_consumer = None
+
+    def checkConfig(self, builderNames, reason=None, **kwargs: Any):  # type: ignore[override]
+        super().checkConfig(builderNames=builderNames, **kwargs)
+
+    @defer.inlineCallbacks
+    def reconfigService(  # type: ignore[override]
+        self,
+        builderNames,
+        reason=None,
+        **kwargs: Any,
+    ):
+        yield super().reconfigService(builderNames=builderNames, **kwargs)
         self.reason = reason
 
     def trigger(

@@ -17,6 +17,7 @@ import builtins
 import os
 import re
 import textwrap
+from importlib.util import find_spec
 from unittest import mock
 
 from parameterized import parameterized
@@ -36,6 +37,8 @@ from buildbot.config.master import FileLoader
 from buildbot.config.master import loadConfigDict
 from buildbot.process import factory
 from buildbot.process import properties
+from buildbot.process.codebase import Codebase
+from buildbot.process.project import Project
 from buildbot.schedulers import base as schedulers_base
 from buildbot.test.util import dirs
 from buildbot.test.util.config import ConfigErrorsMixin
@@ -45,12 +48,14 @@ from buildbot.util import service
 from buildbot.warnings import ConfigWarning
 from buildbot.warnings import DeprecatedApiWarning
 
+HAS_ZSTD = find_spec('zstandard') is not None
+
 global_defaults = {
     "title": 'Buildbot',
     "titleURL": 'http://buildbot.net/',
     "buildbotURL": 'http://localhost:8080/',
     "logCompressionLimit": 4096,
-    "logCompressionMethod": 'zstd',
+    "logCompressionMethod": 'zstd' if HAS_ZSTD else 'gz',
     "logEncoding": 'utf-8',
     "logMaxTailSize": None,
     "logMaxSize": None,
@@ -95,6 +100,10 @@ class FakeWorker:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
+    @property
+    def workername(self):
+        return self.name
+
 
 @implementer(interfaces.IMachine)
 class FakeMachine:
@@ -109,9 +118,6 @@ class ConfigLoaderTests(ConfigErrorsMixin, dirs.DirsMixin, unittest.SynchronousT
         self.patch(config.master, "get_is_in_unit_tests", lambda: False)
 
         return self.setUpDirs('basedir')
-
-    def tearDown(self):
-        return self.tearDownDirs()
 
     def install_config_file(self, config_file, other_files=None):
         if other_files is None:
@@ -204,9 +210,6 @@ class MasterConfigTests(ConfigErrorsMixin, dirs.DirsMixin, unittest.TestCase):
         self.filename = os.path.join(self.basedir, 'test.cfg')
         return self.setUpDirs('basedir')
 
-    def tearDown(self):
-        return self.tearDownDirs()
-
     # utils
 
     def patch_load_helpers(self):
@@ -246,7 +249,7 @@ class MasterConfigTests(ConfigErrorsMixin, dirs.DirsMixin, unittest.TestCase):
         cfg = config.master.MasterConfig()
         expected = {
             # validation,
-            "db": {"db_url": 'sqlite:///state.sqlite'},
+            "db": config.master.DBConfig(db_url='sqlite:///state.sqlite'),
             "mq": {"type": 'simple'},
             "metrics": None,
             "caches": {"Changes": 10, "Builds": 15},
@@ -323,7 +326,7 @@ class MasterConfigTests(ConfigErrorsMixin, dirs.DirsMixin, unittest.TestCase):
         # make sure all of the loaders and checkers are called
         self.assertTrue(rv.load_global.called)
         self.assertTrue(rv.load_validation.called)
-        self.assertTrue(rv.load_db.called)
+        self.assertTrue(rv.load_dbconfig.called)
         self.assertTrue(rv.load_metrics.called)
         self.assertTrue(rv.load_caches.called)
         self.assertTrue(rv.load_schedulers.called)
@@ -575,20 +578,26 @@ class MasterConfig_loaders(ConfigErrorsMixin, unittest.TestCase):
         self.assertIn('revision', self.cfg.validation)
 
     def test_load_db_defaults(self):
-        self.cfg.load_db(self.filename, {})
-        self.assertResults(db={"db_url": 'sqlite:///state.sqlite'})
+        self.cfg.load_dbconfig(self.filename, {})
+        self.assertResults(
+            db=config.master.DBConfig(db_url='sqlite:///state.sqlite', engine_kwargs={})
+        )
 
     def test_load_db_db_url(self):
-        self.cfg.load_db(self.filename, {"db_url": 'abcd'})
-        self.assertResults(db={"db_url": 'abcd'})
+        self.cfg.load_dbconfig(self.filename, {"db_url": 'abcd'})
+        self.assertResults(db=config.master.DBConfig(db_url='abcd'))
 
     def test_load_db_dict(self):
-        self.cfg.load_db(self.filename, {'db': {'db_url': 'abcd'}})
-        self.assertResults(db={"db_url": 'abcd'})
+        self.cfg.load_dbconfig(self.filename, {'db': {'db_url': 'abcd'}})
+        self.assertResults(db=config.master.DBConfig(db_url='abcd'))
+
+    def test_load_db_dict_renderable_url(self):
+        self.cfg.load_dbconfig(self.filename, {'db': {'db_url': properties.Interpolate('abcd')}})
+        self.assertResults(db=config.master.DBConfig(db_url='abcd'))
 
     def test_load_db_unk_keys(self):
         with capture_config_errors() as errors:
-            self.cfg.load_db(self.filename, {'db': {'db_url': 'abcd', 'bar': 'bar'}})
+            self.cfg.load_dbconfig(self.filename, {'db': {'db_url': 'abcd', 'bar': 'bar'}})
 
         self.assertConfigError(errors, "unrecognized keys in")
 
@@ -702,7 +711,7 @@ class MasterConfig_loaders(ConfigErrorsMixin, unittest.TestCase):
         self.assertConfigError(errors, "scheduler name 'sch' used multiple times")
 
     def test_load_schedulers(self):
-        sch = schedulers_base.BaseScheduler('sch', [""])
+        sch = schedulers_base.ReconfigurableBaseScheduler(name='sch', builderNames=["a"])
         self.cfg.load_schedulers(self.filename, {"schedulers": [sch]})
         self.assertResults(schedulers={"sch": sch})
 
@@ -741,6 +750,40 @@ class MasterConfig_loaders(ConfigErrorsMixin, unittest.TestCase):
         }
         self.cfg.load_builders(self.filename, {"builders": [bldr]})
         self.assertEqual(len(self.flushWarnings([self.cfg.load_builders])), 1)
+
+    def test_load_codebases_defaults(self):
+        self.cfg.load_codebases(self.filename, {})
+        self.assertResults(codebases=[])
+
+    def test_load_codebases_not_list(self):
+        with capture_config_errors() as errors:
+            self.cfg.load_codebases(self.filename, {'codebases': {}})
+        self.assertConfigError(errors, "must be a list")
+
+    def test_load_codebases_not_instance(self):
+        with capture_config_errors() as errors:
+            self.cfg.load_codebases(self.filename, {'codebases': [mock.Mock()]})
+
+        self.assertConfigError(errors, "is not a codebase config")
+
+    def test_load_codebases_not_project(self):
+        with capture_config_errors() as errors:
+            self.cfg.load_codebases(
+                self.filename, {'codebases': [Codebase(name='codebase', project='project')]}
+            )
+
+        self.assertConfigError(errors, "includes unknown project")
+
+    def test_load_codebases_valid(self):
+        cfg = {
+            'projects': [Project(name='project')],
+            'codebases': [Codebase(name='codebase', project='project')],
+        }
+
+        self.cfg.load_projects(self.filename, cfg)
+        self.cfg.load_codebases(self.filename, cfg)
+
+        self.assertResults(codebases=[Codebase(name='codebase', project='project')])
 
     def test_load_workers_defaults(self):
         self.cfg.load_workers(self.filename, {})
@@ -1006,7 +1049,7 @@ class MasterConfig_loaders(ConfigErrorsMixin, unittest.TestCase):
                 self.filename, {"services": [MyService(x='a'), MyService(x='b')]}
             )
 
-        self.assertConfigError(errors, f'Duplicate service name {repr(MyService.name)}')
+        self.assertConfigError(errors, f'Duplicate service name {MyService.name!r}')
 
     def test_load_configurators_norminal(self):
         class MyConfigurator(configurators.ConfiguratorBase):

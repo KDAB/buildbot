@@ -13,36 +13,31 @@
 #
 # Copyright Buildbot Team Members
 
-import sys
+from __future__ import annotations
+
+import importlib.resources
 
 from twisted.web import static
 
 from buildbot.util import bytes2unicode
 
-if sys.version_info[:2] >= (3, 9):
-    # We need importlib.resources.files, which is added in Python 3.9
-    # https://docs.python.org/3/library/importlib.resources.html
-    import importlib.resources as importlib_resources
-else:
-    import importlib_resources
-
 
 class Application:
-    def __init__(self, package_name, description, ui=True):
+    def __init__(self, package_name: str, description: str, ui: bool = True) -> None:
         self.description = description
-        self.version = importlib_resources.files(package_name).joinpath("VERSION")
-        self.version = bytes2unicode(self.version.read_bytes())
-        self.static_dir = importlib_resources.files(package_name) / "static"
+        version_file = importlib.resources.files(package_name).joinpath("VERSION")
+        self.version = bytes2unicode(version_file.read_bytes())
+        self.static_dir = str(importlib.resources.files(package_name) / "static")
         self.resource = static.File(self.static_dir)
         self.ui = ui
 
-    def setMaster(self, master):
+    def setMaster(self, master: object) -> None:
         self.master = master
 
-    def setConfiguration(self, config):
+    def setConfiguration(self, config: object) -> None:
         self.config = config
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             "www.plugin.Application(version={version}, "
             "description={description}, "

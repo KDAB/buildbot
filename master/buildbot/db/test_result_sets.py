@@ -16,13 +16,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from twisted.internet import defer
+import sqlalchemy as sa
 from twisted.python import deprecate
 from twisted.python import versions
 
 from buildbot.db import base
+from buildbot.util.twisted import async_to_deferred
 from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    from twisted.internet import defer
 
 
 @dataclass
@@ -104,7 +109,7 @@ class TestResultSetsConnectorComponent(base.DBConnectorComponent):
 
     def getTestResultSets(
         self,
-        builderid: int,
+        builderid: int | None = None,
         buildid: int | None = None,
         stepid: int | None = None,
         complete: bool | None = None,
@@ -112,7 +117,9 @@ class TestResultSetsConnectorComponent(base.DBConnectorComponent):
     ) -> defer.Deferred[list[TestResultSetModel]]:
         def thd(conn) -> list[TestResultSetModel]:
             sets_table = self.db.model.test_result_sets
-            q = sets_table.select().where(sets_table.c.builderid == builderid)
+            q = sets_table.select()
+            if builderid is not None:
+                q = q.where(sets_table.c.builderid == builderid)
             if buildid is not None:
                 q = q.where(sets_table.c.buildid == buildid)
             if stepid is not None:
@@ -125,6 +132,37 @@ class TestResultSetsConnectorComponent(base.DBConnectorComponent):
             return [self._model_from_row(row) for row in res.fetchall()]
 
         return self.db.pool.do(thd)
+
+    @async_to_deferred
+    async def get_test_result_sets_for_commits(
+        self, *, commit_ids: list[int]
+    ) -> list[TestResultSetModel]:
+        def thd(conn) -> list[TestResultSetModel]:
+            # FIXME: the code below currently is not sufficiently robust because it relies on
+            # revisions being sufficiently random so that they do not repeat across whole Buildbot
+            # database. At least the following would be needed to resolve the ambiguities
+            #  - attach sourcestamp to a codebase through a codebase ID
+            #  - attach sourcestamp to a commit through a commit ID
+            j = self.db.model.codebase_commits
+            j = j.join(
+                self.db.model.sourcestamps,
+                self.db.model.codebase_commits.c.revision == self.db.model.sourcestamps.c.revision,
+            )
+            j = j.join(self.db.model.buildset_sourcestamps)
+            j = j.join(self.db.model.buildsets)
+            j = j.join(self.db.model.buildrequests)
+            j = j.join(self.db.model.builds)
+            j = j.join(self.db.model.test_result_sets)
+            q = (
+                sa.select(self.db.model.test_result_sets)
+                .select_from(j)
+                .where(self.db.model.codebase_commits.c.id.in_(commit_ids))
+            )
+
+            res = conn.execute(q)
+            return [self._model_from_row(row) for row in res.fetchall()]
+
+        return await self.db.pool.do(thd)
 
     def completeTestResultSet(
         self, test_result_setid, tests_passed=None, tests_failed=None
@@ -145,8 +183,7 @@ class TestResultSetsConnectorComponent(base.DBConnectorComponent):
             conn.commit()
             if res.rowcount == 0:
                 raise TestResultSetAlreadyCompleted(
-                    f'Test result set {test_result_setid} '
-                    f'is already completed or does not exist'
+                    f'Test result set {test_result_setid} is already completed or does not exist'
                 )
 
         return self.db.pool.do(thd)

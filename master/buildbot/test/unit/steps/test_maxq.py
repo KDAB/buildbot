@@ -29,9 +29,6 @@ class TestShellCommandExecution(TestBuildStepMixin, TestReactorMixin, unittest.T
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_testdir_required(self):
         with self.assertRaises(config.ConfigErrors):
             maxq.MaxQ()

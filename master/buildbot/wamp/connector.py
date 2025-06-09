@@ -12,14 +12,13 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright  Team Members
-
+from __future__ import annotations
 
 import txaio
 from autobahn.twisted.wamp import ApplicationSession
 from autobahn.twisted.wamp import Service
 from autobahn.wamp.exception import TransportLost
 from twisted.internet import defer
-from twisted.python import failure
 from twisted.python import log
 
 from buildbot.util import bytes2unicode
@@ -42,7 +41,7 @@ class MasterService(ApplicationSession, service.AsyncMultiService):
     @defer.inlineCallbacks
     def onJoin(self, details):
         log.msg("Wamp connection succeed!")
-        for handler in [self] + self.services:
+        for handler in [self, *self.services]:
             yield self.register(handler)
             yield self.subscribe(handler)
         yield self.publish(f"org.buildbot.{self.master.masterid}.connected")
@@ -81,7 +80,7 @@ def make(config):
 
 class WampConnector(service.ReconfigurableServiceMixin, service.AsyncMultiService):
     serviceClass = Service
-    name = "wamp"
+    name: str | None = "wamp"  # type: ignore[assignment]
 
     def __init__(self):
         super().__init__()
@@ -115,8 +114,8 @@ class WampConnector(service.ReconfigurableServiceMixin, service.AsyncMultiServic
         service = yield self.getService()
         try:
             ret = yield service.publish(topic, data, options=options)
-        except TransportLost:
-            log.err(failure.Failure(), "while publishing event " + topic)
+        except TransportLost as e:
+            log.err(e, "while publishing event " + topic)
             return None
         return ret
 

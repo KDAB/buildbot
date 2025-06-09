@@ -119,9 +119,10 @@ class TestPropertyMap(unittest.TestCase):
     def testSimpleEmpty(self):
         return self.doTestSimpleWithProperties('%(prop_empty)s', '')
 
+    @defer.inlineCallbacks
     def testSimpleUnset(self):
-        d = self.build.render(WithProperties('%(prop_nosuch)s'))
-        return self.assertFailure(d, KeyError)
+        with self.assertRaises(KeyError):
+            yield self.build.render(WithProperties('%(prop_nosuch)s'))
 
     def testColonMinusSet(self):
         return self.doTestSimpleWithProperties('%(prop_str:-missing)s', 'a-string')
@@ -838,7 +839,7 @@ class TestWithProperties(unittest.TestCase):
 
     @defer.inlineCallbacks
     def testLambdaHasattr(self):
-        command = WithProperties('%(foo)s', foo=lambda b: b.hasProperty('x') and 'x' or 'y')
+        command = WithProperties('%(foo)s', foo=lambda b: (b.hasProperty('x') and 'x') or 'y')
         res = yield self.build.render(command)
         self.assertEqual(res, 'y')
 
@@ -1222,7 +1223,7 @@ class TestProperty(unittest.TestCase):
     def testFlattenListAdd2(self):
         self.props.setProperty("do-tests", "string", "scheduler")
         value = FlattenList([Property("do-tests"), ["bla"]])
-        value = value + [Property("do-tests"), ["bla"]]
+        value = value + [Property('do-tests'), ['bla']]  # noqa: RUF005
 
         res = yield self.build.render(value)
         self.assertEqual(res, ["string", "bla", "string", "bla"])

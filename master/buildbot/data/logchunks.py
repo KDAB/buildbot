@@ -23,8 +23,8 @@ from buildbot.data import base
 from buildbot.data import types
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
     from typing import Any
-    from typing import AsyncGenerator
 
     from buildbot.db.logs import LogModel
 
@@ -41,29 +41,19 @@ class LogChunkEndpointBase(base.BuildNestingMixin, base.Endpoint):
         self,
         log_dict: LogModel,
         log_prefix: str,
-        lines_batch: int = 1000,
     ) -> AsyncGenerator[str, None]:
         if log_prefix:
             yield log_prefix
 
-        lastline = max(0, log_dict.num_lines)
-        lines_batch = max(lines_batch, 1)
+        is_stdio_log = log_dict.type == 's'
 
-        for idx in range(0, lastline, lines_batch):
-            line_start = idx
-            line_end = min(lastline - 1, idx + lines_batch)
-            # TODO: Add a new API to db.logs that yield lines
-            lines: str = await self.master.db.logs.getLogLines(log_dict.id, line_start, line_end)
-
-            if log_dict.type == 's':
+        async for line in self.master.db.logs.iter_log_lines(log_dict.id):
+            if is_stdio_log:
                 # for stdio logs, the first char is the stream type
                 # ref: https://buildbot.readthedocs.io/en/latest/developer/raml/logchunk.html#logchunk
-                for line in lines.splitlines(keepends=True):
-                    yield line[1:]
+                line = line[1:]
 
-                continue
-
-            yield lines
+            yield line
 
     @defer.inlineCallbacks
     def get_log_lines_raw_data(self, kwargs):
@@ -106,15 +96,15 @@ class LogChunkEndpoint(LogChunkEndpointBase):
     # offset/limit query params in ResultSpec
     kind = base.EndpointKind.SINGLE
     isPseudoCollection = True
-    pathPatterns = """
-        /logchunks
-        /logs/n:logid/contents
-        /steps/n:stepid/logs/i:log_slug/contents
-        /builds/n:buildid/steps/i:step_name/logs/i:log_slug/contents
-        /builds/n:buildid/steps/n:step_number/logs/i:log_slug/contents
-        /builders/n:builderid/builds/n:build_number/steps/i:step_name/logs/i:log_slug/contents
-        /builders/n:builderid/builds/n:build_number/steps/n:step_number/logs/i:log_slug/contents
-    """
+    pathPatterns = [
+        "/logchunks",
+        "/logs/n:logid/contents",
+        "/steps/n:stepid/logs/i:log_slug/contents",
+        "/builds/n:buildid/steps/i:step_name/logs/i:log_slug/contents",
+        "/builds/n:buildid/steps/n:step_number/logs/i:log_slug/contents",
+        "/builders/n:builderid/builds/n:build_number/steps/i:step_name/logs/i:log_slug/contents",
+        "/builders/n:builderid/builds/n:build_number/steps/n:step_number/logs/i:log_slug/contents",
+    ]
     rootLinkName = "logchunks"
 
     @defer.inlineCallbacks
@@ -142,24 +132,19 @@ class LogChunkEndpoint(LogChunkEndpointBase):
         logLines = yield self.master.db.logs.getLogLines(logid, firstline, lastline)
         return {'logid': logid, 'firstline': firstline, 'content': logLines}
 
-    def get_kwargs_from_graphql(self, parent, resolve_info, args):
-        if parent is not None:
-            return self.get_kwargs_from_graphql_parent(parent, resolve_info.parent_type.name)
-        return {"logid": args["logid"]}
-
 
 class RawLogChunkEndpoint(LogChunkEndpointBase):
     # Note that this is a singular endpoint, even though it overrides the
     # offset/limit query params in ResultSpec
     kind = base.EndpointKind.RAW
-    pathPatterns = """
-        /logs/n:logid/raw
-        /steps/n:stepid/logs/i:log_slug/raw
-        /builds/n:buildid/steps/i:step_name/logs/i:log_slug/raw
-        /builds/n:buildid/steps/n:step_number/logs/i:log_slug/raw
-        /builders/n:builderid/builds/n:build_number/steps/i:step_name/logs/i:log_slug/raw
-        /builders/n:builderid/builds/n:build_number/steps/n:step_number/logs/i:log_slug/raw
-    """
+    pathPatterns = [
+        "/logs/n:logid/raw",
+        "/steps/n:stepid/logs/i:log_slug/raw",
+        "/builds/n:buildid/steps/i:step_name/logs/i:log_slug/raw",
+        "/builds/n:buildid/steps/n:step_number/logs/i:log_slug/raw",
+        "/builders/n:builderid/builds/n:build_number/steps/i:step_name/logs/i:log_slug/raw",
+        "/builders/n:builderid/builds/n:build_number/steps/n:step_number/logs/i:log_slug/raw",
+    ]
 
     @defer.inlineCallbacks
     def get(self, resultSpec, kwargs):
@@ -189,14 +174,14 @@ class RawInlineLogChunkEndpoint(LogChunkEndpointBase):
     # Note that this is a singular endpoint, even though it overrides the
     # offset/limit query params in ResultSpec
     kind = base.EndpointKind.RAW_INLINE
-    pathPatterns = """
-        /logs/n:logid/raw_inline
-        /steps/n:stepid/logs/i:log_slug/raw_inline
-        /builds/n:buildid/steps/i:step_name/logs/i:log_slug/raw_inline
-        /builds/n:buildid/steps/n:step_number/logs/i:log_slug/raw_inline
-        /builders/n:builderid/builds/n:build_number/steps/i:step_name/logs/i:log_slug/raw_inline
-        /builders/n:builderid/builds/n:build_number/steps/n:step_number/logs/i:log_slug/raw_inline
-    """
+    pathPatterns = [
+        "/logs/n:logid/raw_inline",
+        "/steps/n:stepid/logs/i:log_slug/raw_inline",
+        "/builds/n:buildid/steps/i:step_name/logs/i:log_slug/raw_inline",
+        "/builds/n:buildid/steps/n:step_number/logs/i:log_slug/raw_inline",
+        "/builders/n:builderid/builds/n:build_number/steps/i:step_name/logs/i:log_slug/raw_inline",
+        "/builders/n:builderid/builds/n:build_number/steps/n:step_number/logs/i:log_slug/raw_inline",
+    ]
 
     @defer.inlineCallbacks
     def get(self, resultSpec, kwargs):
@@ -227,11 +212,10 @@ class LogChunk(base.ResourceType):
     name = "logchunk"
     plural = "logchunks"
     endpoints = [LogChunkEndpoint, RawLogChunkEndpoint, RawInlineLogChunkEndpoint]
-    keyField = "logid"
 
     class EntityType(types.Entity):
         logid = types.Integer()
         firstline = types.Integer()
         content = types.String()
 
-    entityType = EntityType(name, 'LogChunk')
+    entityType = EntityType(name)

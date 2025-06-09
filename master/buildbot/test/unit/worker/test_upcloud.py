@@ -79,6 +79,7 @@ upcloudServerStoppedPayload = {
 
 class TestUpcloudWorker(TestReactorMixin, unittest.TestCase):
     worker = None
+    master = None
 
     def setUp(self):
         self.setup_test_reactor()
@@ -88,18 +89,18 @@ class TestUpcloudWorker(TestReactorMixin, unittest.TestCase):
         worker = upcloud.UpcloudLatentWorker(
             *args, api_username='test-api-user', api_password='test-api-password', **kwargs
         )
-        master = fakemaster.make_master(self, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantData=True)
         self._http = worker.client = yield fakehttpclientservice.HTTPClientService.getService(
-            master,
+            self.master,
             self,
             upcloud.DEFAULT_BASE_URL,
             auth=('test-api-user', 'test-api-password'),
             debug=False,
         )
-        worker.setServiceParent(master)
-        yield master.startService()
-        self.masterhash = hashlib.sha1(util.unicode2bytes(master.name)).hexdigest()[:6]
-        self.addCleanup(master.stopService)
+        worker.setServiceParent(self.master)
+        yield self.master.startService()
+        self.addCleanup(self.master.stopService)
+        self.masterhash = hashlib.sha1(util.unicode2bytes(self.master.name)).hexdigest()[:6]
         self.worker = worker
         return worker
 

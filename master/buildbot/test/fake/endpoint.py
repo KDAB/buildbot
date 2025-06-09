@@ -47,10 +47,10 @@ stepData = {
 
 class TestsEndpoint(base.Endpoint):
     kind = base.EndpointKind.COLLECTION
-    pathPatterns = """
-    /tests
-    /test
-    """
+    pathPatterns = [
+        "/tests",
+        "/test",
+    ]
     rootLinkName = 'tests'
 
     def get(self, resultSpec, kwargs):
@@ -60,7 +60,9 @@ class TestsEndpoint(base.Endpoint):
 
 class RawTestsEndpoint(base.Endpoint):
     kind = base.EndpointKind.RAW
-    pathPatterns = "/rawtest"
+    pathPatterns = [
+        "/rawtest",
+    ]
 
     def get(self, resultSpec, kwargs):
         return defer.succeed({"filename": "test.txt", "mime-type": "text/test", 'raw': 'value'})
@@ -68,7 +70,9 @@ class RawTestsEndpoint(base.Endpoint):
 
 class FailEndpoint(base.Endpoint):
     kind = base.EndpointKind.SINGLE
-    pathPatterns = "/test/fail"
+    pathPatterns = [
+        "/test/fail",
+    ]
 
     def get(self, resultSpec, kwargs):
         return defer.fail(RuntimeError('oh noes'))
@@ -76,10 +80,10 @@ class FailEndpoint(base.Endpoint):
 
 class TestEndpoint(base.Endpoint):
     kind = base.EndpointKind.SINGLE
-    pathPatterns = """
-    /tests/n:testid
-    /test/n:testid
-    """
+    pathPatterns = [
+        "/tests/n:testid",
+        "/test/n:testid",
+    ]
 
     def get(self, resultSpec, kwargs):
         if kwargs['testid'] == 0:
@@ -94,7 +98,9 @@ class TestEndpoint(base.Endpoint):
 
 class StepsEndpoint(base.Endpoint):
     kind = base.EndpointKind.COLLECTION
-    pathPatterns = "/tests/n:testid/steps"
+    pathPatterns = [
+        "/tests/n:testid/steps",
+    ]
 
     def get(self, resultSpec, kwargs):
         data = [step for step in stepData.values() if step['testid'] == kwargs['testid']]
@@ -104,7 +110,9 @@ class StepsEndpoint(base.Endpoint):
 
 class StepEndpoint(base.Endpoint):
     kind = base.EndpointKind.SINGLE
-    pathPatterns = "/tests/n:testid/steps/n:stepid"
+    pathPatterns = [
+        "/tests/n:testid/steps/n:stepid",
+    ]
 
     def get(self, resultSpec, kwargs):
         if kwargs['testid'] == 0:
@@ -116,22 +124,19 @@ class Step(base.ResourceType):
     name = "step"
     plural = "steps"
     endpoints = [StepsEndpoint, StepEndpoint]
-    keyField = "stepid"
 
     class EntityType(types.Entity):
         stepid = types.Integer()
         testid = types.Integer()
         info = types.String()
 
-    entityType = EntityType(name, 'Step')
+    entityType = EntityType(name)
 
 
 class Test(base.ResourceType):
     name = "test"
     plural = "tests"
     endpoints = [TestsEndpoint, TestEndpoint, FailEndpoint, RawTestsEndpoint]
-    keyField = "testid"
-    subresources = ["Step"]
 
     class EntityType(types.Entity):
         testid = types.Integer()
@@ -139,106 +144,4 @@ class Test(base.ResourceType):
         success = types.Boolean()
         tags = types.List(of=types.String())
 
-    entityType = EntityType(name, 'Test')
-
-
-graphql_schema = """
-# custom scalar types for buildbot data model
-scalar Date   # stored as utc unix timestamp
-scalar Binary # arbitrary data stored as base85
-scalar JSON  # arbitrary json stored as string, mainly used for properties values
-type Query {{
-{queries}
-}}
-type Subscription {{
-{queries}
-}}
-type Test {{
-  testid: Int!
-  info: String!
-  success: Boolean!
-  tags: [String]!
-  steps(info: String,
-   info__contains: String,
-   info__eq: String,
-   info__ge: String,
-   info__gt: String,
-   info__in: [String],
-   info__le: String,
-   info__lt: String,
-   info__ne: String,
-   info__notin: [String],
-   stepid: Int,
-   stepid__contains: Int,
-   stepid__eq: Int,
-   stepid__ge: Int,
-   stepid__gt: Int,
-   stepid__in: [Int],
-   stepid__le: Int,
-   stepid__lt: Int,
-   stepid__ne: Int,
-   stepid__notin: [Int],
-   testid: Int,
-   testid__contains: Int,
-   testid__eq: Int,
-   testid__ge: Int,
-   testid__gt: Int,
-   testid__in: [Int],
-   testid__le: Int,
-   testid__lt: Int,
-   testid__ne: Int,
-   testid__notin: [Int],
-   order: String,
-   limit: Int,
-   offset: Int): [Step]!
-  step(stepid: Int): Step
-}}
-type Step {{
-  stepid: Int!
-  testid: Int!
-  info: String!
-}}
-""".format(
-    queries="""  tests(info: String,
-   info__contains: String,
-   info__eq: String,
-   info__ge: String,
-   info__gt: String,
-   info__in: [String],
-   info__le: String,
-   info__lt: String,
-   info__ne: String,
-   info__notin: [String],
-   success: Boolean,
-   success__contains: Boolean,
-   success__eq: Boolean,
-   success__ge: Boolean,
-   success__gt: Boolean,
-   success__le: Boolean,
-   success__lt: Boolean,
-   success__ne: Boolean,
-   tags: String,
-   tags__contains: String,
-   tags__eq: String,
-   tags__ge: String,
-   tags__gt: String,
-   tags__in: [String],
-   tags__le: String,
-   tags__lt: String,
-   tags__ne: String,
-   tags__notin: [String],
-   testid: Int,
-   testid__contains: Int,
-   testid__eq: Int,
-   testid__ge: Int,
-   testid__gt: Int,
-   testid__in: [Int],
-   testid__le: Int,
-   testid__lt: Int,
-   testid__ne: Int,
-   testid__notin: [Int],
-   order: String,
-   limit: Int,
-   offset: Int): [Test]!
-  test(testid: Int): Test"""
-)
+    entityType = EntityType(name)

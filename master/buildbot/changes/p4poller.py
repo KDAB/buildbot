@@ -17,15 +17,22 @@
 
 # Many thanks to Dave Peticolas for contributing this module
 
+from __future__ import annotations
+
 import datetime
 import os
 import re
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import Callable
+from typing import ClassVar
 
 import dateutil.tz
 from twisted.internet import defer
+from twisted.internet import interfaces
 from twisted.internet import protocol
 from twisted.internet import reactor
-from twisted.python import log
+from twisted.logger import Logger
 
 from buildbot import config
 from buildbot import util
@@ -33,7 +40,12 @@ from buildbot.changes import base
 from buildbot.util import bytes2unicode
 from buildbot.util import runprocess
 
-debug_logging = False
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from twisted.python.failure import Failure
+
+    from buildbot.util.twisted import InlineCallbacksType
 
 
 class P4PollerError(Exception):
@@ -45,37 +57,39 @@ class TicketLoginProtocol(protocol.ProcessProtocol):
     """Twisted process protocol to run `p4 login` and enter our password
     in the stdin."""
 
-    def __init__(self, stdin, p4base):
-        self.deferred = defer.Deferred()
+    def __init__(self, stdin: str, p4base: str) -> None:
+        self.deferred: defer.Deferred[int] = defer.Deferred()
         self.stdin = stdin.encode('ascii')
         self.stdout = b''
         self.stderr = b''
         self.p4base = p4base
+        self.transport: interfaces.IProcessTransport | None = None
 
-    def connectionMade(self):
+        self._logger = Logger(f"P4Poller.TicketLoginProtocol({self.p4base})")
+
+    def connectionMade(self) -> None:
         if self.stdin:
-            if debug_logging:
-                log.msg(f"P4Poller: entering password for {self.p4base}: {self.stdin}")
+            self._logger.debug("entering password")
+            assert self.transport is not None
             self.transport.write(self.stdin)
+        assert self.transport is not None
         self.transport.closeStdin()
 
-    def processEnded(self, reason):
-        if debug_logging:
-            log.msg(f"P4Poller: login process finished for {self.p4base}: {reason.value.exitCode}")
-        self.deferred.callback(reason.value.exitCode)
+    def processEnded(self, reason: Failure) -> None:
+        exit_code = reason.value.exitCode
+        self._logger.debug("login process finished: {exit_code}", exit_code=exit_code)
+        self.deferred.callback(exit_code)
 
-    def outReceived(self, data):
-        if debug_logging:
-            log.msg(f"P4Poller: login stdout for {self.p4base}: {data}")
+    def outReceived(self, data: bytes) -> None:
+        self._logger.debug("login stdout: {data!r}", data=data)
         self.stdout += data
 
-    def errReceived(self, data):
-        if debug_logging:
-            log.msg(f"P4Poller: login stderr for {self.p4base}: {data}")
+    def errReceived(self, data: bytes) -> None:
+        self._logger.error("login stderr: {data!r}", data=data)
         self.stderr += data
 
 
-def get_simple_split(branchfile):
+def get_simple_split(branchfile: str) -> tuple[str | None, str | None]:
     """Splits the branchfile argument and assuming branch is
     the first path component in branchfile, will return
     branch and file else None."""
@@ -91,7 +105,7 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
     """This source will poll a perforce repository for changes and submit
     them to the change master."""
 
-    compare_attrs = (
+    compare_attrs: ClassVar[Sequence[str]] = (
         "p4port",
         "p4user",
         "p4passwd",
@@ -125,7 +139,7 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
     last_change = None
     loop = None
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         name = kwargs.get("name", None)
         if name is None:
             kwargs['name'] = self.build_name(
@@ -133,28 +147,31 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
             )
         super().__init__(**kwargs)
 
-    def checkConfig(
+    def checkConfig(  # type: ignore[override]
         self,
-        p4port=None,
-        p4user=None,
-        p4passwd=None,
-        p4base="//",
-        p4bin="p4",
-        split_file=lambda branchfile: (None, branchfile),
-        pollInterval=60 * 10,
-        histmax=None,
-        encoding="utf8",
-        project=None,
-        name=None,
-        use_tickets=False,
-        ticket_login_interval=60 * 60 * 24,
-        server_tz=None,
-        pollAtLaunch=False,
-        revlink=lambda branch, revision: (""),
-        resolvewho=lambda who: (who),
-        pollRandomDelayMin=0,
-        pollRandomDelayMax=0,
-    ):
+        p4port: str | None = None,
+        p4user: str | None = None,
+        p4passwd: str | None = None,
+        p4base: str = "//",
+        p4bin: str = "p4",
+        split_file: Callable[[str], tuple[str | None, str | None]] = lambda branchfile: (
+            None,
+            branchfile,
+        ),
+        pollInterval: int = 60 * 10,
+        histmax: int | None = None,
+        encoding: str = "utf8",
+        project: str | None = None,
+        name: str | None = None,
+        use_tickets: bool = False,
+        ticket_login_interval: int = 60 * 60 * 24,
+        server_tz: str | None = None,
+        pollAtLaunch: bool = False,
+        revlink: Callable[[str, str], str] = lambda branch, revision: (""),
+        resolvewho: Callable[[str], str] = lambda who: (who),
+        pollRandomDelayMin: int = 0,
+        pollRandomDelayMax: int = 0,
+    ) -> None:
         name = self.build_name(name, p4port, p4base)
 
         if use_tickets and not p4passwd:
@@ -178,28 +195,31 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
         )
 
     @defer.inlineCallbacks
-    def reconfigService(
+    def reconfigService(  # type: ignore[override]
         self,
-        p4port=None,
-        p4user=None,
-        p4passwd=None,
-        p4base="//",
-        p4bin="p4",
-        split_file=lambda branchfile: (None, branchfile),
-        pollInterval=60 * 10,
-        histmax=None,
-        encoding="utf8",
-        project=None,
-        name=None,
-        use_tickets=False,
-        ticket_login_interval=60 * 60 * 24,
-        server_tz=None,
-        pollAtLaunch=False,
-        revlink=lambda branch, revision: (""),
-        resolvewho=lambda who: (who),
-        pollRandomDelayMin=0,
-        pollRandomDelayMax=0,
-    ):
+        p4port: str | None = None,
+        p4user: str | None = None,
+        p4passwd: str | None = None,
+        p4base: str = "//",
+        p4bin: str = "p4",
+        split_file: Callable[[str], tuple[str | None, str | None]] = lambda branchfile: (
+            None,
+            branchfile,
+        ),
+        pollInterval: int = 60 * 10,
+        histmax: int | None = None,
+        encoding: str = "utf8",
+        project: str | None = None,
+        name: str | None = None,
+        use_tickets: bool = False,
+        ticket_login_interval: int = 60 * 60 * 24,
+        server_tz: str | None = None,
+        pollAtLaunch: bool = False,
+        revlink: Callable[[str, str], str] = lambda branch, revision: (""),
+        resolvewho: Callable[[str], str] = lambda who: (who),
+        pollRandomDelayMin: int = 0,
+        pollRandomDelayMax: int = 0,
+    ) -> InlineCallbacksType[None]:
         name = self.build_name(name, p4port, p4base)
 
         if project is None:
@@ -229,25 +249,25 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
             pollRandomDelayMax=pollRandomDelayMax,
         )
 
-    def build_name(self, name, p4port, p4base):
+    def build_name(self, name: str | None, p4port: str | None, p4base: str) -> str:
         if name is not None:
             return name
         return f"P4Source:{p4port}:{p4base}"
 
-    def describe(self):
+    def describe(self) -> str:
         return f"p4source {self.p4port} {self.p4base}"
 
-    def poll(self):
+    def poll(self) -> defer.Deferred[None]:  # type: ignore[override]
         d = self._poll()
-        d.addErrback(log.err, f'P4 poll failed on {self.p4port}, {self.p4base}')
+        d.addErrback(lambda fail: self._logger.failure('poll failed', failure=fail))
         return d
 
     @defer.inlineCallbacks
-    def _get_process_output(self, args):
+    def _get_process_output(self, args: list[str]) -> InlineCallbacksType[bytes]:
         env = {e: os.environ.get(e) for e in self.env_vars if os.environ.get(e)}
         res, out = yield runprocess.run_process(
             self.master.reactor,
-            [self.p4bin] + args,
+            [self.p4bin, *args],
             env=env,
             collect_stderr=False,
             stderr_is_error=True,
@@ -256,7 +276,7 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
             raise P4PollerError(f'Failed to run {self.p4bin}')
         return out
 
-    def _acquireTicket(self, protocol):
+    def _acquireTicket(self, protocol: TicketLoginProtocol) -> None:
         command = [
             self.p4bin,
         ]
@@ -265,17 +285,18 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
         if self.p4user:
             command.extend(['-u', self.p4user])
         command.append('login')
-        command = [c.encode('utf-8') for c in command]
+        command_bytes = [c.encode('utf-8') for c in command]
 
-        reactor.spawnProcess(protocol, self.p4bin, command, env=os.environ)
+        reactor.spawnProcess(protocol, self.p4bin, command_bytes, env=os.environ)  # type: ignore[attr-defined]
 
     @defer.inlineCallbacks
-    def _poll(self):
+    def _poll(self) -> InlineCallbacksType[None]:
         if self.use_tickets:
             self._ticket_login_counter -= 1
             if self._ticket_login_counter <= 0:
                 # Re-acquire the ticket and reset the counter.
-                log.msg(f"P4Poller: (re)acquiring P4 ticket for {self.p4base}...")
+                self._logger.info("(re)acquiring P4 ticket...")
+                assert self.p4passwd
                 protocol = TicketLoginProtocol(self.p4passwd + "\n", self.p4base)
                 self._acquireTicket(protocol)
                 yield protocol.deferred
@@ -294,28 +315,34 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
         else:
             args.extend(['-m', '1', f'{self.p4base}...'])
 
-        result = yield self._get_process_output(args)
+        gpo_result: bytes = yield self._get_process_output(args)
+
         # decode the result from its designated encoding
         try:
-            result = bytes2unicode(result, self.encoding)
+            result = bytes2unicode(gpo_result, self.encoding)
         except UnicodeError as ex:
-            log.msg(f"{ex}: cannot fully decode {repr(result)} in {self.encoding}")
-            result = bytes2unicode(result, encoding=self.encoding, errors="replace")
+            self._logger.warn(
+                "{ex}: cannot fully decode {result!r} in {encoding}",
+                ex=ex,
+                result=gpo_result,
+                encoding=self.encoding,
+            )
+            result = bytes2unicode(gpo_result, encoding=self.encoding, errors="replace")
 
         last_change = self.last_change
-        changelists = []
+        changelists: list[int] = []
         for line in result.split('\n'):
             line = line.strip()
             if not line:
                 continue
             m = self.changes_line_re.match(line)
             if not m:
-                raise P4PollerError(f"Unexpected 'p4 changes' output: {repr(result)}")
+                raise P4PollerError(f"Unexpected 'p4 changes' output: {result!r}")
             num = int(m.group('num'))
             if last_change is None:
                 # first time through, the poller just gets a "baseline" for where to
                 # start on the next poll
-                log.msg(f'P4Poller: starting at change {num}')
+                self._logger.info('starting at change {num}', num=num)
                 self.last_change = num
                 return
             changelists.append(num)
@@ -332,15 +359,17 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
                 if self.p4passwd:
                     args.extend(['-P', self.p4passwd])
             args.extend(['describe', '-s', str(num)])
-            result = yield self._get_process_output(args)
+            gpo_result = yield self._get_process_output(args)
 
             # decode the result from its designated encoding
             try:
-                result = bytes2unicode(result, self.encoding)
+                result = bytes2unicode(gpo_result, self.encoding)
             except UnicodeError as ex:
-                log.msg(f"P4Poller: couldn't decode changelist description: {ex.encoding}")
-                log.msg(f"P4Poller: in object: {ex.object}")
-                log.err(f"P4Poller: poll failed on {self.p4port}, {self.p4base}")
+                self._logger.error(
+                    "Couldn't decode changelist description in object: {result}. ex: {ex}",
+                    result=gpo_result,
+                    ex=ex,
+                )
                 raise
 
             lines = result.split('\n')
@@ -349,13 +378,13 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
             lines[0] = lines[0].rstrip()
             m = self.describe_header_re.match(lines[0])
             if not m:
-                raise P4PollerError(f"Unexpected 'p4 describe -s' result: {repr(result)}")
+                raise P4PollerError(f"Unexpected 'p4 describe -s' result: {result!r}")
             who = self.resolvewho_callable(m.group('who'))
-            when = datetime.datetime.strptime(m.group('when'), self.datefmt)
+            when_dt = datetime.datetime.strptime(m.group('when'), self.datefmt)
             if self.server_tz:
                 # Convert from the server's timezone to the local timezone.
-                when = when.replace(tzinfo=self.server_tz)
-            when = util.datetime2epoch(when)
+                when_dt = when_dt.replace(tzinfo=self.server_tz)
+            when = util.datetime2epoch(when_dt)
 
             comment_lines = []
             lines.pop(0)  # describe header
@@ -368,18 +397,18 @@ class P4Source(base.ReconfigurablePollingChangeSource, util.ComparableMixin):
             comments = '\n'.join(comment_lines)
 
             lines.pop(0)  # affected files
-            branch_files = {}  # dict for branch mapped to file(s)
+            branch_files: dict[str, list[str]] = {}  # dict for branch mapped to file(s)
             while lines:
                 line = lines.pop(0).strip()
                 if not line:
                     continue
                 m = self.file_re.match(line)
                 if not m:
-                    raise P4PollerError(f"Invalid file line: {repr(line)}")
+                    raise P4PollerError(f"Invalid file line: {line!r}")
                 path = m.group('path')
                 if path.startswith(self.p4base):
                     branch, file = self.split_file(path[len(self.p4base) :])
-                    if branch is None and file is None:
+                    if branch is None or file is None:
                         continue
                     if branch in branch_files:
                         branch_files[branch].append(file)

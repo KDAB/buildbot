@@ -26,7 +26,7 @@ class TestRenderSecrets(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self)
+        self.master = yield fakemaster.make_master(self)
         fakeStorageService = FakeSecretStorage(secretdict={"foo": "bar", "other": "value"})
         self.secretsrv = SecretManager()
         self.secretsrv.services = [fakeStorageService]
@@ -34,10 +34,7 @@ class TestRenderSecrets(TestReactorMixin, unittest.TestCase):
         self.srvtest = FakeServiceUsingSecrets()
         yield self.srvtest.setServiceParent(self.master)
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def test_secret_rendered(self):

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
+from typing import Callable
+from typing import ClassVar
 
 from twisted.python import deprecate
 from twisted.python import versions
@@ -34,8 +36,11 @@ from buildbot.steps.shell import ShellCommand
 from buildbot.steps.shell import Test
 from buildbot.steps.source.cvs import CVS
 from buildbot.steps.source.svn import SVN
+from buildbot.warnings import warn_deprecated
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from buildbot.process.builder import Builder
 
 
@@ -53,17 +58,17 @@ class BuildFactory(util.ComparableMixin):
     @type  buildClass: L{buildbot.process.build.Build}
     """
 
-    buildClass = Build
-    useProgress = 1
+    buildClass: type[Build] = Build
+    useProgress = True
     workdir = "build"
-    compare_attrs = ('buildClass', 'steps', 'useProgress', 'workdir')
+    compare_attrs: ClassVar[Sequence[str]] = ('buildClass', 'steps', 'useProgress', 'workdir')
 
     def __init__(self, steps=None):
         self.steps = []
         if steps:
             self.addSteps(steps)
 
-    def newBuild(self, requests, builder: Builder) -> buildClass:
+    def newBuild(self, requests, builder: Builder) -> Build:
         """Create a new Build instance.
 
         @param requests: a list of buildrequest dictionaries describing what is
@@ -72,6 +77,11 @@ class BuildFactory(util.ComparableMixin):
         b = self.buildClass(requests, builder)
         b.useProgress = self.useProgress
         b.workdir = self.workdir
+        if callable(self.workdir):
+            warn_deprecated(
+                '4.3.0',
+                'BuildFactory workdir callable support has been deprecated. Use renderables instead',
+            )
         b.setStepFactories(self.steps)
         return b
 
@@ -91,6 +101,9 @@ class BuildFactory(util.ComparableMixin):
             self.addStep(s)
         if withSecrets:
             self.addStep(RemoveWorkerFileSecret(withSecrets))
+
+    def setSkipBuildIf(self, predicate: Callable[[Build], bool]):
+        self.skipBuildIf = predicate
 
     @contextmanager
     def withSecrets(self, secrets):
@@ -144,7 +157,7 @@ class GNUAutoconf(BuildFactory):
             if isinstance(configure, str):
                 if configureFlags:
                     assert " " not in configure  # please use list instead
-                    command = [configure] + configureFlags
+                    command = [configure, *configureFlags]
                 else:
                     command = configure
             else:
@@ -220,7 +233,7 @@ class Trial(BuildFactory):
 
         from buildbot.steps.python_twisted import Trial
 
-        buildcommand = buildpython + ["./setup.py", "build"]
+        buildcommand = [*buildpython, "./setup.py", "build"]
         self.addStep(Compile(command=buildcommand, env=env))
         self.addStep(
             Trial(

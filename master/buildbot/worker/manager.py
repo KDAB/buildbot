@@ -12,7 +12,7 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
-
+from __future__ import annotations
 
 from twisted.internet import defer
 from twisted.python import log
@@ -24,7 +24,7 @@ from buildbot.worker.protocols import pb as bbpb
 
 
 class WorkerRegistration:
-    __slots__ = ['master', 'worker', 'pbReg', 'msgpack_reg']
+    __slots__ = ['master', 'msgpack_reg', 'pbReg', 'worker']
 
     def __init__(self, master, worker):
         self.master = master
@@ -33,7 +33,7 @@ class WorkerRegistration:
         self.msgpack_reg = None
 
     def __repr__(self):
-        return f"<{self.__class__.__name__} for {repr(self.worker.workername)}>"
+        return f"<{self.__class__.__name__} for {self.worker.workername!r}>"
 
     @defer.inlineCallbacks
     def unregister(self):
@@ -73,12 +73,11 @@ class WorkerRegistration:
 
 
 class WorkerManager(MeasuredBuildbotServiceManager):
-    name = "WorkerManager"
+    name: str | None = "WorkerManager"  # type: ignore[assignment]
     managed_services_name = "workers"
 
     config_attr = "workers"
     PING_TIMEOUT = 10
-    reconfig_priority = 127
 
     def __init__(self, master):
         super().__init__()
@@ -120,7 +119,7 @@ class WorkerManager(MeasuredBuildbotServiceManager):
     def newConnection(self, conn, workerName):
         if workerName in self.connections:
             log.msg(
-                f"Got duplication connection from '{workerName}'" " starting arbitration procedure"
+                f"Got duplication connection from '{workerName}' starting arbitration procedure"
             )
             old_conn = self.connections[workerName]
             try:

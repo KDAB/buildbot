@@ -18,15 +18,10 @@ import os
 
 import sqlalchemy as sa
 from sqlalchemy.schema import MetaData
-from twisted.internet import defer
-from twisted.internet import reactor
 from twisted.python import log
 from twisted.trial import unittest
 
-from buildbot.db import enginestrategy
 from buildbot.db import model
-from buildbot.db import pool
-from buildbot.db.connector import DBConnector
 from buildbot.util.sautils import withoutSqliteForeignKeys
 
 
@@ -35,7 +30,7 @@ def skip_for_dialect(dialect):
 
     def dec(fn):
         def wrap(self, *args, **kwargs):
-            if self.db_engine.dialect.name == dialect:
+            if self.master.db._engine.dialect.name == dialect:
                 raise unittest.SkipTest(f"Not supported on dialect '{dialect}'")
             return fn(self, *args, **kwargs)
 
@@ -58,10 +53,13 @@ def get_trial_parallel_from_cwd(cwd):
     return None
 
 
-def resolve_test_index_in_db_url(db_url):
+def resolve_test_index_in_db_url(db_url: str) -> str:
     test_id = get_trial_parallel_from_cwd(os.getcwd())
 
     if "{TEST_ID}" in db_url:
+        if test_id is None:
+            raise RuntimeError("Database tests are run in parallel, but test index is unknown")
+
         return db_url.replace("{TEST_ID}", str(test_id or 0))
 
     if db_url == 'sqlite://':
@@ -79,235 +77,96 @@ def resolve_test_index_in_db_url(db_url):
     return db_url
 
 
-class RealDatabaseMixin:
-    """
-    A class that sets up a real database for testing.  This sets self.db_url to
-    the URL for the database.  By default, it specifies an in-memory SQLite
-    database, but if the BUILDBOT_TEST_DB_URL environment variable is set, it
-    will use the specified database, being careful to clean out *all* tables in
-    the database before and after the tests are run - so each test starts with
-    a clean database.
+def resolve_test_db_url(db_url: str, sqlite_memory: bool) -> str:
+    default_sqlite = 'sqlite://'
+    if db_url is None:
+        db_url = os.environ.get('BUILDBOT_TEST_DB_URL', default_sqlite)
+        if not sqlite_memory and db_url == default_sqlite:
+            db_url = "sqlite:///tmp.sqlite"
 
-    @ivar db_pool: a (real) DBThreadPool instance that can be used as desired
-
-    @ivar db_url: the DB URL used to run these tests
-
-    @ivar db_engine: the engine created for the test database
-
-    Note that this class uses the production database model.  A
-    re-implementation would be virtually identical and just require extra
-    work to keep synchronized.
-
-    Similarly, this class uses the production DB thread pool.  This achieves
-    a few things:
-     - affords more thorough tests for the pool
-     - avoids repetitive implementation
-     - cooperates better at runtime with thread-sensitive DBAPI's
-
-    Finally, it duplicates initialization performed in db.connector.DBConnector.setup().
-    Never call that method in tests that use RealDatabaseMixin, use
-    RealDatabaseWithConnectorMixin.
-    """
-
-    def __thd_clean_database(self, conn):
-        # In general it's nearly impossible to do "bullet proof" database
-        # cleanup with SQLAlchemy that will work on a range of databases
-        # and they configurations.
-        #
-        # Following approaches were considered.
-        #
-        # 1. Drop Buildbot Model schema:
-        #
-        #     model.Model.metadata.drop_all(bind=conn, checkfirst=True)
-        #
-        # Dropping schema from model is correct and working operation only
-        # if database schema is exactly corresponds to the model schema.
-        #
-        # If it is not (e.g. migration script failed or migration results in
-        # old version of model), then some tables outside model schema may be
-        # present, which may reference tables in the model schema.
-        # In this case either dropping model schema will fail (if database
-        # enforces referential integrity, e.g. PostgreSQL), or
-        # dropping left tables in the code below will fail (if database allows
-        # removing of tables on which other tables have references,
-        # e.g. SQLite).
-        #
-        # 2. Introspect database contents and drop found tables.
-        #
-        #     meta = MetaData(bind=conn)
-        #     meta.reflect()
-        #     meta.drop_all()
-        #
-        # May fail if schema contains reference cycles (and Buildbot schema
-        # has them). Reflection looses metadata about how reference cycles
-        # can be teared up (e.g. use_alter=True).
-        # Introspection may fail if schema has invalid references
-        # (e.g. possible in SQLite).
-        #
-        # 3. What is actually needed here is accurate code for each engine
-        # and each engine configuration that will drop all tables,
-        # indexes, constraints, etc in proper order or in a proper way
-        # (using tables alternation, or DROP TABLE ... CASCADE, etc).
-        #
-        # Conclusion: use approach 2 with manually teared apart known
-        # reference cycles.
-
-        # pylint: disable=too-many-nested-blocks
-
-        try:
-            meta = MetaData()
-
-            # Reflect database contents. May fail, e.g. if table references
-            # non-existent table in SQLite.
-            meta.reflect(bind=conn)
-
-            # Restore `use_alter` settings to break known reference cycles.
-            # Main goal of this part is to remove SQLAlchemy warning
-            # about reference cycle.
-
-            # List of reference links (table_name, ref_table_name) that
-            # should be broken by adding use_alter=True.
-            table_referenced_table_links = [('buildsets', 'builds'), ('builds', 'buildrequests')]
-            for table_name, ref_table_name in table_referenced_table_links:
-                if table_name in meta.tables:
-                    table = meta.tables[table_name]
-                    for fkc in table.foreign_key_constraints:
-                        if fkc.referred_table.name == ref_table_name:
-                            fkc.use_alter = True
-
-            # Drop all reflected tables and indices. May fail, e.g. if
-            # SQLAlchemy wouldn't be able to break circular references.
-            # Sqlalchemy fk support with sqlite is not yet perfect, so we must deactivate fk during
-            # that operation, even though we made our possible to use use_alter
-            with withoutSqliteForeignKeys(conn):
-                meta.drop_all(bind=conn)
-                conn.commit()
-
-        except Exception:
-            # sometimes this goes badly wrong; being able to see the schema
-            # can be a big help
-            if conn.engine.dialect.name == 'sqlite':
-                r = conn.execute(sa.text("select sql from sqlite_master where type='table'"))
-                log.msg("Current schema:")
-                for row in r.fetchall():
-                    log.msg(row.sql)
-            raise
-
-    def __thd_create_tables(self, conn, table_names):
-        table_names_set = set(table_names)
-        tables = [t for t in model.Model.metadata.tables.values() if t.name in table_names_set]
-        # Create tables using create_all() method. This way not only tables
-        # and direct indices are created, but also deferred references
-        # (that use use_alter=True in definition).
-        model.Model.metadata.create_all(bind=conn, tables=tables, checkfirst=True)
-        conn.commit()
-
-    @defer.inlineCallbacks
-    def setUpRealDatabase(
-        self, table_names=None, basedir='basedir', want_pool=True, sqlite_memory=True
-    ):
-        """
-
-        Set up a database.  Ordinarily sets up an engine and a pool and takes
-        care of cleaning out any existing tables in the database.  If
-        C{want_pool} is false, then no pool will be created, and the database
-        will not be cleaned.
-
-        @param table_names: list of names of tables to instantiate
-        @param basedir: (optional) basedir for the engine
-        @param want_pool: (optional) false to not create C{self.db_pool}
-        @param sqlite_memory: (optional) False to avoid using an in-memory db
-        @returns: Deferred
-        """
-        if table_names is None:
-            table_names = []
-        self.__want_pool = want_pool
-
-        default_sqlite = 'sqlite://'
-        self.db_url = os.environ.get('BUILDBOT_TEST_DB_URL', default_sqlite)
-        if not sqlite_memory and self.db_url == default_sqlite:
-            self.db_url = "sqlite:///tmp.sqlite"
-
-        self.db_url = resolve_test_index_in_db_url(self.db_url)
-
-        if not os.path.exists(basedir):
-            os.makedirs(basedir)
-
-        self.basedir = basedir
-        self.db_engine = enginestrategy.create_engine(self.db_url, basedir=basedir)
-        # if the caller does not want a pool, we're done.
-        if not want_pool:
-            return None
-
-        self.db_pool = pool.DBThreadPool(self.db_engine, reactor=reactor)
-
-        log.msg(f"cleaning database {self.db_url}")
-        yield self.db_pool.do(self.__thd_clean_database)
-        yield self.db_pool.do(self.__thd_create_tables, table_names)
-        return None
-
-    @defer.inlineCallbacks
-    def tearDownRealDatabase(self):
-        if self.__want_pool:
-            yield self.db_pool.do(self.__thd_clean_database)
-            yield self.db_pool.shutdown()
-        else:
-            self.db_engine.engine.dispose()
-
-    @defer.inlineCallbacks
-    def insert_test_data(self, rows):
-        """Insert test data into the database for use during the test.
-
-        @param rows: be a sequence of L{fakedb.Row} instances.  These will be
-        sorted by table dependencies, so order does not matter.
-
-        @returns: Deferred
-        """
-        # sort the tables by dependency
-        all_table_names = {row.table for row in rows}
-        ordered_tables = [
-            t for t in model.Model.metadata.sorted_tables if t.name in all_table_names
-        ]
-
-        def thd(conn):
-            # insert into tables -- in order
-            for tbl in ordered_tables:
-                for row in [r for r in rows if r.table == tbl.name]:
-                    tbl = model.Model.metadata.tables[row.table]
-                    try:
-                        conn.execute(tbl.insert().values(row.values))
-                        conn.commit()
-                    except Exception:
-                        log.msg(f"while inserting {row} - {row.values}")
-                        raise
-
-        yield self.db_pool.do(thd)
+    return resolve_test_index_in_db_url(db_url)
 
 
-class RealDatabaseWithConnectorMixin(RealDatabaseMixin):
-    # Same as RealDatabaseMixin, except that a real DBConnector is also setup in a correct way.
+def thd_clean_database(conn) -> None:
+    # In general it's nearly impossible to do "bullet proof" database cleanup with SQLAlchemy
+    # that will work on a range of databases and they configurations.
+    #
+    # Following approaches were considered.
+    #
+    # 1. Drop Buildbot Model schema:
+    #
+    #     model.Model.metadata.drop_all(bind=conn, checkfirst=True)
+    #
+    # Dropping schema from model is correct and working operation only if database schema is
+    # exactly corresponds to the model schema.
+    #
+    # If it is not (e.g. migration script failed or migration results in old version of model),
+    # then some tables outside model schema may be present, which may reference tables in the model
+    # schema. In this case either dropping model schema will fail (if database enforces referential
+    # integrity, e.g. PostgreSQL), or dropping left tables in the code below will fail (if database
+    # allows removing of tables on which other tables have references, e.g. SQLite).
+    #
+    # 2. Introspect database contents and drop found tables.
+    #
+    #     meta = MetaData(bind=conn)
+    #     meta.reflect()
+    #     meta.drop_all()
+    #
+    # May fail if schema contains reference cycles (and Buildbot schema has them). Reflection looses
+    # metadata about how reference cycles can be teared up (e.g. use_alter=True).
+    # Introspection may fail if schema has invalid references (e.g. possible in SQLite).
+    #
+    # 3. What is actually needed here is accurate code for each engine and each engine configuration
+    # that will drop all tables, indexes, constraints, etc in proper order or in a proper way
+    # (using tables alternation, or DROP TABLE ... CASCADE, etc).
+    #
+    # Conclusion: use approach 2 with manually teared apart known reference cycles.
 
-    @defer.inlineCallbacks
-    def setUpRealDatabaseWithConnector(
-        self, master, table_names=None, basedir='basedir', want_pool=True, sqlite_memory=True
-    ):
-        yield self.setUpRealDatabase(table_names, basedir, want_pool, sqlite_memory)
-        master.config.db['db_url'] = self.db_url
-        master.db = DBConnector(self.basedir)
-        yield master.db.setServiceParent(master)
-        master.db.pool = self.db_pool
+    try:
+        meta = MetaData()
 
-    def tearDownRealDatabaseWithConnector(self):
-        return self.tearDownRealDatabase()
+        # Reflect database contents. May fail, e.g. if table references
+        # non-existent table in SQLite.
+        meta.reflect(bind=conn)
+
+        # Restore `use_alter` settings to break known reference cycles.
+        # Main goal of this part is to remove SQLAlchemy warning
+        # about reference cycle.
+
+        # List of reference links (table_name, ref_table_name) that
+        # should be broken by adding use_alter=True.
+        table_referenced_table_links = [('buildsets', 'builds'), ('builds', 'buildrequests')]
+        for table_name, ref_table_name in table_referenced_table_links:
+            if table_name in meta.tables:
+                table = meta.tables[table_name]
+                for fkc in table.foreign_key_constraints:
+                    if fkc.referred_table.name == ref_table_name:
+                        fkc.use_alter = True
+
+        # Drop all reflected tables and indices. May fail, e.g. if
+        # SQLAlchemy wouldn't be able to break circular references.
+        # Sqlalchemy fk support with sqlite is not yet perfect, so we must deactivate fk during
+        # that operation, even though we made our possible to use use_alter
+        with withoutSqliteForeignKeys(conn):
+            meta.drop_all(bind=conn)
+            conn.commit()
+
+    except Exception:
+        # sometimes this goes badly wrong; being able to see the schema
+        # can be a big help
+        if conn.engine.dialect.name == 'sqlite':
+            r = conn.execute(sa.text("select sql from sqlite_master where type='table'"))
+            log.msg("Current schema:")
+            for row in r.fetchall():
+                log.msg(row.sql)
+        raise
 
 
-class TestCase(unittest.TestCase):
-    @defer.inlineCallbacks
-    def assertFailure(self, d, excp):
-        exception = None
-        try:
-            yield d
-        except Exception as e:
-            exception = e
-        self.assertIsInstance(exception, excp)
-        self.flushLoggedErrors(excp)
+def thd_create_tables(conn, table_names):
+    table_names_set = set(table_names)
+    tables = [t for t in model.Model.metadata.tables.values() if t.name in table_names_set]
+    # Create tables using create_all() method. This way not only tables
+    # and direct indices are created, but also deferred references
+    # (that use use_alter=True in definition).
+    model.Model.metadata.create_all(bind=conn, tables=tables, checkfirst=True)
+    conn.commit()

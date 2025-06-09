@@ -13,20 +13,28 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import ClassVar
+
 from twisted.trial import unittest
 
 from buildbot import util
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 class ComparableMixin(unittest.TestCase):
     class Foo(util.ComparableMixin):
-        compare_attrs = ("a", "b")
+        compare_attrs: ClassVar[Sequence[str]] = ("a", "b")
 
         def __init__(self, a, b, c):
             self.a, self.b, self.c = a, b, c
 
     class Bar(Foo, util.ComparableMixin):
-        compare_attrs = ("b", "c")
+        compare_attrs: ClassVar[Sequence[str]] = ("b", "c")
 
     def setUp(self):
         self.f123 = self.Foo(1, 2, 3)

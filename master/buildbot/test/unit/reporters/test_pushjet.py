@@ -13,8 +13,9 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
 import os
-from typing import Optional
 from unittest import SkipTest
 
 from twisted.internet import defer
@@ -31,16 +32,17 @@ from buildbot.util import httpclientservice
 
 
 class TestPushjetNotifier(ConfigErrorsMixin, TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
     # returns a Deferred
     def setupFakeHttp(self, base_url='https://api.pushjet.io'):
         return fakehttpclientservice.HTTPClientService.getService(self.master, self, base_url)
 
     @defer.inlineCallbacks
-    def setupPushjetNotifier(self, secret: Optional[Interpolate] = None, **kwargs):
+    def setupPushjetNotifier(self, secret: Interpolate | None = None, **kwargs):
         if secret is None:
             secret = Interpolate("1234")
         pn = PushjetNotifier(secret, **kwargs)

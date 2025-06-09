@@ -39,6 +39,10 @@ class FakeWorker(service.BuildbotService):
         self.configured = True
         return defer.succeed(None)
 
+    @property
+    def workername(self):
+        return self.name
+
 
 class FakeWorker2(FakeWorker):
     pass
@@ -48,7 +52,7 @@ class TestWorkerManager(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantData=True)
         self.master.mq = self.master.mq
         self.workers = workermanager.WorkerManager(self.master)
         yield self.workers.setServiceParent(self.master)
@@ -60,9 +64,7 @@ class TestWorkerManager(TestReactorMixin, unittest.TestCase):
 
         self.new_config = mock.Mock()
         self.workers.startService()
-
-    def tearDown(self):
-        return self.workers.stopService()
+        self.addCleanup(self.workers.stopService)
 
     @defer.inlineCallbacks
     def test_reconfigServiceWorkers_add_remove(self):
@@ -117,4 +119,5 @@ class TestWorkerManager(TestReactorMixin, unittest.TestCase):
 
         conn = mock.Mock()
         conn.remoteGetWorkerInfo = mock.Mock(return_value=defer.fail(Error()))
-        yield self.assertFailure(self.workers.newConnection(conn, "worker"), Error)
+        with self.assertRaises(Error):
+            yield self.workers.newConnection(conn, "worker")

@@ -37,8 +37,8 @@ from buildbot.warnings import warn_deprecated
 
 if TYPE_CHECKING:
     import datetime
+    from collections.abc import Iterable
     from typing import Any
-    from typing import Iterable
     from typing import Literal
 
 
@@ -129,6 +129,7 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
         codebase: str = '',
         project: str = '',
         uid: int | None = None,
+        _test_changeid: int | None = None,
     ):
         assert project is not None, "project must be a string, not None"
         assert repository is not None, "repository must be a string, not None"
@@ -138,6 +139,10 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
         if when_timestamp is None:
             when_timestamp = epoch2datetime(self.master.reactor.seconds())
 
+        if author is None:
+            author = ''
+        if comments is None:
+            comments = ''
         if properties is None:
             properties = {}
 
@@ -179,24 +184,26 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
 
             transaction = conn.begin()
 
-            r = conn.execute(
-                ch_tbl.insert(),
-                {
-                    "author": author,
-                    "committer": committer,
-                    "comments": comments,
-                    "branch": branch,
-                    "revision": revision,
-                    "revlink": revlink,
-                    "when_timestamp": datetime2epoch(when_timestamp),
-                    "category": category,
-                    "repository": repository,
-                    "codebase": codebase,
-                    "project": project,
-                    "sourcestampid": ssid,
-                    "parent_changeids": parent_changeid,
-                },
-            )
+            insert_value = {
+                "author": author,
+                "committer": committer,
+                "comments": comments,
+                "branch": branch,
+                "revision": revision,
+                "revlink": revlink,
+                "when_timestamp": datetime2epoch(when_timestamp),
+                "category": category,
+                "repository": repository,
+                "codebase": codebase,
+                "project": project,
+                "sourcestampid": ssid,
+                "parent_changeids": parent_changeid,
+            }
+
+            if _test_changeid is not None:
+                insert_value['changeid'] = _test_changeid
+
+            r = conn.execute(ch_tbl.insert(), [insert_value])
             changeid = r.inserted_primary_key[0]
             if files:
                 tbl = self.db.model.change_files
@@ -320,7 +327,8 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
     def _getDataFromRow(self, row):
         return row.changeid
 
-    def getChanges(self, resultSpec=None) -> defer.Deferred[Iterable[int]]:
+    @defer.inlineCallbacks
+    def getChanges(self, resultSpec=None):
         def thd(conn) -> Iterable[int]:
             # get the changeids from the 'changes' table
             changes_tbl = self.db.model.changes
@@ -335,14 +343,13 @@ class ChangesConnectorComponent(base.DBConnectorComponent):
             rp.close()
             return list(changeids)
 
-        d = self.db.pool.do(thd)
+        changeids = yield self.db.pool.do(thd)
 
-        # then turn those into changes, using the cache
-        @d.addCallback
-        def get_changes(changeids):
-            return defer.gatherResults([self.getChange(changeid) for changeid in changeids])
+        changes = yield defer.gatherResults(
+            [self.getChange(changeid) for changeid in changeids], consumeErrors=True
+        )
 
-        return d
+        return changes
 
     def getChangesCount(self) -> defer.Deferred[int]:
         def thd(conn) -> int:

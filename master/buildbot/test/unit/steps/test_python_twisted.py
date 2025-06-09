@@ -88,16 +88,13 @@ buildbot.test.unit.test_steps_python_twisted.Trial.test_run_singular
 Ran 8 tests in 0.101s
 
 FAILED (failures=8)
-"""  # noqa pylint: disable=line-too-long
+"""
 
 
 class Trial(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     def test_run_env(self):
         self.setup_step(
@@ -213,7 +210,7 @@ class Trial(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
                 buildbot.test.unit.test_steps_python_twisted.Trial.test_run_jobs ... [FAILURE]/home/dustin/code/buildbot/t/buildbot/master/buildbot/test/fake/logfile.py:92: UserWarning: step uses removed LogFile method `getText`
                 buildbot.test.unit.test_steps_python_twisted.Trial.test_run_jobsProperties ... [FAILURE]
                 """),
-        )  # noqa pylint: disable=line-too-long
+        )
         return self.run_step()
 
     def test_renderable_properties(self):
@@ -400,9 +397,6 @@ class HLint(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_run_ok(self):
         self.setup_build(build_files=['foo.xhtml'])
         self.setup_step(python_twisted.HLint(workdir='build'))
@@ -468,9 +462,6 @@ class RemovePYCs(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     def test_run_ok(self):
         self.setup_step(python_twisted.RemovePYCs())

@@ -19,24 +19,27 @@ from twisted.trial import unittest
 from buildbot.data import connector
 from buildbot.data import root
 from buildbot.test.util import endpoint
+from buildbot.test.util.warnings import assertProducesWarnings
+from buildbot.warnings import DeprecatedApiWarning
 
 
 class RootEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = root.RootEndpoint
     resourceTypeClass = root.Root
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
+        yield self.setUpEndpoint()
         self.master.data.rootLinks = [
             {'name': 'abc'},
         ]
 
-    def tearDown(self):
-        self.tearDownEndpoint()
-
     @defer.inlineCallbacks
     def test_get(self):
-        rootlinks = yield self.callGet(('',))
+        with assertProducesWarnings(
+            DeprecatedApiWarning, message_pattern='.*the root endpoint with endpoint directory.*'
+        ):
+            rootlinks = yield self.callGet(('',))
 
         for rootlink in rootlinks:
             self.validateData(rootlink)
@@ -55,14 +58,11 @@ class SpecEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
+        yield self.setUpEndpoint()
         # replace fakeConnector with real DataConnector
         self.master.data.disownServiceParent()
         self.master.data = connector.DataConnector()
         yield self.master.data.setServiceParent(self.master)
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get(self):

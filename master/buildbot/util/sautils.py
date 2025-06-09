@@ -15,25 +15,27 @@
 
 from __future__ import annotations
 
+import hashlib
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from sqlalchemy.ext import compiler
 from sqlalchemy.sql.elements import BooleanClauseList
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import ClauseElement
 from sqlalchemy.sql.expression import Executable
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from typing import Any
     from typing import Callable
-    from typing import Sequence
 
     from sqlalchemy.future.engine import Connection
     from sqlalchemy.future.engine import Engine
 
 # from http:
-# www.sqlalchemy.org/docs/core/compiler.html#compiling-sub-elements-of-a-custom-expression-construct  # noqa pylint: disable=line-too-long
+# www.sqlalchemy.org/docs/core/compiler.html#compiling-sub-elements-of-a-custom-expression-construct
 # _execution_options per
 # http://docs.sqlalchemy.org/en/rel_0_7/core/compiler.html#enabling-compiled-autocommit
 # (UpdateBase requires sqlalchemy 0.7.0)
@@ -82,14 +84,23 @@ def withoutSqliteForeignKeys(connection: Connection):
         yield
         return
 
+    res = connection.exec_driver_sql('pragma foreign_keys')
+    r = res.fetchone()
+    assert r
+    foreign_keys_enabled = r[0]
+    res.close()
+    if not foreign_keys_enabled:
+        yield
+        return
+
     # This context is not re-entrant. Ensure it.
     assert not getattr(connection.engine, 'fk_disabled', False)
-    connection.fk_disabled = True
+    connection.fk_disabled = True  # type: ignore[attr-defined]
     connection.exec_driver_sql('pragma foreign_keys=OFF')
     try:
         yield
     finally:
-        connection.fk_disabled = False
+        connection.fk_disabled = False  # type: ignore[attr-defined]
         connection.exec_driver_sql('pragma foreign_keys=ON')
 
 
@@ -233,5 +244,16 @@ def _column_value_kwargs(values: Sequence[tuple[sa.Column, Any]]) -> dict[str, A
     return {c.name: v for (c, v) in values}
 
 
-def _column_values_where_clause(values: Sequence[tuple[sa.Column, Any]]) -> BooleanClauseList:
-    return BooleanClauseList.and_(c == v for (c, v) in values)
+def _column_values_where_clause(values: Sequence[tuple[sa.Column, Any]]) -> ColumnElement[bool]:
+    return BooleanClauseList.and_(*[c == v for (c, v) in values])
+
+
+def hash_columns(*args):
+    def encode(x):
+        if x is None:
+            return b'\xf5'
+        elif isinstance(x, str):
+            return x.encode('utf-8')
+        return str(x).encode('utf-8')
+
+    return hashlib.sha1(b'\0'.join(map(encode, args))).hexdigest()

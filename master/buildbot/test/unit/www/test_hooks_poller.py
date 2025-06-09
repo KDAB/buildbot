@@ -20,6 +20,7 @@ from twisted.trial import unittest
 from buildbot import util
 from buildbot.changes import base
 from buildbot.changes.manager import ChangeManager
+from buildbot.test import fakedb
 from buildbot.test.fake import fakemaster
 from buildbot.test.fake.web import FakeRequest
 from buildbot.test.reactor import TestReactorMixin
@@ -43,11 +44,18 @@ class TestPollingChangeHook(TestReactorMixin, unittest.TestCase):
         self.request.uri = b"/change_hook/poller"
         self.request.method = b"GET"
         www = self.request.site.master.www
-        self.master = master = self.request.site.master = fakemaster.make_master(
+        self.master = master = self.request.site.master = yield fakemaster.make_master(
             self, wantData=True
         )
+
+        yield self.master.db.insert_test_data([
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+        ])
+
         master.www = www
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
+
         self.changeHook = change_hook.ChangeHookResource(
             dialects={'poller': options}, master=master
         )
@@ -65,9 +73,6 @@ class TestPollingChangeHook(TestReactorMixin, unittest.TestCase):
 
         yield self.request.test_render(self.changeHook)
         yield util.asyncSleep(0.1)
-
-    def tearDown(self):
-        return self.master.stopService()
 
     @defer.inlineCallbacks
     def test_no_args(self):

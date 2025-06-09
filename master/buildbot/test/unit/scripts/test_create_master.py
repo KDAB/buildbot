@@ -96,9 +96,6 @@ class TestCreateMasterFunctions(
         self.basedir = os.path.abspath(os.path.join('test', 'basedir'))
         self.setUpStdoutAssertions()
 
-    def tearDown(self):
-        self.tearDownDirs()
-
     def assertInTacFile(self, str):
         with open(os.path.join('test', 'buildbot.tac'), encoding='utf-8') as f:
             content = f.read()

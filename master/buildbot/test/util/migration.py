@@ -24,10 +24,8 @@ from alembic.runtime.migration import MigrationContext
 from twisted.internet import defer
 from twisted.python import log
 
-from buildbot.db import connector
 from buildbot.test.fake import fakemaster
 from buildbot.test.reactor import TestReactorMixin
-from buildbot.test.util import db
 from buildbot.test.util import dirs
 from buildbot.test.util import querylog
 from buildbot.util import sautils
@@ -43,23 +41,16 @@ if TYPE_CHECKING:
 # single db upgrade script.
 
 
-class MigrateTestMixin(TestReactorMixin, db.RealDatabaseMixin, dirs.DirsMixin):
+class MigrateTestMixin(TestReactorMixin, dirs.DirsMixin):
     @defer.inlineCallbacks
     def setUpMigrateTest(self):
         self.setup_test_reactor()
         self.basedir = os.path.abspath("basedir")
         self.setUpDirs('basedir')
 
-        yield self.setUpRealDatabase()
-
-        master = fakemaster.make_master(self)
-        self.db = connector.DBConnector(self.basedir)
-        yield self.db.setServiceParent(master)
-        self.db.pool = self.db_pool
-
-    def tearDownMigrateTest(self):
-        self.tearDownDirs()
-        return self.tearDownRealDatabase()
+        self.master = yield fakemaster.make_master(
+            self, wantDb=True, auto_upgrade=False, check_version=False
+        )
 
     @defer.inlineCallbacks
     def do_test_migration(self, base_revision, target_revision, setup_thd_cb, verify_thd_cb):
@@ -75,9 +66,9 @@ class MigrateTestMixin(TestReactorMixin, db.RealDatabaseMixin, dirs.DirsMixin):
             conn.commit()
             setup_thd_cb(conn)
 
-        yield self.db.pool.do(setup_thd)
+        yield self.master.db.pool.do(setup_thd)
 
-        alembic_scripts = self.db.model.alembic_get_scripts()
+        alembic_scripts = self.master.db.model.alembic_get_scripts()
 
         def upgrade_thd(engine):
             with querylog.log_queries():
@@ -96,7 +87,7 @@ class MigrateTestMixin(TestReactorMixin, db.RealDatabaseMixin, dirs.DirsMixin):
 
                         conn.commit()
 
-        yield self.db.pool.do_with_engine(upgrade_thd)
+        yield self.master.db.pool.do_with_engine(upgrade_thd)
 
         def check_table_charsets_thd(conn: Connection):
             # charsets are only a problem for MySQL
@@ -106,17 +97,20 @@ class MigrateTestMixin(TestReactorMixin, db.RealDatabaseMixin, dirs.DirsMixin):
             dbs = [r[0] for r in conn.exec_driver_sql("show tables")]
             for tbl in dbs:
                 r = conn.exec_driver_sql(f"show create table {tbl}")
-                create_table = r.fetchone()[1]
+                assert r is not None
+                res = r.fetchone()
+                assert res is not None
+                create_table = res[1]
                 self.assertIn(
                     'DEFAULT CHARSET=utf8',
                     create_table,
                     f"table {tbl} does not have the utf8 charset",
                 )
 
-        yield self.db.pool.do(check_table_charsets_thd)
+        yield self.master.db.pool.do(check_table_charsets_thd)
 
         def verify_thd(conn):
             with sautils.withoutSqliteForeignKeys(conn):
                 verify_thd_cb(conn)
 
-        yield self.db.pool.do(verify_thd)
+        yield self.master.db.pool.do(verify_thd)

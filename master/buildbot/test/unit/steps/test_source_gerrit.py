@@ -30,10 +30,7 @@ class TestGerrit(
 ):
     def setUp(self):
         self.setup_test_reactor()
-        return self.setUpSourceStep()
-
-    def tearDown(self):
-        return self.tearDownSourceStep()
+        return self.setup_test_build_step()
 
     def test_mode_full_clean(self):
         self.setup_step(

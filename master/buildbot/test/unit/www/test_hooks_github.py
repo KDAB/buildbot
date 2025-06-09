@@ -568,8 +568,10 @@ _CT_ENCODED = b'application/x-www-form-urlencoded'
 _CT_JSON = b'application/json'
 
 
+@defer.inlineCallbacks
 def _prepare_github_change_hook(testcase, **params):
-    return ChangeHookResource(dialects={'github': params}, master=fakeMasterForHooks(testcase))
+    master = yield fakeMasterForHooks(testcase)
+    return ChangeHookResource(dialects={'github': params}, master=master)
 
 
 def _prepare_request(event, payload, _secret=None, headers=None):
@@ -582,9 +584,9 @@ def _prepare_request(event, payload, _secret=None, headers=None):
     request.method = b"GET"
     request.received_headers = {_HEADER_EVENT: event}
 
-    assert isinstance(
-        payload, (bytes, list)
-    ), f"payload can only be bytes or list, not {type(payload)}"
+    assert isinstance(payload, (bytes, list)), (
+        f"payload can only be bytes or list, not {type(payload)}"
+    )
 
     if isinstance(payload, bytes):
         request.content = BytesIO(payload)
@@ -604,11 +606,11 @@ def _prepare_request(event, payload, _secret=None, headers=None):
     return request
 
 
-class TestChangeHookConfiguredWithGitChange(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithGitChange(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.changeHook = _prepare_github_change_hook(
+        self.changeHook = yield _prepare_github_change_hook(
             self, strict=False, github_property_whitelist=["github.*"]
         )
         self.master = self.changeHook.master
@@ -619,13 +621,10 @@ class TestChangeHookConfiguredWithGitChange(unittest.TestCase, TestReactorMixin)
             'https://api.github.com',
             headers=fake_headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     def assertDictSubset(self, expected_dict, response_dict):
         expected = {}
@@ -880,12 +879,12 @@ class TestChangeHookConfiguredWithGitChange(unittest.TestCase, TestReactorMixin)
 
 
 class TestChangeHookConfiguredWithGitChangeCustomPullrequestRef(
-    unittest.TestCase, TestReactorMixin
+    TestReactorMixin, unittest.TestCase
 ):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.changeHook = _prepare_github_change_hook(
+        self.changeHook = yield _prepare_github_change_hook(
             self, strict=False, github_property_whitelist=["github.*"], pullrequest_ref="head"
         )
         self.master = self.changeHook.master
@@ -896,13 +895,10 @@ class TestChangeHookConfiguredWithGitChangeCustomPullrequestRef(
             'https://api.github.com',
             headers=fake_headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def test_git_pull_request_with_custom_ref(self):
@@ -921,13 +917,13 @@ class TestChangeHookConfiguredWithGitChangeCustomPullrequestRef(
 
 
 class TestChangeHookConfiguredWithGitChangeCustomPullrequestRefWithAuth(
-    unittest.TestCase, TestReactorMixin
+    TestReactorMixin, unittest.TestCase
 ):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
         _token = '7e076f41-b73a-4045-a817'
-        self.changeHook = _prepare_github_change_hook(
+        self.changeHook = yield _prepare_github_change_hook(
             self,
             strict=False,
             github_property_whitelist=["github.*"],
@@ -945,13 +941,10 @@ class TestChangeHookConfiguredWithGitChangeCustomPullrequestRefWithAuth(
             'https://api.github.com',
             headers=fake_headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def test_git_pull_request_with_custom_ref(self):
@@ -969,7 +962,7 @@ class TestChangeHookConfiguredWithGitChangeCustomPullrequestRefWithAuth(
         self.assertEqual(change["branch"], "refs/pull/50/head")
 
 
-class TestChangeHookRefWithAuth(unittest.TestCase, TestReactorMixin):
+class TestChangeHookRefWithAuth(TestReactorMixin, unittest.TestCase):
     secret_name = 'secretkey'
     secret_value = 'githubtoken'
 
@@ -977,7 +970,7 @@ class TestChangeHookRefWithAuth(unittest.TestCase, TestReactorMixin):
     def setUp(self):
         self.setup_test_reactor()
 
-        self.changeHook = _prepare_github_change_hook(
+        self.changeHook = yield _prepare_github_change_hook(
             self,
             strict=False,
             github_property_whitelist=["github.*"],
@@ -995,7 +988,7 @@ class TestChangeHookRefWithAuth(unittest.TestCase, TestReactorMixin):
             'https://api.github.com',
             headers=fake_headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
 
         fake_storage = FakeSecretStorage()
@@ -1004,12 +997,9 @@ class TestChangeHookRefWithAuth(unittest.TestCase, TestReactorMixin):
         yield secret_service.setServiceParent(self.master)
 
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
 
         fake_storage.reconfigService(secretdict={self.secret_name: self.secret_value})
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
 
     @defer.inlineCallbacks
     def test_git_pull_request(self):
@@ -1025,12 +1015,12 @@ class TestChangeHookRefWithAuth(unittest.TestCase, TestReactorMixin):
         self.assertEqual(change["branch"], "refs/pull/50/merge")
 
 
-class TestChangeHookConfiguredWithAuthAndCustomSkips(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithAuthAndCustomSkips(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
         _token = '7e076f41-b73a-4045-a817'
-        self.changeHook = _prepare_github_change_hook(
+        self.changeHook = yield _prepare_github_change_hook(
             self, strict=False, skips=[r'\[ *bb *skip *\]'], token=_token
         )
         self.master = self.changeHook.master
@@ -1044,13 +1034,10 @@ class TestChangeHookConfiguredWithAuthAndCustomSkips(unittest.TestCase, TestReac
             'https://api.github.com',
             headers=fake_headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def _check_push_with_skip_message(self, payload):
@@ -1116,13 +1103,13 @@ class TestChangeHookConfiguredWithAuthAndCustomSkips(unittest.TestCase, TestReac
         self._check_pull_request_no_skip(gitJsonPayloadPullRequest)
 
 
-class TestChangeHookConfiguredWithAuth(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithAuth(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
 
         _token = '7e076f41-b73a-4045-a817'
-        self.changeHook = _prepare_github_change_hook(
+        self.changeHook = yield _prepare_github_change_hook(
             self, strict=False, token=_token, github_property_whitelist=["github.*"]
         )
         self.master = self.changeHook.master
@@ -1136,13 +1123,10 @@ class TestChangeHookConfiguredWithAuth(unittest.TestCase, TestReactorMixin):
             'https://api.github.com',
             headers=fake_headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     def assertDictSubset(self, expected_dict, response_dict):
         expected = {}
@@ -1238,11 +1222,11 @@ class TestChangeHookConfiguredWithAuth(unittest.TestCase, TestReactorMixin):
             self._check_git_pull_request_with_skip_message(gitJsonPayloadPullRequest)
 
 
-class TestChangeHookConfiguredWithCustomApiRoot(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithCustomApiRoot(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.changeHook = _prepare_github_change_hook(
+        self.changeHook = yield _prepare_github_change_hook(
             self, strict=False, github_api_endpoint='https://black.magic.io'
         )
         self.master = self.changeHook.master
@@ -1253,13 +1237,10 @@ class TestChangeHookConfiguredWithCustomApiRoot(unittest.TestCase, TestReactorMi
             'https://black.magic.io',
             headers=fake_headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def _check_pull_request(self, payload):
@@ -1276,13 +1257,13 @@ class TestChangeHookConfiguredWithCustomApiRoot(unittest.TestCase, TestReactorMi
         self._check_pull_request(gitJsonPayloadPullRequest)
 
 
-class TestChangeHookConfiguredWithCustomApiRootWithAuth(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithCustomApiRootWithAuth(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
 
         _token = '7e076f41-b73a-4045-a817'
-        self.changeHook = _prepare_github_change_hook(
+        self.changeHook = yield _prepare_github_change_hook(
             self, strict=False, github_api_endpoint='https://black.magic.io', token=_token
         )
         self.master = self.changeHook.master
@@ -1296,13 +1277,10 @@ class TestChangeHookConfiguredWithCustomApiRootWithAuth(unittest.TestCase, TestR
             'https://black.magic.io',
             headers=fake_headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def _check_pull_request(self, payload):
@@ -1319,9 +1297,10 @@ class TestChangeHookConfiguredWithCustomApiRootWithAuth(unittest.TestCase, TestR
         self._check_pull_request(gitJsonPayloadPullRequest)
 
 
-class TestChangeHookConfiguredWithStrict(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithStrict(TestReactorMixin, unittest.TestCase):
     _SECRET = 'somethingreallysecret'
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
 
@@ -1331,7 +1310,7 @@ class TestChangeHookConfiguredWithStrict(unittest.TestCase, TestReactorMixin):
         secretService = SecretManager()
         secretService.services = [fakeStorageService]
 
-        self.changeHook = _prepare_github_change_hook(
+        self.changeHook = yield _prepare_github_change_hook(
             self, strict=True, secret=util.Secret("secret_key")
         )
         self.changeHook.master.addService(secretService)
@@ -1397,7 +1376,7 @@ class TestChangeHookConfiguredWithStrict(unittest.TestCase, TestReactorMixin):
     @defer.inlineCallbacks
     def test_missing_secret(self):
         # override the value assigned in setUp
-        self.changeHook = _prepare_github_change_hook(self, strict=True)
+        self.changeHook = yield _prepare_github_change_hook(self, strict=True)
         self.request = _prepare_request(b'push', gitJsonPayload)
         yield self.request.test_render(self.changeHook)
         expected = b'Strict mode is requested while no secret is provided'
@@ -1424,10 +1403,11 @@ class TestChangeHookConfiguredWithStrict(unittest.TestCase, TestReactorMixin):
         self.assertEqual(self.request.written, expected)
 
 
-class TestChangeHookConfiguredWithCodebaseValue(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithCodebaseValue(TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.changeHook = _prepare_github_change_hook(self, codebase='foobar')
+        self.changeHook = yield _prepare_github_change_hook(self, codebase='foobar')
 
     @defer.inlineCallbacks
     def _check_git_with_change(self, payload):
@@ -1448,10 +1428,11 @@ def _codebase_function(payload):
     return 'foobar-' + payload['repository']['name']
 
 
-class TestChangeHookConfiguredWithCodebaseFunction(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithCodebaseFunction(TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.changeHook = _prepare_github_change_hook(self, codebase=_codebase_function)
+        self.changeHook = yield _prepare_github_change_hook(self, codebase=_codebase_function)
 
     @defer.inlineCallbacks
     def _check_git_with_change(self, payload):
@@ -1468,7 +1449,8 @@ class TestChangeHookConfiguredWithCodebaseFunction(unittest.TestCase, TestReacto
         return self._check_git_with_change(gitJsonPayload)
 
 
-class TestChangeHookConfiguredWithCustomEventHandler(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithCustomEventHandler(TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
 
@@ -1477,7 +1459,9 @@ class TestChangeHookConfiguredWithCustomEventHandler(unittest.TestCase, TestReac
                 self.master.hook_called = True
                 return [], None
 
-        self.changeHook = _prepare_github_change_hook(self, **{'class': CustomGitHubEventHandler})
+        self.changeHook = yield _prepare_github_change_hook(
+            self, **{'class': CustomGitHubEventHandler}
+        )
 
     @defer.inlineCallbacks
     def test_ping(self):

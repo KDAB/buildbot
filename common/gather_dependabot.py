@@ -3,6 +3,7 @@
 # this script takes all the PR created by dependabot and gather them into one
 
 import os
+import subprocess
 
 import requests
 import yaml
@@ -13,8 +14,8 @@ def main():
         conf = yaml.safe_load(f)
         token = conf['github.com'][0]['oauth_token']
 
-    os.system("git fetch https://github.com/buildbot/buildbot master")
-    os.system("git checkout FETCH_HEAD -B gather_dependabot")
+    subprocess.check_call(["git", "fetch", "https://github.com/buildbot/buildbot", "master"])
+    subprocess.check_call(["git", "checkout", "FETCH_HEAD", "-B", "gather_dependabot"])
     s = requests.Session()
     s.headers.update({'Authorization': 'token ' + token})
     r = s.get("https://api.github.com/repos/buildbot/buildbot/pulls")
@@ -24,12 +25,23 @@ def main():
     pr_text = "This PR collects dependabot PRs:\n\n"
     for pr in prs:
         if 'dependabot' in pr['user']['login']:
-            print(pr['number'], pr['title'])
-            pr_text += f"#{pr['number']}: {pr['title']}\n"
-            os.system(
-                "git fetch https://github.com/buildbot/buildbot " f"refs/pull/{pr['number']}/head"
+            commit_before = (
+                subprocess.check_output(["git", "rev-parse", "HEAD"]).decode('utf-8').strip()
             )
-            os.system("git cherry-pick FETCH_HEAD")
+            try:
+                print(pr['number'], pr['title'])
+                subprocess.check_call([
+                    "git",
+                    "fetch",
+                    "https://github.com/buildbot/buildbot",
+                    f"refs/pull/{pr['number']}/head",
+                ])
+                subprocess.check_call(["git", "cherry-pick", "master..FETCH_HEAD"])
+                pr_text += f"#{pr['number']}: {pr['title']}\n"
+            except Exception as e:
+                print('GOT ERROR, skipping PR', e)
+                subprocess.check_call(["git", "cherry-pick", "--abort"])
+                subprocess.check_call(["git", "reset", "--hard", commit_before])
 
     print("===========")
     print(pr_text)

@@ -13,10 +13,14 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
 import json
 import re
 import textwrap
 from posixpath import join
+from typing import TYPE_CHECKING
+from typing import Any
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
 
@@ -34,6 +38,11 @@ from buildbot.util import bytes2unicode
 from buildbot.www import auth
 from buildbot.www import resource
 
+if TYPE_CHECKING:
+    from buildbot.master import BuildMaster
+    from buildbot.util.twisted import InlineCallbacksType
+
+
 log = Logger()
 
 
@@ -41,15 +50,15 @@ class OAuth2LoginResource(auth.LoginResource):
     # disable reconfigResource calls
     needsReconfig = False
 
-    def __init__(self, master, _auth):
+    def __init__(self, master: BuildMaster, _auth: OAuth2Auth) -> None:
         super().__init__(master)
         self.auth = _auth
 
-    def render_POST(self, request):
+    def render_POST(self, request: Any) -> Any:
         return self.asyncRenderHelper(request, self.renderLogin)
 
     @defer.inlineCallbacks
-    def renderLogin(self, request):
+    def renderLogin(self, request: Any) -> InlineCallbacksType[Any]:
         code = request.args.get(b"code", [b""])[0]
         if not code:
             url = request.args.get(b"redirect", [None])[0]
@@ -65,6 +74,9 @@ class OAuth2LoginResource(auth.LoginResource):
         session.user_info = details
         session.updateSession(request)
         state = request.args.get(b"state", [b""])[0]
+
+        assert self.auth.homeUri is not None
+
         if state:
             for redirect in parse_qs(state).get('redirect', []):
                 raise resource.Redirect(self.auth.homeUri + "#" + redirect)
@@ -74,27 +86,36 @@ class OAuth2LoginResource(auth.LoginResource):
 class OAuth2Auth(auth.AuthBase):
     name = 'oauth2'
     getTokenUseAuthHeaders = False
-    authUri = None
-    tokenUri = None
+    authUri: str | None = None
+    tokenUri: str | None = None
     grantType = 'authorization_code'
-    authUriAdditionalParams = {}
-    tokenUriAdditionalParams = {}
+    authUriAdditionalParams: dict[str, str] = {}
+    tokenUriAdditionalParams: dict[str, str] = {}
+    resourceEndpoint: str = ""  # subclasses should override
+    faIcon: str = "not-defined"  # subclasses should override
     loginUri = None
     homeUri = None
-    sslVerify = None
 
-    def __init__(self, clientId, clientSecret, autologin=False, **kwargs):
+    def __init__(
+        self,
+        clientId: str,
+        clientSecret: str,
+        autologin: bool = False,
+        ssl_verify: bool = True,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.clientId = clientId
         self.clientSecret = clientSecret
         self.autologin = autologin
+        self.ssl_verify = ssl_verify
 
-    def reconfigAuth(self, master, new_config):
+    def reconfigAuth(self, master: BuildMaster, new_config: Any) -> None:
         self.master = master
         self.loginUri = join(new_config.buildbotURL, "auth/login")
         self.homeUri = new_config.buildbotURL
 
-    def getConfigDict(self):
+    def getConfigDict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "oauth2": True,
@@ -102,11 +123,11 @@ class OAuth2Auth(auth.AuthBase):
             "autologin": self.autologin,
         }
 
-    def getLoginResource(self):
+    def getLoginResource(self) -> OAuth2LoginResource:
         return OAuth2LoginResource(self.master, self)
 
     @defer.inlineCallbacks
-    def getLoginURL(self, redirect_url):
+    def getLoginURL(self, redirect_url: bytes | None) -> InlineCallbacksType[str]:
         """
         Returns the url to redirect the user to for user consent
         """
@@ -124,18 +145,18 @@ class OAuth2Auth(auth.AuthBase):
         sorted_oauth_params = sorted(oauth_params.items(), key=lambda val: val[0])
         return f"{self.authUri}?{urlencode(sorted_oauth_params)}"
 
-    def createSessionFromToken(self, token):
-        s = requests.Session()
+    def createSessionFromToken(self, token: dict[str, Any]) -> requests.Session:
+        s: requests.Session = requests.Session()
         error = token.get("error")
         if error:
             error_description = token.get("error_description") or error
-            msg = f"OAuth2 session: creation failed: {error_description}"
+            msg = f"OAuth2 session: creation failed: {error_description}".encode()
             raise Error(503, msg)
         s.params = {'access_token': token['access_token']}
-        s.verify = self.sslVerify
+        s.verify = self.ssl_verify
         return s
 
-    def get(self, session, path):
+    def get(self, session: requests.Session, path: str) -> Any:
         ret = session.get(self.resourceEndpoint + path)
         return ret.json()
 
@@ -143,9 +164,9 @@ class OAuth2Auth(auth.AuthBase):
     # from Miguel Araujo, augmented to support header based clientSecret
     # passing
     @defer.inlineCallbacks
-    def verifyCode(self, code):
+    def verifyCode(self, code: bytes) -> InlineCallbacksType[dict[str, Any]]:
         # everything in deferToThread is not counted with trial  --coverage :-(
-        def thd(client_id, client_secret):
+        def thd(client_id: str, client_secret: str) -> dict[str, Any]:
             url = self.tokenUri
             data = {'redirect_uri': self.loginUri, 'code': code, 'grant_type': self.grantType}
             auth = None
@@ -154,7 +175,7 @@ class OAuth2Auth(auth.AuthBase):
             else:
                 data.update({'client_id': client_id, 'client_secret': client_secret})
             data.update(self.tokenUriAdditionalParams)
-            response = requests.post(url, data=data, timeout=30, auth=auth, verify=self.sslVerify)
+            response = requests.post(url, data=data, timeout=30, auth=auth, verify=self.ssl_verify)
             response.raise_for_status()
             responseContent = bytes2unicode(response.content)
             try:
@@ -176,7 +197,7 @@ class OAuth2Auth(auth.AuthBase):
         result = yield threads.deferToThread(thd, client_id, client_secret)
         return result
 
-    def getUserInfoFromOAuthClient(self, c):
+    def getUserInfoFromOAuthClient(self, c: requests.Session) -> dict[str, Any]:
         return {}
 
 
@@ -193,7 +214,7 @@ class GoogleAuth(OAuth2Auth):
         ])
     }
 
-    def getUserInfoFromOAuthClient(self, c):
+    def getUserInfoFromOAuthClient(self, c: requests.Session) -> dict[str, Any]:
         data = self.get(c, '/userinfo')
         return {
             "full_name": data["name"],
@@ -231,16 +252,16 @@ class GitHubAuth(OAuth2Auth):
     """)
 
     def __init__(
-        self,
-        clientId,
-        clientSecret,
-        serverURL=None,
-        autologin=False,
-        apiVersion=3,
-        getTeamsMembership=False,
-        debug=False,
-        **kwargs,
-    ):
+        self: GitHubAuth,
+        clientId: str,
+        clientSecret: str,
+        serverURL: str | None = None,
+        autologin: bool = False,
+        apiVersion: int = 3,
+        getTeamsMembership: bool = False,
+        debug: bool = False,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(clientId, clientSecret, autologin, **kwargs)
         self.apiResourceEndpoint = None
         if serverURL is not None:
@@ -274,7 +295,7 @@ class GitHubAuth(OAuth2Auth):
         self.getTeamsMembership = getTeamsMembership
         self.debug = debug
 
-    def post(self, session, query):
+    def post(self, session: requests.Session, query: str) -> Any:
         if self.debug:
             log.info(
                 '{klass} GraphQL POST Request: {endpoint} -> DATA:\n----\n{data}\n----',
@@ -285,12 +306,12 @@ class GitHubAuth(OAuth2Auth):
         ret = session.post(self.apiResourceEndpoint, json={'query': query})
         return ret.json()
 
-    def getUserInfoFromOAuthClient(self, c):
+    def getUserInfoFromOAuthClient(self, c: requests.Session) -> dict[str, Any]:
         if self.apiVersion == 3:
             return self.getUserInfoFromOAuthClient_v3(c)
         return self.getUserInfoFromOAuthClient_v4(c)
 
-    def getUserInfoFromOAuthClient_v3(self, c):
+    def getUserInfoFromOAuthClient_v3(self, c: requests.Session) -> dict[str, Any]:
         user = self.get(c, '/user')
         emails = self.get(c, '/user/emails')
         for email in emails:
@@ -305,16 +326,16 @@ class GitHubAuth(OAuth2Auth):
             "groups": [org['login'] for org in orgs],
         }
 
-    def createSessionFromToken(self, token):
+    def createSessionFromToken(self, token: dict[str, Any]) -> requests.Session:
         s = requests.Session()
         s.headers = {
             'Authorization': 'token ' + token['access_token'],
             'User-Agent': f'buildbot/{buildbot.version}',
         }
-        s.verify = self.sslVerify
+        s.verify = self.ssl_verify
         return s
 
-    def getUserInfoFromOAuthClient_v4(self, c):
+    def getUserInfoFromOAuthClient_v4(self, c: requests.Session) -> dict[str, Any]:
         graphql_query = textwrap.dedent("""
             query {
               viewer {
@@ -387,14 +408,14 @@ class GitLabAuth(OAuth2Auth):
     name = "GitLab"
     faIcon = "fa-git"
 
-    def __init__(self, instanceUri, clientId, clientSecret, **kwargs):
+    def __init__(self, instanceUri: str, clientId: str, clientSecret: str, **kwargs: Any) -> None:
         uri = instanceUri.rstrip("/")
         self.authUri = f"{uri}/oauth/authorize"
         self.tokenUri = f"{uri}/oauth/token"
         self.resourceEndpoint = f"{uri}/api/v4"
         super().__init__(clientId, clientSecret, **kwargs)
 
-    def getUserInfoFromOAuthClient(self, c):
+    def getUserInfoFromOAuthClient(self, c: requests.Session) -> dict[str, Any]:
         user = self.get(c, "/user")
         groups = self.get(c, "/groups")
         return {
@@ -413,7 +434,7 @@ class BitbucketAuth(OAuth2Auth):
     tokenUri = 'https://bitbucket.org/site/oauth2/access_token'
     resourceEndpoint = 'https://api.bitbucket.org/2.0'
 
-    def getUserInfoFromOAuthClient(self, c):
+    def getUserInfoFromOAuthClient(self, c: requests.Session) -> dict[str, Any]:
         user = self.get(c, '/user')
         emails = self.get(c, '/user/emails')
         for email in emails["values"]:

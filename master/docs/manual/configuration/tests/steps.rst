@@ -16,12 +16,10 @@ TestBuildStepMixin
 
         class RemovePYCs(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
 
+            @defer.inlineCallbacks
             def setUp(self):
-                self.setup_test_reactor()
-                return self.setup_test_build_step()
-
-            def tearDown(self):
-                return self.tear_down_test_build_step()
+                yield self.setup_test_reactor()
+                yield self.setup_test_build_step()
 
             @defer.inlineCallbacks
             def test_run_ok(self):
@@ -32,7 +30,7 @@ TestBuildStepMixin
                     .exit(0)
                 )
                 self.expect_outcome(result=SUCCESS, state_string='remove .pycs')
-                return self.run_step()
+                yield self.run_step()
 
     Basic workflow is as follows:
 
@@ -56,10 +54,6 @@ TestBuildStepMixin
     .. py:method:: setup_test_build_step()
 
         Call this function in the ``setUp()`` method of the test case to setup step testing machinery.
-
-    .. py:method:: tear_down_test_build_step()
-
-        Call this function in the ``tearDown()`` of the test case to destroy step testing machinery.
 
     .. py:method:: setup_build(worker_env=None, build_files=None)
 

@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+from typing import ClassVar
 from typing import NamedTuple
 
 from zope.interface import implementer
@@ -23,10 +25,13 @@ from buildbot.interfaces import IRenderable
 from buildbot.util import ComparableMixin
 from buildbot.util.twisted import async_to_deferred
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 @implementer(IRenderable)
 class GitCredentialInputRenderer(ComparableMixin):
-    compare_attrs = ('_credential_attributes',)
+    compare_attrs: ClassVar[Sequence[str]] = ('_credential_attributes',)
 
     def __init__(self, **credential_attributes) -> None:
         self._credential_attributes: dict[str, IRenderable | str] = credential_attributes

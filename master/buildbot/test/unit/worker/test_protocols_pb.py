@@ -13,11 +13,17 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import NoReturn
 from unittest import mock
 
 from twisted.internet import defer
 from twisted.internet.address import IPv4Address
 from twisted.spread import pb as twisted_pb
+from twisted.spread.pb import RemoteReference
 from twisted.trial import unittest
 
 from buildbot.test.fake import fakemaster
@@ -26,30 +32,36 @@ from buildbot.test.util import protocols as util_protocols
 from buildbot.worker.protocols import base
 from buildbot.worker.protocols import pb
 
+if TYPE_CHECKING:
+    from twisted.internet.defer import Deferred
+
+    from buildbot.util.twisted import InlineCallbacksType
+
 
 class TestListener(TestReactorMixin, unittest.TestCase):
-    def setUp(self):
+    @defer.inlineCallbacks
+    def setUp(self) -> InlineCallbacksType[None]:  # type: ignore[override]
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self)
+        self.master = yield fakemaster.make_master(self)
 
-    def makeListener(self):
+    def makeListener(self) -> pb.Listener:
         listener = pb.Listener(self.master)
         return listener
 
-    def test_constructor(self):
+    def test_constructor(self) -> None:
         listener = pb.Listener(self.master)
         self.assertEqual(listener.master, self.master)
         self.assertEqual(listener._registrations, {})
 
     @defer.inlineCallbacks
-    def test_updateRegistration_simple(self):
+    def test_updateRegistration_simple(self) -> InlineCallbacksType[None]:
         listener = pb.Listener(self.master)
         reg = yield listener.updateRegistration('example', 'pass', 'tcp:1234')
         self.assertEqual(self.master.pbmanager._registrations, [('tcp:1234', 'example', 'pass')])
         self.assertEqual(listener._registrations['example'], ('pass', 'tcp:1234', reg))
 
     @defer.inlineCallbacks
-    def test_updateRegistration_pass_changed(self):
+    def test_updateRegistration_pass_changed(self) -> InlineCallbacksType[None]:
         listener = pb.Listener(self.master)
         listener.updateRegistration('example', 'pass', 'tcp:1234')
         reg1 = yield listener.updateRegistration('example', 'pass1', 'tcp:1234')
@@ -57,7 +69,7 @@ class TestListener(TestReactorMixin, unittest.TestCase):
         self.assertEqual(self.master.pbmanager._unregistrations, [('tcp:1234', 'example')])
 
     @defer.inlineCallbacks
-    def test_updateRegistration_port_changed(self):
+    def test_updateRegistration_port_changed(self) -> InlineCallbacksType[None]:
         listener = pb.Listener(self.master)
         listener.updateRegistration('example', 'pass', 'tcp:1234')
         reg1 = yield listener.updateRegistration('example', 'pass', 'tcp:4321')
@@ -65,11 +77,12 @@ class TestListener(TestReactorMixin, unittest.TestCase):
         self.assertEqual(self.master.pbmanager._unregistrations, [('tcp:1234', 'example')])
 
     @defer.inlineCallbacks
-    def test_create_connection(self):
+    def test_create_connection(self) -> InlineCallbacksType[None]:
         listener = pb.Listener(self.master)
         worker = mock.Mock()
         worker.workername = 'test'
-        mind = mock.Mock()
+        mind = mock.Mock(spec=RemoteReference)
+        mind.broker = mock.Mock()
 
         listener.updateRegistration('example', 'pass', 'tcp:1234')
         self.master.workers.register(worker)
@@ -82,20 +95,22 @@ class TestListener(TestReactorMixin, unittest.TestCase):
 class TestConnectionApi(
     util_protocols.ConnectionInterfaceTest, TestReactorMixin, unittest.TestCase
 ):
-    def setUp(self):
+    @defer.inlineCallbacks
+    def setUp(self) -> InlineCallbacksType[None]:  # type: ignore[override]
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self)
+        self.master = yield fakemaster.make_master(self)
         self.conn = pb.Connection(self.master, mock.Mock(), mock.Mock())
 
 
 class TestConnection(TestReactorMixin, unittest.TestCase):
-    def setUp(self):
+    @defer.inlineCallbacks
+    def setUp(self) -> InlineCallbacksType[None]:  # type: ignore[override]
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self)
+        self.master = yield fakemaster.make_master(self)
         self.mind = mock.Mock()
         self.worker = mock.Mock()
 
-    def test_constructor(self):
+    def test_constructor(self) -> None:
         conn = pb.Connection(self.master, self.worker, self.mind)
 
         self.assertEqual(conn.mind, self.mind)
@@ -103,7 +118,7 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         self.assertEqual(conn.worker, self.worker)
 
     @defer.inlineCallbacks
-    def test_attached(self):
+    def test_attached(self) -> InlineCallbacksType[None]:
         conn = pb.Connection(self.master, self.worker, self.mind)
         att = yield conn.attached(self.mind)
 
@@ -120,7 +135,7 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         yield conn.waitShutdown()
 
     @defer.inlineCallbacks
-    def test_detached(self):
+    def test_detached(self) -> InlineCallbacksType[None]:
         conn = pb.Connection(self.master, self.worker, self.mind)
         conn.attached(self.mind)
         conn.detached(self.mind)
@@ -129,21 +144,23 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         self.assertEqual(conn.mind, None)
         yield conn.waitShutdown()
 
-    def test_loseConnection(self):
+    def test_loseConnection(self) -> None:
         conn = pb.Connection(self.master, self.worker, self.mind)
         conn.loseConnection()
 
         self.assertEqual(conn.keepalive_timer, None)
+        assert conn.mind is not None
         conn.mind.broker.transport.loseConnection.assert_called_with()
 
-    def test_remotePrint(self):
+    def test_remotePrint(self) -> None:
         conn = pb.Connection(self.master, self.worker, self.mind)
         conn.remotePrint(message='test')
-        conn.mind.callRemote.assert_called_with('print', message='test')
+        assert conn.mind is not None
+        conn.mind.callRemote.assert_called_with('print', message='test')  # type: ignore[attr-defined]
 
     @defer.inlineCallbacks
-    def test_remoteGetWorkerInfo_slave(self):
-        def side_effect(*args, **kwargs):
+    def test_remoteGetWorkerInfo_slave(self) -> InlineCallbacksType[None]:
+        def side_effect(*args: Any, **kwargs: Any) -> Deferred[Any] | None:
             if args[0] == 'getWorkerInfo':
                 return defer.fail(
                     twisted_pb.RemoteError('twisted.spread.flavors.NoSuchMethod', None, None)
@@ -176,11 +193,11 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         self.assertEqual(self.mind.callRemote.call_args_list, expected_calls)
 
     @defer.inlineCallbacks
-    def test_remoteGetWorkerInfo_slave_2_16(self):
+    def test_remoteGetWorkerInfo_slave_2_16(self) -> InlineCallbacksType[None]:
         """In buildslave 2.16 all information about worker is retrieved in
         a single getSlaveInfo() call."""
 
-        def side_effect(*args, **kwargs):
+        def side_effect(*args: Any, **kwargs: Any) -> Deferred[Any] | None:
             if args[0] == 'getWorkerInfo':
                 return defer.fail(
                     twisted_pb.RemoteError('twisted.spread.flavors.NoSuchMethod', None, None)
@@ -213,8 +230,8 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         self.assertEqual(self.mind.callRemote.call_args_list, expected_calls)
 
     @defer.inlineCallbacks
-    def test_remoteGetWorkerInfo_worker(self):
-        def side_effect(*args, **kwargs):
+    def test_remoteGetWorkerInfo_worker(self) -> InlineCallbacksType[None]:
+        def side_effect(*args: Any, **kwargs: Any) -> Deferred[Any] | None:
             if args[0] == 'getWorkerInfo':
                 return defer.succeed({
                     'info': 'test',
@@ -233,8 +250,8 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         self.assertEqual(self.mind.callRemote.call_args_list, expected_calls)
 
     @defer.inlineCallbacks
-    def test_remoteGetWorkerInfo_getWorkerInfo_fails(self):
-        def side_effect(*args, **kwargs):
+    def test_remoteGetWorkerInfo_getWorkerInfo_fails(self) -> InlineCallbacksType[None]:
+        def side_effect(*args: Any, **kwargs: Any) -> Deferred[Any] | None:
             if args[0] == 'getWorkerInfo':
                 return defer.fail(
                     twisted_pb.RemoteError('twisted.spread.flavors.NoSuchMethod', None, None)
@@ -271,10 +288,10 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         self.assertEqual(self.mind.callRemote.call_args_list, expected_calls)
 
     @defer.inlineCallbacks
-    def test_remoteGetWorkerInfo_no_info(self):
+    def test_remoteGetWorkerInfo_no_info(self) -> InlineCallbacksType[None]:
         # All remote commands tried in remoteGetWorkerInfo are unavailable.
         # This should be real old worker...
-        def side_effect(*args, **kwargs):
+        def side_effect(*args: Any, **kwargs: Any) -> Deferred[Any] | None:
             if args[0] == 'print':
                 return None
             return defer.fail(
@@ -285,7 +302,7 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         conn = pb.Connection(self.master, self.worker, self.mind)
         info = yield conn.remoteGetWorkerInfo()
 
-        r = {}
+        r: dict[Any, Any] = {}
         self.assertEqual(info, r)
         expected_calls = [
             mock.call('getWorkerInfo'),
@@ -301,22 +318,22 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         self.assertEqual(self.mind.callRemote.call_args_list, expected_calls)
 
     @defer.inlineCallbacks
-    def test_remoteSetBuilderList(self):
+    def test_remoteSetBuilderList(self) -> InlineCallbacksType[None]:
         builders = ['builder1', 'builder2']
         self.mind.callRemote.return_value = defer.succeed(builders)
         conn = pb.Connection(self.master, self.worker, self.mind)
-        r = yield conn.remoteSetBuilderList(builders)
+        r = yield conn.remoteSetBuilderList(builders)  # type: ignore[arg-type]
 
         self.assertEqual(r, builders)
         self.assertEqual(conn.builders, builders)
         self.mind.callRemote.assert_called_with('setBuilderList', builders)
 
-    def test_remoteStartCommand(self):
+    def test_remoteStartCommand(self) -> None:
         builders = ['builder']
         ret_val = {'builder': mock.Mock()}
         self.mind.callRemote.return_value = defer.succeed(ret_val)
         conn = pb.Connection(self.master, self.worker, self.mind)
-        conn.remoteSetBuilderList(builders)
+        conn.remoteSetBuilderList(builders)  # type: ignore[arg-type]
 
         RCInstance = base.RemoteCommandImpl()
         builder_name = "builder"
@@ -333,13 +350,13 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         self.assertEqual(callargs[1].impl, RCInstance)
 
     @defer.inlineCallbacks
-    def test_do_keepalive(self):
+    def test_do_keepalive(self) -> InlineCallbacksType[None]:
         conn = pb.Connection(self.master, self.worker, self.mind)
         yield conn._do_keepalive()
 
         self.mind.callRemote.assert_called_with('print', message="keepalive")
 
-    def test_remoteShutdown(self):
+    def test_remoteShutdown(self) -> None:
         self.mind.callRemote.return_value = defer.succeed(None)
         conn = pb.Connection(self.master, self.worker, self.mind)
         # note that we do not test the "old way", as it is now *very* old.
@@ -347,19 +364,19 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
 
         self.mind.callRemote.assert_called_with('shutdown')
 
-    def test_remoteStartBuild(self):
+    def test_remoteStartBuild(self) -> None:
         conn = pb.Connection(self.master, self.worker, self.mind)
         builders = {'builder': mock.Mock()}
         self.mind.callRemote.return_value = defer.succeed(builders)
         conn = pb.Connection(self.master, self.worker, self.mind)
-        conn.remoteSetBuilderList(builders)
+        conn.remoteSetBuilderList(builders)  # type: ignore[arg-type]
 
         conn.remoteStartBuild('builder')
 
         builders['builder'].callRemote.assert_called_with('startBuild')
 
     @defer.inlineCallbacks
-    def test_startStopKeepaliveTimer(self):
+    def test_startStopKeepaliveTimer(self) -> InlineCallbacksType[None]:
         conn = pb.Connection(self.master, self.worker, self.mind)
         conn.startKeepaliveTimer()
 
@@ -380,51 +397,52 @@ class TestConnection(TestReactorMixin, unittest.TestCase):
         conn.stopKeepaliveTimer()
         yield conn.waitShutdown()
 
-    def test_perspective_shutdown(self):
+    def test_perspective_shutdown(self) -> None:
         conn = pb.Connection(self.master, self.worker, self.mind)
         conn.perspective_shutdown()
 
-        conn.worker.shutdownRequested.assert_called_with()
-        conn.worker.messageReceivedFromWorker.assert_called_with()
+        conn.worker.shutdownRequested.assert_called_with()  # type: ignore[attr-defined]
+        conn.worker.messageReceivedFromWorker.assert_called_with()  # type: ignore[attr-defined]
 
-    def test_perspective_keepalive(self):
+    def test_perspective_keepalive(self) -> None:
         conn = pb.Connection(self.master, self.worker, self.mind)
         conn.perspective_keepalive()
 
-        conn.worker.messageReceivedFromWorker.assert_called_with()
+        conn.worker.messageReceivedFromWorker.assert_called_with()  # type: ignore[attr-defined]
 
-    def test_get_peer(self):
+    def test_get_peer(self) -> None:
         conn = pb.Connection(self.master, self.worker, self.mind)
+        assert conn.mind is not None
         conn.mind.broker.transport.getPeer.return_value = IPv4Address(
             "TCP",
             "ip",
-            "port",
+            "port",  # type: ignore[arg-type]
         )
         self.assertEqual(conn.get_peer(), "ip:port")
 
 
 class Test_wrapRemoteException(unittest.TestCase):
-    def test_raises_NoSuchMethod(self):
-        def f():
+    def test_raises_NoSuchMethod(self) -> None:
+        def f() -> NoReturn:
             with pb._wrapRemoteException():
                 raise twisted_pb.RemoteError('twisted.spread.flavors.NoSuchMethod', None, None)
 
         with self.assertRaises(pb._NoSuchMethod):
             f()
 
-    def test_raises_unknown(self):
+    def test_raises_unknown(self) -> None:
         class Error(Exception):
             pass
 
-        def f():
+        def f() -> NoReturn:
             with pb._wrapRemoteException():
                 raise Error()
 
         with self.assertRaises(Error):
             f()
 
-    def test_raises_RemoteError(self):
-        def f():
+    def test_raises_RemoteError(self) -> None:
+        def f() -> NoReturn:
             with pb._wrapRemoteException():
                 raise twisted_pb.RemoteError('twisted.spread.flavors.ProtocolError', None, None)
 

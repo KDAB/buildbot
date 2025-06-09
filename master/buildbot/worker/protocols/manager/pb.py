@@ -12,7 +12,10 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+from typing import Callable
 
 from twisted.cred import checkers
 from twisted.cred import credentials
@@ -21,6 +24,7 @@ from twisted.cred import portal
 from twisted.internet import defer
 from twisted.python import log
 from twisted.spread import pb
+from zope.interface import Interface
 from zope.interface import implementer
 
 from buildbot.process.properties import Properties
@@ -30,13 +34,18 @@ from buildbot.util.eventual import eventually
 from buildbot.worker.protocols.manager.base import BaseDispatcher
 from buildbot.worker.protocols.manager.base import BaseManager
 
+if TYPE_CHECKING:
+    from twisted.cred.credentials import IUsernamePassword
+
+    from buildbot.util.twisted import InlineCallbacksType
+
 
 @implementer(portal.IRealm, checkers.ICredentialsChecker)
 class Dispatcher(BaseDispatcher):
     credentialInterfaces = [credentials.IUsernamePassword, credentials.IUsernameHashedPassword]
 
-    def __init__(self, config_portstr, portstr):
-        super().__init__(portstr)
+    def __init__(self, config_port: str | int) -> None:
+        super().__init__(config_port=config_port)
         # there's lots of stuff to set up for a PB connection!
         self.portal = portal.Portal(self)
         self.portal.registerChecker(self)
@@ -46,17 +55,23 @@ class Dispatcher(BaseDispatcher):
     # IRealm
 
     @defer.inlineCallbacks
-    def requestAvatar(self, username, mind, interface):
-        assert interface == pb.IPerspective
-        username = bytes2unicode(username)
+    def requestAvatar(
+        self, avatarId: bytes | tuple[()], mind: object, *interfaces: type[Interface]
+    ) -> InlineCallbacksType[tuple[type[Interface], object, Callable[[], None]]]:
+        assert interfaces[0] == pb.IPerspective
+
+        if isinstance(avatarId, tuple) and not avatarId:
+            avatarIdStr = None  # Handle the empty tuple case
+        else:
+            avatarIdStr = bytes2unicode(avatarId)
 
         persp = None
-        if username in self.users:
-            _, afactory = self.users.get(username)
-            persp = yield afactory(mind, username)
+        if avatarIdStr and avatarIdStr in self.users:
+            _, afactory = self.users[avatarIdStr]
+            persp = yield afactory(mind, avatarIdStr)
 
         if not persp:
-            raise ValueError(f"no perspective for '{username}'")
+            raise ValueError(f"no perspective for '{avatarIdStr}'")
 
         yield persp.attached(mind)
 
@@ -65,7 +80,7 @@ class Dispatcher(BaseDispatcher):
     # ICredentialsChecker
 
     @defer.inlineCallbacks
-    def requestAvatarId(self, creds):
+    def requestAvatarId(self, creds: IUsernamePassword) -> InlineCallbacksType[bytes | tuple[()]]:
         p = Properties()
         p.master = self.master
         username = bytes2unicode(creds.username)
@@ -87,8 +102,8 @@ class Dispatcher(BaseDispatcher):
             eventually(self.master.initLock.release)
 
 
-class PBManager(BaseManager):
-    def __init__(self):
+class PBManager(BaseManager[Dispatcher]):
+    def __init__(self) -> None:
         super().__init__('pbmanager')
 
     dispatcher_class = Dispatcher

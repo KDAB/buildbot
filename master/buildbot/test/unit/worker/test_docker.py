@@ -30,11 +30,11 @@ from buildbot.test.util.config import ConfigErrorsMixin
 from buildbot.worker import docker as dockerworker
 
 
-class TestDockerLatentWorker(ConfigErrorsMixin, unittest.TestCase, TestReactorMixin):
+class TestDockerLatentWorker(ConfigErrorsMixin, TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setupWorker(self, *args, **kwargs):
         worker = dockerworker.DockerLatentWorker(*args, **kwargs)
-        master = fakemaster.make_master(self, wantData=True)
+        master = yield fakemaster.make_master(self, wantData=True)
         fakemaster.master = master
         worker.setServiceParent(master)
         yield master.startService()
@@ -512,6 +512,28 @@ class TestDockerLatentWorker(ConfigErrorsMixin, unittest.TestCase, TestReactorMi
             "end\n"
         )
         self.assertEqual((yield bs.check_instance()), (False, expected_logs))
+
+    @defer.inlineCallbacks
+    def test_stop_instance_stop_NotFound(self):
+        bs = yield self.setupWorker('bot', 'pass', 'tcp://1234:2375', 'worker')
+        yield bs.start_instance(self.build)
+
+        def stop(_, params):
+            raise docker.errors.NotFound
+
+        self.patch(docker.Client, "stop", stop)
+        yield bs.stop_instance(self.build)
+
+    @defer.inlineCallbacks
+    def test_stop_instance_remove_container_NotFound(self):
+        bs = yield self.setupWorker('bot', 'pass', 'tcp://1234:2375', 'worker')
+        yield bs.start_instance(self.build)
+
+        def remove_container(_, params, v=False, force=False):
+            raise docker.errors.NotFound
+
+        self.patch(docker.Client, "remove_container", remove_container)
+        yield bs.stop_instance(self.build)
 
 
 class testDockerPyStreamLogs(unittest.TestCase):

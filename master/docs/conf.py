@@ -94,7 +94,7 @@ if release == 'latest':
     rst_prolog += textwrap.dedent("""\
     .. caution:: This page documents the latest, unreleased version of
         Buildbot.  For documentation for released versions, see
-        http://docs.buildbot.net/current/.
+        https://docs.buildbot.net/current/.
 
     """)
 
@@ -322,9 +322,9 @@ for raml_typename, raml_type in sorted(raml_spec.types.items()):
 
 # Spell checker.
 try:
-    import enchant  # noqa # pylint: disable=unused-import
+    import enchant  # noqa: F401
 except ImportError as ex:
-    print("enchant module import failed:\n" f"{ex}\n" "Spell checking disabled.", file=sys.stderr)
+    print(f"enchant module import failed:\n{ex}\nSpell checking disabled.", file=sys.stderr)
 
 else:
     extensions.append('sphinxcontrib.spelling')

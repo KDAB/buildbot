@@ -11,7 +11,8 @@
 # this program; if not, write to the Free Software Foundation, Inc., 51
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
-# Copyright Buildbot Team Members
+# Copyright Buildbot Team Member
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -25,6 +26,7 @@ from buildbot.util import identifiers
 
 if TYPE_CHECKING:
     from buildbot.db.logs import LogModel
+    from buildbot.util.twisted import InlineCallbacksType
 
 
 class EndpointMixin:
@@ -43,16 +45,16 @@ class EndpointMixin:
 
 class LogEndpoint(EndpointMixin, base.BuildNestingMixin, base.Endpoint):
     kind = base.EndpointKind.SINGLE
-    pathPatterns = """
-        /logs/n:logid
-        /steps/n:stepid/logs/i:log_slug
-        /builds/n:buildid/steps/i:step_name/logs/i:log_slug
-        /builds/n:buildid/steps/n:step_number/logs/i:log_slug
-        /builders/n:builderid/builds/n:build_number/steps/i:step_name/logs/i:log_slug
-        /builders/n:builderid/builds/n:build_number/steps/n:step_number/logs/i:log_slug
-        /builders/s:buildername/builds/n:build_number/steps/i:step_name/logs/i:log_slug
-        /builders/s:buildername/builds/n:build_number/steps/n:step_number/logs/i:log_slug
-    """
+    pathPatterns = [
+        "/logs/n:logid",
+        "/steps/n:stepid/logs/i:log_slug",
+        "/builds/n:buildid/steps/i:step_name/logs/i:log_slug",
+        "/builds/n:buildid/steps/n:step_number/logs/i:log_slug",
+        "/builders/n:builderid/builds/n:build_number/steps/i:step_name/logs/i:log_slug",
+        "/builders/n:builderid/builds/n:build_number/steps/n:step_number/logs/i:log_slug",
+        "/builders/s:buildername/builds/n:build_number/steps/i:step_name/logs/i:log_slug",
+        "/builders/s:buildername/builds/n:build_number/steps/n:step_number/logs/i:log_slug",
+    ]
 
     @defer.inlineCallbacks
     def get(self, resultSpec, kwargs):
@@ -71,15 +73,15 @@ class LogEndpoint(EndpointMixin, base.BuildNestingMixin, base.Endpoint):
 
 class LogsEndpoint(EndpointMixin, base.BuildNestingMixin, base.Endpoint):
     kind = base.EndpointKind.COLLECTION
-    pathPatterns = """
-        /steps/n:stepid/logs
-        /builds/n:buildid/steps/i:step_name/logs
-        /builds/n:buildid/steps/n:step_number/logs
-        /builders/n:builderid/builds/n:build_number/steps/i:step_name/logs
-        /builders/n:builderid/builds/n:build_number/steps/n:step_number/logs
-        /builders/s:buildername/builds/n:build_number/steps/i:step_name/logs
-        /builders/s:buildername/builds/n:build_number/steps/n:step_number/logs
-    """
+    pathPatterns = [
+        "/steps/n:stepid/logs",
+        "/builds/n:buildid/steps/i:step_name/logs",
+        "/builds/n:buildid/steps/n:step_number/logs",
+        "/builders/n:builderid/builds/n:build_number/steps/i:step_name/logs",
+        "/builders/n:builderid/builds/n:build_number/steps/n:step_number/logs",
+        "/builders/s:buildername/builds/n:build_number/steps/i:step_name/logs",
+        "/builders/s:buildername/builds/n:build_number/steps/n:step_number/logs",
+    ]
 
     @defer.inlineCallbacks
     def get(self, resultSpec, kwargs):
@@ -98,12 +100,10 @@ class Log(base.ResourceType):
     name = "log"
     plural = "logs"
     endpoints = [LogEndpoint, LogsEndpoint]
-    keyField = "logid"
-    eventPathPatterns = """
-        /logs/:logid
-        /steps/:stepid/logs/:slug
-    """
-    subresources = ["LogChunk"]
+    eventPathPatterns = [
+        "/logs/:logid",
+        "/steps/:stepid/logs/:slug",
+    ]
 
     class EntityType(types.Entity):
         logid = types.Integer()
@@ -114,7 +114,7 @@ class Log(base.ResourceType):
         num_lines = types.Integer()
         type = types.Identifier(1)
 
-    entityType = EntityType(name, 'Log')
+    entityType = EntityType(name)
 
     @defer.inlineCallbacks
     def generateEvent(self, _id, event):
@@ -124,7 +124,7 @@ class Log(base.ResourceType):
 
     @base.updateMethod
     @defer.inlineCallbacks
-    def addLog(self, stepid, name, type):
+    def addLog(self, stepid: int, name: str, type: int) -> InlineCallbacksType[int]:
         slug = identifiers.forceIdentifier(50, name)
         while True:
             try:
@@ -139,18 +139,18 @@ class Log(base.ResourceType):
 
     @base.updateMethod
     @defer.inlineCallbacks
-    def appendLog(self, logid, content):
+    def appendLog(self, logid: int, content: str) -> InlineCallbacksType[None]:
         res = yield self.master.db.logs.appendLog(logid=logid, content=content)
         self.generateEvent(logid, "append")
         return res
 
     @base.updateMethod
     @defer.inlineCallbacks
-    def finishLog(self, logid):
+    def finishLog(self, logid: int) -> InlineCallbacksType[None]:
         res = yield self.master.db.logs.finishLog(logid=logid)
         self.generateEvent(logid, "finished")
         return res
 
     @base.updateMethod
-    def compressLog(self, logid):
+    def compressLog(self, logid: int) -> defer.Deferred[int]:
         return self.master.db.logs.compressLog(logid=logid)

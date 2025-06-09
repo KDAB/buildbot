@@ -19,6 +19,9 @@ import contextlib
 import os
 import re
 from typing import TYPE_CHECKING
+from typing import Any
+from typing import ClassVar
+from typing import cast
 from urllib.parse import quote as urlquote
 
 from twisted.internet import defer
@@ -26,6 +29,7 @@ from twisted.python import log
 
 from buildbot import config
 from buildbot.changes import base
+from buildbot.process.codebase import Codebase
 from buildbot.util import bytes2unicode
 from buildbot.util import giturlparse
 from buildbot.util import private_tempdir
@@ -40,10 +44,12 @@ from buildbot.util.state import StateMixin
 from buildbot.util.twisted import async_to_deferred
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from typing import Callable
     from typing import Literal
 
     from buildbot.interfaces import IRenderable
+    from buildbot.util.twisted import InlineCallbacksType
 
 
 class GitError(Exception):
@@ -54,7 +60,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
     """This source will poll a remote git repo for changes and submit
     them to the change master."""
 
-    compare_attrs = (
+    compare_attrs: ClassVar[Sequence[str]] = (
         "repourl",
         "branches",
         "workdir",
@@ -62,6 +68,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         "gitbin",
         "usetimestamps",
         "category",
+        'codebase',
         "project",
         "pollAtLaunch",
         "buildPushesWithNoCommits",
@@ -70,7 +77,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         "_git_auth",
     )
 
-    def __init__(self, repourl, **kwargs) -> None:
+    def __init__(self, repourl: str, **kwargs: Any) -> None:
         self._git_auth = GitServiceAuth(self)
 
         self.lastRev: dict[str, str] | None = None
@@ -82,29 +89,30 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
 
     def checkConfig(  # type: ignore[override]
         self,
-        repourl,
+        repourl: str,
         branches: list[str] | Literal[True] | Callable[[str], bool] | None = None,
         branch: str | None = None,
-        workdir=None,
-        pollInterval=10 * 60,
-        gitbin="git",
-        usetimestamps=True,
-        category=None,
-        project=None,
-        fetch_refspec=None,
-        encoding="utf-8",
-        name=None,
-        pollAtLaunch=False,
-        buildPushesWithNoCommits=False,
-        only_tags=False,
-        sshPrivateKey=None,
-        sshHostKey=None,
-        sshKnownHosts=None,
-        pollRandomDelayMin=0,
-        pollRandomDelayMax=0,
+        workdir: str | None = None,
+        pollInterval: int = 10 * 60,
+        gitbin: str = "git",
+        usetimestamps: bool = True,
+        category: str | Callable[[str], str] | None = None,
+        codebase: Codebase | None = None,
+        project: str | None = None,
+        fetch_refspec: str | None = None,
+        encoding: str = "utf-8",
+        name: str | None = None,
+        pollAtLaunch: bool = False,
+        buildPushesWithNoCommits: bool = False,
+        only_tags: bool = False,
+        sshPrivateKey: str | None = None,
+        sshHostKey: str | None = None,
+        sshKnownHosts: str | None = None,
+        pollRandomDelayMin: int = 0,
+        pollRandomDelayMax: int = 0,
         auth_credentials: tuple[IRenderable | str, IRenderable | str] | None = None,
         git_credentials: GitCredentialOptions | None = None,
-    ):
+    ) -> None:
         if only_tags and (branch or branches):
             config.error("GitPoller: can't specify only_tags and branch/branches")
         if branch and branches:
@@ -132,6 +140,11 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         if name is None:
             name = repourl
 
+        if not isinstance(codebase, (Codebase, type(None))):
+            config.error(
+                f'{self.__class__.__name__}: codebase must be None or instance of Codebase'
+            )
+
         super().checkConfig(
             name=name,
             pollInterval=pollInterval,
@@ -141,31 +154,32 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         )
 
     @defer.inlineCallbacks
-    def reconfigService(
+    def reconfigService(  # type: ignore[override]
         self,
-        repourl,
-        branches=None,
-        branch=None,
-        workdir=None,
-        pollInterval=10 * 60,
-        gitbin="git",
-        usetimestamps=True,
-        category=None,
-        project=None,
-        fetch_refspec=None,
-        encoding="utf-8",
-        name=None,
-        pollAtLaunch=False,
-        buildPushesWithNoCommits=False,
-        only_tags=False,
-        sshPrivateKey=None,
-        sshHostKey=None,
-        sshKnownHosts=None,
-        pollRandomDelayMin=0,
-        pollRandomDelayMax=0,
+        repourl: str,
+        branches: list[str] | Literal[True] | Callable[[str], bool] | None = None,
+        branch: str | None = None,
+        workdir: str | None = None,
+        pollInterval: int = 10 * 60,
+        gitbin: str = "git",
+        usetimestamps: bool = True,
+        category: str | Callable[[str], str] | None = None,
+        codebase: Codebase | None = None,
+        project: str | None = None,
+        fetch_refspec: str | None = None,
+        encoding: str = "utf-8",
+        name: str | None = None,
+        pollAtLaunch: bool = False,
+        buildPushesWithNoCommits: bool = False,
+        only_tags: bool = False,
+        sshPrivateKey: str | None = None,
+        sshHostKey: str | None = None,
+        sshKnownHosts: str | None = None,
+        pollRandomDelayMin: int = 0,
+        pollRandomDelayMax: int = 0,
         auth_credentials: tuple[IRenderable | str, IRenderable | str] | None = None,
         git_credentials: GitCredentialOptions | None = None,
-    ):
+    ) -> InlineCallbacksType[None]:
         if name is None:
             name = repourl
 
@@ -176,7 +190,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             branches = [branch]
         elif not branches:
             if only_tags:
-                branches = lambda ref: ref.startswith('refs/tags/')  # noqa: E731
+                branches = lambda ref: ref.startswith('refs/tags/')
             else:
                 branches = None
 
@@ -190,8 +204,22 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         self.category = (
             category if callable(category) else bytes2unicode(category, encoding=self.encoding)
         )
+        self.codebase = codebase
+
+        if codebase is not None:
+            projectid = yield self.master.data.updates.find_project_id(
+                codebase.project, auto_create=False
+            )
+            if projectid is None:
+                raise RuntimeError(f'Project {codebase.project} is not configured')
+
+            self._codebase_id = yield self.master.data.updates.find_codebase_id(
+                projectid=projectid, name=codebase.name
+            )
+        else:
+            self._codebase_id = None
+
         self.project = bytes2unicode(project, encoding=self.encoding)
-        self.changeCount = 0
         self.lastRev = None
 
         self.setupGit()
@@ -225,7 +253,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         )
 
     @defer.inlineCallbacks
-    def _checkGitFeatures(self):
+    def _checkGitFeatures(self) -> InlineCallbacksType[None]:
         stdout = yield self._dovccmd('--version', [])
 
         self.parseGitFeatures(stdout)
@@ -239,15 +267,16 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             if has_ssh_private_key:
                 raise OSError('SSH private keys require Git 2.3.0 or newer')
 
-    def activate(self):
+    def activate(self) -> defer.Deferred[None]:
         try:
             self.lastRev = None
 
             super().activate()
         except Exception as e:
             log.err(e, 'while initializing GitPoller repository')
+        return defer.succeed(None)
 
-    def describe(self):
+    def describe(self) -> str:
         str = 'GitPoller watching the remote git repository ' + bytes2unicode(
             self.repourl, self.encoding
         )
@@ -325,7 +354,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             return value[len(prefix) :]
         return value
 
-    def _removeHeads(self, branch):
+    def _removeHeads(self, branch: str) -> str:
         """Remove 'refs/heads/' prefix from remote references."""
         if branch.startswith("refs/heads/"):
             branch = branch[11:]
@@ -357,16 +386,17 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
 
         return f"{tracker_prefix}/{url_identifier}/{GitPoller._trim_prefix(ref, 'refs/')}"
 
-    def poll_should_exit(self):
+    def poll_should_exit(self) -> bool:
         # A single gitpoller loop may take a while on a loaded master, which would block
         # reconfiguration, so we try to exit early.
         return not self.doPoll.running
 
     @defer.inlineCallbacks
-    def poll(self):
+    def poll(self) -> InlineCallbacksType[None]:  # type: ignore[override]
         yield self._checkGitFeatures()
 
         try:
+            assert self.workdir is not None
             yield self._dovccmd('init', ['--bare', self.workdir])
         except GitError as e:
             log.msg(e.args[0])
@@ -379,9 +409,9 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         )
         # retrieve auth files
         with tmp_dir as tmp_path:
-            yield self._git_auth.download_auth_files_if_needed(tmp_path)
+            yield self._git_auth.download_auth_files_if_needed(cast(str, tmp_path))
 
-            refs, trim_ref_head = yield self._get_refs(tmp_path)
+            refs, trim_ref_head = yield self._get_refs(cast(str, tmp_path))
 
             # Nothing to fetch and process.
             if not refs:
@@ -395,7 +425,7 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             try:
                 yield self._dovccmd(
                     'fetch',
-                    ['--progress', self.repourl] + refspecs + ['--'],
+                    ["--progress", self.repourl, *refspecs, "--"],
                     path=self.workdir,
                     auth_files_path=tmp_path,
                 )
@@ -458,37 +488,33 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
         # but not a critical error. Just use HEAD as the ref to use
         return (['HEAD'], False)
 
-    def _get_commit_comments(self, rev):
+    def _get_commit_comments(self, rev: str) -> defer.Deferred[str]:
         args = ['--no-walk', r'--format=%s%n%b', rev, '--']
         d = self._dovccmd('log', args, path=self.workdir)
         return d
 
-    def _get_commit_timestamp(self, rev):
+    @defer.inlineCallbacks
+    def _get_commit_timestamp(self, rev: str) -> InlineCallbacksType[int | None]:
         # unix timestamp
         args = ['--no-walk', r'--format=%ct', rev, '--']
-        d = self._dovccmd('log', args, path=self.workdir)
+        git_output = yield self._dovccmd('log', args, path=self.workdir)
+        if self.usetimestamps:
+            try:
+                stamp = int(git_output)
+            except Exception as e:
+                log.msg(
+                    f'gitpoller: caught exception converting output \'{git_output}\' to timestamp'
+                )
+                raise e
+            return stamp
+        return None
 
-        @d.addCallback
-        def process(git_output):
-            if self.usetimestamps:
-                try:
-                    stamp = int(git_output)
-                except Exception as e:
-                    log.msg(
-                        f'gitpoller: caught exception converting output \'{git_output}\' to '
-                        'timestamp'
-                    )
-                    raise e
-                return stamp
-            return None
-
-        return d
-
-    def _get_commit_files(self, rev):
+    @defer.inlineCallbacks
+    def _get_commit_files(self, rev: str) -> InlineCallbacksType[list[str]]:
         args = ['--name-only', '--no-walk', r'--format=%n', '-m', '--first-parent', rev, '--']
-        d = self._dovccmd('log', args, path=self.workdir)
+        git_output = yield self._dovccmd('log', args, path=self.workdir)
 
-        def decode_file(file):
+        def decode_file(file: str) -> str:
             # git use octal char sequences in quotes when non ASCII
             match = re.match('^"(.*)"$', file)
             if match:
@@ -497,37 +523,32 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
                 )
             return bytes2unicode(file, encoding=self.encoding)
 
-        @d.addCallback
-        def process(git_output):
-            fileList = [
-                decode_file(file) for file in [s for s in git_output.splitlines() if len(s)]
-            ]
-            return fileList
-
-        return d
-
-    def _get_commit_author(self, rev):
-        args = ['--no-walk', r'--format=%aN <%aE>', rev, '--']
-        d = self._dovccmd('log', args, path=self.workdir)
-
-        @d.addCallback
-        def process(git_output):
-            if not git_output:
-                raise OSError('could not get commit author for rev')
-            return git_output
-
-        return d
+        fileList = [decode_file(file) for file in [s for s in git_output.splitlines() if len(s)]]
+        return fileList
 
     @defer.inlineCallbacks
-    def _get_commit_committer(self, rev):
+    def _get_commit_author(self, rev: str) -> InlineCallbacksType[str]:
+        args = ['--no-walk', r'--format=%aN <%aE>', rev, '--']
+        git_output = yield self._dovccmd('log', args, path=self.workdir)
+        if not git_output:
+            raise OSError('could not get commit author for rev')
+        return git_output
+
+    @defer.inlineCallbacks
+    def _get_commit_committer(self, rev: str) -> InlineCallbacksType[str]:
         args = ['--no-walk', r'--format=%cN <%cE>', rev, '--']
         res = yield self._dovccmd('log', args, path=self.workdir)
         if not res:
             raise OSError('could not get commit committer for rev')
         return res
 
+    def _get_commit_parent_hashes(self, rev: str) -> defer.Deferred[str]:
+        args = ['--no-walk', r'--format=%P', rev, '--']
+        d = self._dovccmd('log', args, path=self.workdir)
+        return d
+
     @defer.inlineCallbacks
-    def _process_changes(self, newRev, branch):
+    def _process_changes(self, newRev: str, branch: str) -> InlineCallbacksType[None]:
         """
         Read changes since last change.
 
@@ -547,7 +568,6 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
             + ['^' + rev for rev in sorted(self.lastRev.values())]
             + ['--']
         )
-        self.changeCount = 0
         results = yield self._dovccmd('log', revListArgs, path=self.workdir)
 
         # process oldest change first
@@ -566,17 +586,31 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
                     # commit than last time we saw it, rebuild.
                     log.msg(f'gitpoller: rebuilding {newRev} for updated branch "{branch}"')
 
-        self.changeCount = len(revList)
+        change_count = len(revList)
         self.lastRev[branch] = newRev
 
-        if self.changeCount:
+        if change_count:
             log.msg(
-                f'gitpoller: processing {self.changeCount} changes: {revList} from '
+                f'gitpoller: processing {change_count} changes: {revList} from '
                 f'"{self.repourl}" branch "{branch}"'
             )
 
+        last_commit_id = None
+        if self._codebase_id is not None and change_count:
+            rev = revList[0]
+            parent_hashes = yield self._get_commit_parent_hashes(rev)
+            parent_hash = parent_hashes.split()[0]
+            last_commit = yield self.master.data.get((
+                'codebases',
+                self._codebase_id,
+                'commits_by_revision',
+                parent_hash,
+            ))
+            if last_commit is not None:
+                last_commit_id = last_commit['commitid']
+
         for rev in revList:
-            dl = defer.DeferredList(
+            dl: defer.Deferred[Any] = defer.DeferredList(
                 [
                     self._get_commit_timestamp(rev),
                     self._get_commit_author(rev),
@@ -613,6 +647,25 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
                 src='git',
             )
 
+            if self._codebase_id is not None:
+                last_commit_id = yield self.master.data.updates.add_commit(
+                    codebaseid=self._codebase_id,
+                    author=author,
+                    committer=committer,
+                    comments=comments,
+                    when_timestamp=timestamp,
+                    revision=bytes2unicode(rev, encoding=self.encoding),
+                    parent_commitid=last_commit_id,
+                )
+
+        if self._codebase_id is not None and last_commit_id is not None:
+            yield self.master.data.updates.update_branch(
+                codebaseid=self._codebase_id,
+                name=branch,
+                commitid=last_commit_id,
+                last_timestamp=int(self.master.reactor.seconds()),
+            )
+
     @async_to_deferred
     async def _dovccmd(
         self,
@@ -637,11 +690,11 @@ class GitPoller(base.ReconfigurablePollingChangeSource, StateMixin, GitMixin):
                 self,
             )
 
-        full_args += [command] + args
+        full_args += [command, *args]
 
         res = await runprocess.run_process(
             self.master.reactor,
-            [self.gitbin] + full_args,
+            [self.gitbin, *full_args],
             path,
             env=full_env,
             initial_stdin=unicode2bytes(initial_stdin) if initial_stdin is not None else None,

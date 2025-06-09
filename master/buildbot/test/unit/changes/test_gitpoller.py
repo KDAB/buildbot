@@ -29,6 +29,8 @@ from twisted.internet import defer
 from twisted.trial import unittest
 
 from buildbot.changes import gitpoller
+from buildbot.process.codebase import Codebase
+from buildbot.test import fakedb
 from buildbot.test.fake.private_tempdir import MockPrivateTemporaryDirectory
 from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.runprocess import ExpectMasterShell
@@ -37,13 +39,11 @@ from buildbot.test.util import changesource
 from buildbot.test.util import config
 from buildbot.test.util import logging
 from buildbot.test.util.git_repository import TestGitRepository
+from buildbot.test.util.state import StateTestMixin
 from buildbot.util import bytes2unicode
 from buildbot.util import unicode2bytes
 from buildbot.util.git_credential import GitCredentialOptions
 from buildbot.util.twisted import async_to_deferred
-
-# Test that environment variables get propagated to subprocesses (See #2116)
-os.environ['TEST_THAT_ENVIRONMENT_GETS_PASSED_TO_SUBPROCESSES'] = 'TRUE'
 
 
 class TestGitPollerBase(
@@ -51,6 +51,7 @@ class TestGitPollerBase(
     changesource.ChangeSourceMixin,
     logging.LoggingMixin,
     TestReactorMixin,
+    StateTestMixin,
     unittest.TestCase,
 ):
     REPOURL = 'git@example.com:~foo/baz.git'
@@ -68,13 +69,39 @@ class TestGitPollerBase(
         self.setup_master_run_process()
         yield self.setUpChangeSource()
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
+
+        project_id = yield self.master.data.updates.find_project_id(name='project1')
+        yield self.master.data.updates.find_codebase_id(projectid=project_id, name='codebase1')
 
         self.poller = yield self.attachChangeSource(self.createPoller())
 
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
-        yield self.tearDownChangeSource()
+    def patch_poller_get_commit_info(self, poller, timestamp):
+        # There is a separate test suite for the methods below, no need to complicate each test
+        def get_timestamp(rev):
+            return defer.succeed(timestamp)
+
+        self.patch(self.poller, '_get_commit_timestamp', get_timestamp)
+
+        def author(rev):
+            return defer.succeed('by:' + rev[:8])
+
+        self.patch(self.poller, '_get_commit_author', author)
+
+        def committer(rev):
+            return defer.succeed('by:' + rev[:8])
+
+        self.patch(self.poller, '_get_commit_committer', committer)
+
+        def files(rev):
+            return defer.succeed(['/etc/' + rev[:3]])
+
+        self.patch(self.poller, '_get_commit_files', files)
+
+        def comments(rev):
+            return defer.succeed('hello!')
+
+        self.patch(self.poller, '_get_commit_comments', comments)
 
     @async_to_deferred
     async def set_last_rev(self, state: dict[str, str]) -> None:
@@ -96,7 +123,7 @@ class TestGitPoller(TestGitPollerBase):
         self, methodToTest, args, desiredGoodOutput, desiredGoodResult, emptyRaisesException=True
     ):
         self.expect_commands(
-            ExpectMasterShell(['git'] + args).workdir(self.POLLER_WORKDIR),
+            ExpectMasterShell(['git', *args]).workdir(self.POLLER_WORKDIR),
         )
 
         # we should get an Exception with empty output from git
@@ -104,18 +131,18 @@ class TestGitPoller(TestGitPollerBase):
             yield methodToTest(self.dummyRevStr)
             if emptyRaisesException:
                 self.fail("run_process should have failed on empty output")
-        except Exception as e:
+        except Exception as error:
             if not emptyRaisesException:
                 import traceback
 
                 traceback.print_exc()
-                self.fail("run_process should NOT have failed on empty output: " + repr(e))
+                self.fail("run_process should NOT have failed on empty output: " + repr(error))
 
         self.assert_all_commands_ran()
 
         # and the method shouldn't suppress any exceptions
         self.expect_commands(
-            ExpectMasterShell(['git'] + args).workdir(self.POLLER_WORKDIR).exit(1),
+            ExpectMasterShell(['git', *args]).workdir(self.POLLER_WORKDIR).exit(1),
         )
 
         try:
@@ -128,7 +155,7 @@ class TestGitPoller(TestGitPollerBase):
 
         # finally we should get what's expected from good output
         self.expect_commands(
-            ExpectMasterShell(['git'] + args).workdir(self.POLLER_WORKDIR).stdout(desiredGoodOutput)
+            ExpectMasterShell(['git', *args]).workdir(self.POLLER_WORKDIR).stdout(desiredGoodOutput)
         )
 
         r = yield methodToTest(self.dummyRevStr)
@@ -175,9 +202,10 @@ class TestGitPoller(TestGitPollerBase):
 
     def test_get_commit_comments(self):
         comments = ['this is a commit message\n\nthat is multiline', 'single line message', '']
-        return defer.DeferredList([
-            self._test_get_commit_comments(commentStr) for commentStr in comments
-        ])
+        return defer.DeferredList(
+            [self._test_get_commit_comments(commentStr) for commentStr in comments],
+            consumeErrors=True,
+        )
 
     def test_get_commit_files(self):
         filesBytes = b'\n\nfile1\nfile2\n"\146ile_octal"\nfile space'
@@ -246,7 +274,8 @@ class TestGitPoller(TestGitPollerBase):
             ExpectMasterShell(['git', '--version']).stdout(b'Command not found'),
         )
 
-        yield self.assertFailure(self.poller._checkGitFeatures(), EnvironmentError)
+        with self.assertRaises(EnvironmentError):
+            yield self.poller._checkGitFeatures()
         self.assert_all_commands_ran()
 
     @defer.inlineCallbacks
@@ -314,6 +343,7 @@ class TestGitPoller(TestGitPollerBase):
         self.assert_all_commands_ran()
         yield self.assert_last_rev(None)
 
+    @defer.inlineCallbacks
     def test_poll_failInit(self):
         self.expect_commands(
             ExpectMasterShell(['git', '--version']).stdout(b'git version 1.7.5\n'),
@@ -321,10 +351,10 @@ class TestGitPoller(TestGitPollerBase):
         )
 
         self.poller.doPoll.running = True
-        d = self.assertFailure(self.poller.poll(), EnvironmentError)
+        with self.assertRaises(EnvironmentError):
+            yield self.poller.poll()
 
-        d.addCallback(lambda _: self.assert_all_commands_ran())
-        return d
+        yield self.assert_all_commands_ran()
 
     @defer.inlineCallbacks
     def test_poll_branch_do_not_exist(self):
@@ -454,11 +484,6 @@ class TestGitPoller(TestGitPollerBase):
 
     @defer.inlineCallbacks
     def test_poll_nothingNew(self):
-        # Test that environment variables get propagated to subprocesses
-        # (See #2116)
-        self.patch(os, 'environ', {'ENVVAR': 'TRUE'})
-        self.add_run_process_expect_env({'ENVVAR': 'TRUE'})
-
         self.expect_commands(
             ExpectMasterShell(['git', '--version']).stdout(b'git version 1.7.5\n'),
             ExpectMasterShell(['git', 'init', '--bare', self.POLLER_WORKDIR]),
@@ -637,32 +662,7 @@ class TestGitPoller(TestGitPollerBase):
             .stdout(b'\n'.join([b'9118f4ab71963d23d02d4bdc54876ac8bf05acf2'])),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
 
         # do the poll
         self.poller.branches = ['master', 'release']
@@ -691,7 +691,7 @@ class TestGitPoller(TestGitPollerBase):
                     'comments': 'hello!',
                     'files': ['/etc/442'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': 'git@example.com:~foo/baz.git',
                     'revision': '4423cdbcbb89c14e50dd5f4152415afd686c5241',
                     'revlink': '',
@@ -707,7 +707,7 @@ class TestGitPoller(TestGitPollerBase):
                     'comments': 'hello!',
                     'files': ['/etc/64a'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': 'git@example.com:~foo/baz.git',
                     'revision': '64a5dc2a4bd4f558b5dd193d47c83c7d7abc9a1a',
                     'revlink': '',
@@ -723,7 +723,7 @@ class TestGitPoller(TestGitPollerBase):
                     'comments': 'hello!',
                     'files': ['/etc/911'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': 'git@example.com:~foo/baz.git',
                     'revision': '9118f4ab71963d23d02d4bdc54876ac8bf05acf2',
                     'revlink': '',
@@ -827,32 +827,7 @@ class TestGitPoller(TestGitPollerBase):
             .stdout(b''),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
 
         # do the poll
         self.poller.branches = ['release']
@@ -876,7 +851,7 @@ class TestGitPoller(TestGitPollerBase):
                     'comments': 'hello!',
                     'files': ['/etc/442'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': 'git@example.com:~foo/baz.git',
                     'revision': '4423cdbcbb89c14e50dd5f4152415afd686c5241',
                     'revlink': '',
@@ -928,32 +903,7 @@ class TestGitPoller(TestGitPollerBase):
             .stdout(b''),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
 
         # do the poll
         self.poller.branches = ['release']
@@ -980,7 +930,7 @@ class TestGitPoller(TestGitPollerBase):
                     'comments': 'hello!',
                     'files': ['/etc/442'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': 'git@example.com:~foo/baz.git',
                     'revision': '4423cdbcbb89c14e50dd5f4152415afd686c5241',
                     'revlink': '',
@@ -1031,32 +981,7 @@ class TestGitPoller(TestGitPollerBase):
             .stdout(b''),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
 
         # do the poll
         self.poller.branches = ['release']
@@ -1080,7 +1005,7 @@ class TestGitPoller(TestGitPollerBase):
                     'comments': 'hello!',
                     'files': ['/etc/442'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': 'git@example.com:~foo/baz.git',
                     'revision': '4423cdbcbb89c14e50dd5f4152415afd686c5241',
                     'revlink': '',
@@ -1132,32 +1057,7 @@ class TestGitPoller(TestGitPollerBase):
             ),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
 
         # do the poll
         self.poller.branches = True
@@ -1192,11 +1092,6 @@ class TestGitPoller(TestGitPollerBase):
 
     @defer.inlineCallbacks
     def test_poll_noChanges(self):
-        # Test that environment variables get propagated to subprocesses
-        # (See #2116)
-        self.patch(os, 'environ', {'ENVVAR': 'TRUE'})
-        self.add_run_process_expect_env({'ENVVAR': 'TRUE'})
-
         self.expect_commands(
             ExpectMasterShell(['git', '--version']).stdout(b'git version 1.7.5\n'),
             ExpectMasterShell(['git', 'init', '--bare', self.POLLER_WORKDIR]),
@@ -1312,32 +1207,7 @@ class TestGitPoller(TestGitPollerBase):
             .stdout(b'\n'.join([b'9118f4ab71963d23d02d4bdc54876ac8bf05acf2'])),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
 
         # do the poll
         self.poller.branches = True
@@ -1425,32 +1295,7 @@ class TestGitPoller(TestGitPollerBase):
             ),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
 
         # do the poll
         class TestCallable:
@@ -1532,32 +1377,7 @@ class TestGitPoller(TestGitPollerBase):
             .stdout(b'\n'.join([b'9118f4ab71963d23d02d4bdc54876ac8bf05acf2'])),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
 
         def pullFilter(branch):
             """
@@ -1592,11 +1412,6 @@ class TestGitPoller(TestGitPollerBase):
 
     @defer.inlineCallbacks
     def test_poll_old(self):
-        # Test that environment variables get propagated to subprocesses
-        # (See #2116)
-        self.patch(os, 'environ', {'ENVVAR': 'TRUE'})
-        self.add_run_process_expect_env({'ENVVAR': 'TRUE'})
-
         self.expect_commands(
             ExpectMasterShell(['git', '--version']).stdout(b'git version 1.7.5\n'),
             ExpectMasterShell(['git', 'init', '--bare', self.POLLER_WORKDIR]),
@@ -1643,33 +1458,7 @@ class TestGitPoller(TestGitPollerBase):
             ),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
-
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
         # do the poll
         yield self.set_last_rev({'master': 'fa3ae8ed68e664d4db24798611b352e3c6509930'})
         self.poller.doPoll.running = True
@@ -1689,7 +1478,7 @@ class TestGitPoller(TestGitPollerBase):
                     'comments': 'hello!',
                     'files': ['/etc/442'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': 'git@example.com:~foo/baz.git',
                     'revision': '4423cdbcbb89c14e50dd5f4152415afd686c5241',
                     'revlink': '',
@@ -1705,7 +1494,7 @@ class TestGitPoller(TestGitPollerBase):
                     'comments': 'hello!',
                     'files': ['/etc/64a'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': 'git@example.com:~foo/baz.git',
                     'revision': '64a5dc2a4bd4f558b5dd193d47c83c7d7abc9a1a',
                     'revlink': '',
@@ -1758,32 +1547,7 @@ class TestGitPoller(TestGitPollerBase):
             ),
         )
 
-        # and patch out the _get_commit_foo methods which were already tested
-        # above
-        def timestamp(rev):
-            return defer.succeed(1273258009)
-
-        self.patch(self.poller, '_get_commit_timestamp', timestamp)
-
-        def author(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_author', author)
-
-        def committer(rev):
-            return defer.succeed('by:' + rev[:8])
-
-        self.patch(self.poller, '_get_commit_committer', committer)
-
-        def files(rev):
-            return defer.succeed(['/etc/' + rev[:3]])
-
-        self.patch(self.poller, '_get_commit_files', files)
-
-        def comments(rev):
-            return defer.succeed('hello!')
-
-        self.patch(self.poller, '_get_commit_comments', comments)
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
 
         # do the poll
         self.poller.branches = True
@@ -1804,7 +1568,8 @@ class TestGitPoller(TestGitPollerBase):
             'refs/heads/master': '4423cdbcbb89c14e50dd5f4152415afd686c5241',
         })
 
-        added = self.master.data.updates.changesAdded
+        added = yield self.master.data.get(('changes',))
+        added = sorted(added, key=lambda c: c['changeid'])
         self.assertEqual(len(added), 2)
 
         self.assertEqual(added[0]['author'], 'by:4423cdbc')
@@ -1813,7 +1578,6 @@ class TestGitPoller(TestGitPollerBase):
         self.assertEqual(added[0]['comments'], 'hello!')
         self.assertEqual(added[0]['branch'], 'master')
         self.assertEqual(added[0]['files'], ['/etc/442'])
-        self.assertEqual(added[0]['src'], 'git')
         self.assertEqual(added[0]['category'], '4423cd')
 
         self.assertEqual(added[1]['author'], 'by:64a5dc2a')
@@ -1821,7 +1585,6 @@ class TestGitPoller(TestGitPollerBase):
         self.assertEqual(added[1]['when_timestamp'], 1273258009)
         self.assertEqual(added[1]['comments'], 'hello!')
         self.assertEqual(added[1]['files'], ['/etc/64a'])
-        self.assertEqual(added[1]['src'], 'git')
         self.assertEqual(added[1]['category'], '64a5dc')
 
     @async_to_deferred
@@ -1833,7 +1596,7 @@ class TestGitPoller(TestGitPollerBase):
     def test_startService_loadLastRev(self):
         yield self.poller.stopService()
 
-        self.master.db.state.set_fake_state(
+        yield self.set_fake_state(
             self.poller, 'lastRev', {"master": "fa3ae8ed68e664d4db24798611b352e3c6509930"}
         )
 
@@ -2049,6 +1812,144 @@ class TestGitPollerDefaultBranch(TestGitPollerBase):
         self.assertEqual(len(self.master.data.updates.changesAdded), 0)
 
 
+class TestGitPollerWithCodebase(TestGitPollerBase):
+    def createPoller(self):
+        return gitpoller.GitPoller(
+            self.REPOURL, branches=['master'], codebase=Codebase('codebase1', 'project1')
+        )
+
+    @defer.inlineCallbacks
+    def test_poll_initial(self):
+        self.expect_commands(
+            ExpectMasterShell(['git', '--version']).stdout(b'git version 1.7.5\n'),
+            ExpectMasterShell(['git', 'init', '--bare', self.POLLER_WORKDIR]),
+            ExpectMasterShell([
+                'git',
+                'ls-remote',
+                '--refs',
+                self.REPOURL,
+                'refs/heads/master',
+            ]).stdout(b'4423cdbcbb89c14e50dd5f4152415afd686c5241\trefs/heads/master\n'),
+            ExpectMasterShell([
+                'git',
+                'fetch',
+                '--progress',
+                self.REPOURL,
+                '+refs/heads/master:refs/buildbot/' + self.REPOURL_QUOTED + '/heads/master',
+                '--',
+            ]).workdir(self.POLLER_WORKDIR),
+            ExpectMasterShell([
+                'git',
+                'rev-parse',
+                'refs/buildbot/' + self.REPOURL_QUOTED + '/heads/master',
+            ])
+            .workdir(self.POLLER_WORKDIR)
+            .stdout(b'bf0b01df6d00ae8d1ffa0b2e2acbe642a6cd35d5\n'),
+        )
+
+        self.poller.doPoll.running = True
+        yield self.poller.poll()
+
+        self.assert_all_commands_ran()
+        yield self.assert_last_rev({'master': 'bf0b01df6d00ae8d1ffa0b2e2acbe642a6cd35d5'})
+
+    @defer.inlineCallbacks
+    def test_poll_allBranches_single(self):
+        self.expect_commands(
+            ExpectMasterShell(['git', '--version']).stdout(b'git version 1.7.5\n'),
+            ExpectMasterShell(['git', 'init', '--bare', self.POLLER_WORKDIR]),
+            ExpectMasterShell(['git', 'ls-remote', '--refs', self.REPOURL, 'refs/heads/*']).stdout(
+                b'4423cdbcbb89c14e50dd5f4152415afd686c5241\trefs/heads/master\n'
+            ),
+            ExpectMasterShell([
+                'git',
+                'fetch',
+                '--progress',
+                self.REPOURL,
+                '+refs/heads/master:refs/buildbot/' + self.REPOURL_QUOTED + '/heads/master',
+                '--',
+            ]).workdir(self.POLLER_WORKDIR),
+            ExpectMasterShell([
+                'git',
+                'rev-parse',
+                'refs/buildbot/' + self.REPOURL_QUOTED + '/heads/master',
+            ])
+            .workdir(self.POLLER_WORKDIR)
+            .stdout(b'4423cdbcbb89c14e50dd5f4152415afd686c5241\n'),
+            ExpectMasterShell([
+                'git',
+                'log',
+                '--ignore-missing',
+                '--first-parent',
+                '--format=%H',
+                '4423cdbcbb89c14e50dd5f4152415afd686c5241',
+                '^fa3ae8ed68e664d4db24798611b352e3c6509930',
+                '--',
+            ])
+            .workdir(self.POLLER_WORKDIR)
+            .stdout(
+                b'\n'.join([
+                    b'64a5dc2a4bd4f558b5dd193d47c83c7d7abc9a1a',
+                    b'ff2ad982e61af5e11e6147cb2ca6bdfab47a92b7',
+                    b'4423cdbcbb89c14e50dd5f4152415afd686c5241',
+                ])
+            ),
+            ExpectMasterShell([
+                'git',
+                'log',
+                '--no-walk',
+                '--format=%P',
+                '4423cdbcbb89c14e50dd5f4152415afd686c5241',
+                '--',
+            ])
+            .workdir(self.POLLER_WORKDIR)
+            .stdout(b'0659625c8a684845076a30eeb3a7b3fe12c279b1\n'),
+        )
+
+        self.patch_poller_get_commit_info(self.poller, timestamp=1273258009)
+
+        # do the poll
+        self.poller.branches = True
+        yield self.set_last_rev({
+            'refs/heads/master': 'fa3ae8ed68e664d4db24798611b352e3c6509930',
+        })
+        self.poller.doPoll.running = True
+        yield self.poller.poll()
+
+        self.assert_all_commands_ran()
+        yield self.assert_last_rev({
+            'refs/heads/master': '4423cdbcbb89c14e50dd5f4152415afd686c5241',
+        })
+
+        self.assertEqual(len(self.master.data.updates.changesAdded), 3)
+        commits = yield self.master.data.get(('codebases', 1, 'commits'))
+        commits = [
+            {k: v for k, v in c.items() if k in ['commitid', 'revision', 'parent_commitid']}
+            for c in commits
+        ]
+        commits = sorted(commits, key=lambda c: c['commitid'])
+        self.assertEqual(
+            commits,
+            [
+                {
+                    'commitid': 1,
+                    'parent_commitid': None,
+                    'revision': '4423cdbcbb89c14e50dd5f4152415afd686c5241',
+                },
+                {
+                    'commitid': 2,
+                    'parent_commitid': 1,
+                    'revision': 'ff2ad982e61af5e11e6147cb2ca6bdfab47a92b7',
+                },
+                {
+                    'commitid': 3,
+                    'parent_commitid': 2,
+                    'revision': '64a5dc2a4bd4f558b5dd193d47c83c7d7abc9a1a',
+                },
+            ],
+        )
+
+
 class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
     def createPoller(self):
         return gitpoller.GitPoller(self.REPOURL, branches=['master'], sshPrivateKey='ssh-key')
@@ -2064,7 +1965,8 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
             ExpectMasterShell(['git', '--version']).stdout(b'git version 1.7.5\n'),
         )
 
-        yield self.assertFailure(self.poller._checkGitFeatures(), EnvironmentError)
+        with self.assertRaises(EnvironmentError):
+            yield self.poller._checkGitFeatures()
 
         self.assert_all_commands_ran()
 
@@ -2206,7 +2108,8 @@ class TestGitPollerWithSshPrivateKey(TestGitPollerBase):
         )
 
         self.poller.doPoll.running = True
-        yield self.assertFailure(self.poller.poll(), EnvironmentError)
+        with self.assertRaises(EnvironmentError):
+            yield self.poller.poll()
 
         self.assert_all_commands_ran()
 
@@ -2427,18 +2330,14 @@ class TestGitPollerWithAuthCredentials(TestGitPollerBase):
 
 
 class TestGitPollerConstructor(
-    unittest.TestCase, TestReactorMixin, changesource.ChangeSourceMixin, config.ConfigErrorsMixin
+    TestReactorMixin, changesource.ChangeSourceMixin, config.ConfigErrorsMixin, unittest.TestCase
 ):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
         yield self.setUpChangeSource()
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
-        yield self.tearDownChangeSource()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def test_deprecatedFetchRefspec(self):
@@ -2590,7 +2489,13 @@ class TestGitPollerBareRepository(
         yield self.prepare_repository()
 
         yield self.setUpChangeSource(want_real_reactor=True)
+        yield self.master.db.insert_test_data([
+            fakedb.Project(id=7, name='fake_project7'),
+            fakedb.Codebase(id=13, projectid=7, name='codebase1'),
+        ])
+
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
 
         self.poller_workdir = tempfile.mkdtemp(
             prefix="TestGitPollerBareRepository_",
@@ -2604,14 +2509,11 @@ class TestGitPollerBareRepository(
                 branches=['main'],
                 workdir=self.poller_workdir,
                 gitbin=self.repo.git_bin,
+                codebase=Codebase('codebase1', 'fake_project7'),
             )
         )
 
-    @defer.inlineCallbacks
     def tearDown(self):
-        yield self.master.stopService()
-        yield self.tearDownChangeSource()
-
         def _delete_repository(repo_path: Path):
             # on Win, git will mark objects as read-only
             git_objects_path = repo_path / "objects"
@@ -2733,7 +2635,7 @@ class TestGitPollerBareRepository(
                     'committer': 'test user <user@example.com>',
                     'files': ['README.md'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': self.repo_url,
                     'revision': self.FIX_1_SHA,
                     'revlink': '',
@@ -2749,7 +2651,7 @@ class TestGitPollerBareRepository(
                     'committer': 'test user <user@example.com>',
                     'files': ['README.md'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': self.repo_url,
                     'revision': self.MERGE_FEATURE_1_SHA,
                     'revlink': '',
@@ -2757,4 +2659,38 @@ class TestGitPollerBareRepository(
                     'when_timestamp': 1717855500,
                 },
             ],
+        )
+
+        commits = await self.master.data.get(('codebases', 13, 'commits'))
+        self.assertEqual(
+            commits,
+            [
+                {
+                    'commitid': 1,
+                    'codebaseid': 13,
+                    'author': 'test user <user@example.com>',
+                    'committer': 'test user <user@example.com>',
+                    'comments': 'Fix 1',
+                    'revision': self.FIX_1_SHA,
+                    'when_timestamp': 1717855320,
+                    'parent_commitid': None,
+                },
+                {
+                    'commitid': 2,
+                    'codebaseid': 13,
+                    'author': 'test user <user@example.com>',
+                    'committer': 'test user <user@example.com>',
+                    'comments': "Merge branch 'feature/1'",
+                    'revision': self.MERGE_FEATURE_1_SHA,
+                    'when_timestamp': 1717855500,
+                    'parent_commitid': 1,
+                },
+            ],
+        )
+
+        branches = await self.master.data.get(('codebases', 13, 'branches'))
+        for b in branches:
+            del b['last_timestamp']
+        self.assertEqual(
+            branches, [{'branchid': 1, 'codebaseid': 13, 'name': 'main', 'commitid': 2}]
         )

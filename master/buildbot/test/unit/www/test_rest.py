@@ -28,37 +28,37 @@ from buildbot.test.util import www
 from buildbot.util import bytes2unicode
 from buildbot.util import unicode2bytes
 from buildbot.www import authz
-from buildbot.www import graphql
 from buildbot.www import rest
 from buildbot.www.rest import JSONRPC_CODES
 
 
 class RestRootResource(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
-    maxVersion = 3
+    maxVersion = 2
 
     def setUp(self):
         self.setup_test_reactor()
-        _ = graphql  # used for import side effect
 
     @defer.inlineCallbacks
     def test_render(self):
-        master = self.make_master(url='h:/a/b/')
+        master = yield self.make_master(url='h:/a/b/')
         rsrc = rest.RestRootResource(master)
 
         rv = yield self.render_resource(rsrc, b'/')
 
         self.assertIn(b'api_versions', rv)
 
+    @defer.inlineCallbacks
     def test_versions(self):
-        master = self.make_master(url='h:/a/b/')
+        master = yield self.make_master(url='h:/a/b/')
         rsrc = rest.RestRootResource(master)
         versions = [unicode2bytes(f'v{v}') for v in range(2, self.maxVersion + 1)]
         versions = [unicode2bytes(v) for v in versions]
         versions.append(b'latest')
         self.assertEqual(sorted(rsrc.listNames()), sorted(versions))
 
+    @defer.inlineCallbacks
     def test_versions_limited(self):
-        master = self.make_master(url='h:/a/b/')
+        master = yield self.make_master(url='h:/a/b/')
         master.config.www['rest_minimum_version'] = 2
         rsrc = rest.RestRootResource(master)
         versions = [unicode2bytes(f'v{v}') for v in range(2, self.maxVersion + 1)]
@@ -67,9 +67,10 @@ class RestRootResource(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
 
 
 class V2RootResource(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = self.make_master(url='http://server/path/')
+        self.master = yield self.make_master(url='http://server/path/')
         self.master.data._scanModule(endpoint)
         self.rsrc = rest.V2RootResource(self.master)
         self.rsrc.reconfigResource(self.master.config)
@@ -135,9 +136,10 @@ class V2RootResource(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
 
 
 class V2RootResource_CORS(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = self.make_master(url='h:/')
+        self.master = yield self.make_master(url='h:/')
         self.master.data._scanModule(endpoint)
         self.rsrc = rest.V2RootResource(self.master)
         self.master.config.www['allowed_origins'] = [b'h://good']
@@ -254,9 +256,10 @@ class V2RootResource_CORS(TestReactorMixin, www.WwwTestMixin, unittest.TestCase)
 
 
 class V2RootResource_REST(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = self.make_master(url='h:/')
+        self.master = yield self.make_master(url='h:/')
         self.master.config.www['debug'] = True
         self.master.data._scanModule(endpoint)
         self.rsrc = rest.V2RootResource(self.master)
@@ -728,7 +731,7 @@ class V2RootResource_REST(TestReactorMixin, www.WwwTestMixin, unittest.TestCase)
         content = json.loads(bytes2unicode(self.request.written))
 
         if 'error' not in content:
-            self.fail(f"response does not have proper error form: {repr(content)}")
+            self.fail(f"response does not have proper error form: {content!r}")
         got['error'] = content['error']
 
         exp = {}
@@ -746,9 +749,10 @@ class V2RootResource_REST(TestReactorMixin, www.WwwTestMixin, unittest.TestCase)
 
 
 class V2RootResource_JSONRPC2(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = self.make_master(url='h:/')
+        self.master = yield self.make_master(url='h:/')
 
         def allow(*args, **kw):
             return
@@ -765,7 +769,7 @@ class V2RootResource_JSONRPC2(TestReactorMixin, www.WwwTestMixin, unittest.TestC
         got['responseCode'] = self.request.responseCode
         content = json.loads(bytes2unicode(self.request.written))
         if 'error' not in content or sorted(content['error'].keys()) != ['code', 'message']:
-            self.fail(f"response does not have proper error form: {repr(content)}")
+            self.fail(f"response does not have proper error form: {content!r}")
         got['error'] = content['error']
 
         exp = {}

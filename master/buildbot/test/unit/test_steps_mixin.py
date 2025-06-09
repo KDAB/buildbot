@@ -51,9 +51,6 @@ class TestTestBuildStepMixin(TestBuildStepMixin, TestReactorMixin, unittest.Test
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     @defer.inlineCallbacks
     def test_setup_build(self):
         self.setup_build(

@@ -30,12 +30,12 @@ class Tests(unittest.TestCase):
             # Default encoding of Windows console is 'cp1252'
             # which cannot encode the snowman.
             raise unittest.SkipTest(
-                "Cannot encode weird unicode " f"on this platform with {os_encoding}"
+                f"Cannot encode weird unicode on this platform with {os_encoding}"
             ) from e
 
         good = ["linux", "Linux", "abc123", "a" * 50, '\N{SNOWMAN}']
         for g in good:
-            log.msg(f'expect {repr(g)} to be good')
+            log.msg(f'expect {g!r} to be good')
             self.assertTrue(identifiers.isIdentifier(50, g))
         bad = [
             None,
@@ -50,7 +50,7 @@ class Tests(unittest.TestCase):
             '\N{SNOWMAN}.\N{SNOWMAN}',
         ]
         for b in bad:
-            log.msg(f'expect {repr(b)} to be bad')
+            log.msg(f'expect {b!r} to be bad')
             self.assertFalse(identifiers.isIdentifier(50, b))
 
     def assertEqualUnicode(self, got, exp):

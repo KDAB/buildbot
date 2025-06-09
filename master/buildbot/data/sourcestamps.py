@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from typing import TypedDict
 
 import json
 
@@ -27,13 +28,34 @@ from buildbot.data import types
 from buildbot.util import bytes2unicode
 
 if TYPE_CHECKING:
-    from typing import Any
+    import datetime
 
     from buildbot.db.sourcestamps import SourceStampModel
+    from buildbot.util.twisted import InlineCallbacksType
 
 
-def _db2data(ss: SourceStampModel):
-    data: dict[str, Any] = {
+class SourceStampData(TypedDict):
+    ssid: int
+    branch: str | None
+    revision: str | None
+    project: str
+    repository: str
+    codebase: str
+    created_at: datetime.datetime
+    patch: PatchData | None
+
+
+class PatchData(TypedDict):
+    patchid: int
+    level: int
+    subdir: str | None
+    author: str
+    comment: str
+    body: bytes
+
+
+def _db2data(ss: SourceStampModel) -> SourceStampData:
+    data: SourceStampData = {
         'ssid': ss.ssid,
         'branch': ss.branch,
         'revision': ss.revision,
@@ -57,26 +79,26 @@ def _db2data(ss: SourceStampModel):
 
 class SourceStampEndpoint(base.Endpoint):
     kind = base.EndpointKind.SINGLE
-    pathPatterns = """
-        /sourcestamps/n:ssid
-    """
+    pathPatterns = [
+        "/sourcestamps/n:ssid",
+    ]
 
     @defer.inlineCallbacks
-    def get(self, resultSpec, kwargs):
+    def get(self, resultSpec, kwargs) -> InlineCallbacksType[SourceStampData | None]:
         ssdict = yield self.master.db.sourcestamps.getSourceStamp(kwargs['ssid'])
         return _db2data(ssdict) if ssdict else None
 
 
 class SourceStampsEndpoint(base.Endpoint):
     kind = base.EndpointKind.COLLECTION
-    pathPatterns = """
-        /sourcestamps
-        /buildsets/:buildsetid/sourcestamps
-    """
+    pathPatterns = [
+        "/sourcestamps",
+        "/buildsets/:buildsetid/sourcestamps",
+    ]
     rootLinkName = 'sourcestamps'
 
     @defer.inlineCallbacks
-    def get(self, resultSpec, kwargs):
+    def get(self, resultSpec, kwargs) -> InlineCallbacksType[list[SourceStampData]]:
         buildsetid = kwargs.get("buildsetid")
         if buildsetid is not None:
             sourcestamps = yield self.master.db.sourcestamps.get_sourcestamps_for_buildset(
@@ -92,8 +114,6 @@ class SourceStamp(base.ResourceType):
     name = "sourcestamp"
     plural = "sourcestamps"
     endpoints = [SourceStampEndpoint, SourceStampsEndpoint]
-    keyField = 'ssid'
-    subresources = ["Change"]
 
     class EntityType(types.Entity):
         ssid = types.Integer()
@@ -112,4 +132,4 @@ class SourceStamp(base.ResourceType):
                 raise TypeError  # don't allow {}
             return d
 
-    entityType = EntityType(name, 'Sourcestamp')
+    entityType = EntityType(name)

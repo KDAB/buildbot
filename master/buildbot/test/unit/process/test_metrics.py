@@ -15,7 +15,9 @@
 
 import gc
 import sys
+from unittest import skipIf
 
+from twisted.internet import defer
 from twisted.internet import task
 from twisted.trial import unittest
 
@@ -25,18 +27,22 @@ from buildbot.test.reactor import TestReactorMixin
 
 
 class TestMetricBase(TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
         self.observer = metrics.MetricLogObserver()
-        self.observer.parent = self.master = fakemaster.make_master(self)
+        self.observer.parent = self.master = yield fakemaster.make_master(self)
         self.master.config.metrics = {"log_interval": 0, "periodic_interval": 0}
         self.observer._reactor = self.reactor
         self.observer.startService()
         self.observer.reconfigServiceWithBuildbotConfig(self.master.config)
 
-    def tearDown(self):
-        if self.observer.running:
-            self.observer.stopService()
+        @defer.inlineCallbacks
+        def cleanup():
+            if self.observer.running:
+                yield self.observer.stopService()
+
+        self.addCleanup(cleanup)
 
 
 class TestMetricCountEvent(TestMetricBase):
@@ -162,11 +168,12 @@ class TestPeriodicChecks(TestMetricBase):
         self.assertEqual(report['counters']['gc.garbage'], 2)
         self.assertEqual(report['alarms']['gc.garbage'][0], 'WARN')
 
+    @skipIf(
+        sys.platform != 'linux',
+        "only available on linux platforms",
+    )
     def testGetRSS(self):
         self.assertTrue(metrics._get_rss() > 0)
-
-    if sys.platform != 'linux':
-        testGetRSS.skip = "only available on linux platforms"
 
 
 class TestReconfig(TestMetricBase):

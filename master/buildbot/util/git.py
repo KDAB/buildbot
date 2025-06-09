@@ -19,7 +19,9 @@ import os
 import re
 import stat
 from pathlib import Path
+from pathlib import PurePath
 from typing import TYPE_CHECKING
+from typing import ClassVar
 
 from packaging.version import parse as parse_version
 from twisted.internet import defer
@@ -32,13 +34,15 @@ from buildbot.process.properties import Properties
 from buildbot.steps.worker import CompositeStepMixin
 from buildbot.util import ComparableMixin
 from buildbot.util import bytes2unicode
-from buildbot.util.git_credential import GitCredentialOptions
 from buildbot.util.misc import writeLocalFile
 from buildbot.util.twisted import async_to_deferred
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from buildbot.changes.gitpoller import GitPoller
     from buildbot.interfaces import IRenderable
+    from buildbot.util.git_credential import GitCredentialOptions
 
 RC_SUCCESS = 0
 
@@ -59,16 +63,24 @@ def escapeShellArgIfNeeded(arg):
 
 
 def getSshCommand(keyPath, knownHostsPath):
-    command = ['ssh'] + getSshArgsForKeys(keyPath, knownHostsPath)
+    command = ['ssh', *getSshArgsForKeys(keyPath, knownHostsPath)]
     command = [escapeShellArgIfNeeded(arg) for arg in command]
     return ' '.join(command)
 
 
+def scp_style_to_url_syntax(address, port=22, scheme='ssh'):
+    if any(['://' in address, ':\\' in address, ':' not in address]):
+        # the address already has a URL syntax or is a local path
+        return address
+    host, path = address.split(':')
+    return f'{scheme}://{host}:{port}/{path}'
+
+
 def check_ssh_config(
     logname: str,
-    ssh_private_key: IRenderable | None,
-    ssh_host_key: IRenderable | None,
-    ssh_known_hosts: IRenderable | None,
+    ssh_private_key: IRenderable | str | None,
+    ssh_host_key: IRenderable | str | None,
+    ssh_known_hosts: IRenderable | str | None,
 ):
     if ssh_host_key is not None and ssh_private_key is None:
         config.error(f'{logname}: sshPrivateKey must be provided in order use sshHostKey')
@@ -174,11 +186,15 @@ class GitStepMixin(GitMixin):
         if not hasattr(self, '_git_auth'):
             self._git_auth = GitStepAuth(self)
 
+    def setup_repourl(self):
+        # Use standard URL syntax to enable the use of a dedicated SSH port
+        self.repourl = scp_style_to_url_syntax(self.repourl, self.port)
+
     def setup_git_auth(
         self,
-        ssh_private_key: IRenderable | None,
-        ssh_host_key: IRenderable | None,
-        ssh_known_hosts: IRenderable | None,
+        ssh_private_key: IRenderable | str | None,
+        ssh_host_key: IRenderable | str | None,
+        ssh_known_hosts: IRenderable | str | None,
         git_credential_options: GitCredentialOptions | None = None,
     ) -> None:
         self._git_auth = GitStepAuth(
@@ -268,7 +284,7 @@ class GitStepMixin(GitMixin):
 
 
 class AbstractGitAuth(ComparableMixin):
-    compare_attrs = (
+    compare_attrs: ClassVar[Sequence[str]] = (
         "ssh_private_key",
         "ssh_host_key",
         "ssh_known_hosts",
@@ -277,9 +293,9 @@ class AbstractGitAuth(ComparableMixin):
 
     def __init__(
         self,
-        ssh_private_key: IRenderable | None = None,
-        ssh_host_key: IRenderable | None = None,
-        ssh_known_hosts: IRenderable | None = None,
+        ssh_private_key: IRenderable | str | None = None,
+        ssh_host_key: IRenderable | str | None = None,
+        ssh_known_hosts: IRenderable | str | None = None,
         git_credential_options: GitCredentialOptions | None = None,
     ) -> None:
         self.did_download_auth_files = False
@@ -306,6 +322,7 @@ class AbstractGitAuth(ComparableMixin):
         git_commands_that_need_auth = [
             'clone',
             'credential',
+            'checkout',
             'fetch',
             'ls-remote',
             'push',
@@ -543,9 +560,9 @@ class GitStepAuth(AbstractGitAuth):
         self,
         # step must implement all these types
         step: buildstep.BuildStep | GitStepMixin | CompositeStepMixin,
-        ssh_private_key: IRenderable | None = None,
-        ssh_host_key: IRenderable | None = None,
-        ssh_known_hosts: IRenderable | None = None,
+        ssh_private_key: IRenderable | str | None = None,
+        ssh_host_key: IRenderable | str | None = None,
+        ssh_known_hosts: IRenderable | str | None = None,
         git_credential_options: GitCredentialOptions | None = None,
     ) -> None:
         self.step = step
@@ -564,7 +581,11 @@ class GitStepAuth(AbstractGitAuth):
 
         # basename and dirname interpret the last element being empty for paths
         # ending with a slash
-        assert isinstance(self.step, buildstep.BuildStep) and self.step.build is not None
+        assert (
+            isinstance(self.step, buildstep.BuildStep)
+            and self.step.build is not None
+            and self.step.build.builder.config is not None
+        )
 
         workerbuilddir = bytes2unicode(self.step.build.builder.config.workerbuilddir)
         workdir = data_workdir.rstrip('/\\')
@@ -601,11 +622,16 @@ class GitStepAuth(AbstractGitAuth):
         return self.step.build.path_module
 
     @property
+    def _path_cls(self) -> type[PurePath]:
+        assert isinstance(self.step, buildstep.BuildStep) and self.step.build is not None
+        assert self.step.build.path_cls is not None
+        return self.step.build.path_cls
+
+    @property
     def _master(self):
         assert isinstance(self.step, buildstep.BuildStep) and self.step.master is not None
         return self.step.master
 
-    @async_to_deferred
     async def _download_file(
         self,
         path: str,
@@ -670,9 +696,9 @@ class GitServiceAuth(AbstractGitAuth):
     def __init__(
         self,
         service: GitPoller,
-        ssh_private_key: IRenderable | None = None,
-        ssh_host_key: IRenderable | None = None,
-        ssh_known_hosts: IRenderable | None = None,
+        ssh_private_key: IRenderable | str | None = None,
+        ssh_host_key: IRenderable | str | None = None,
+        ssh_known_hosts: IRenderable | str | None = None,
         git_credential_options: GitCredentialOptions | None = None,
     ) -> None:
         self._service = service
@@ -703,7 +729,6 @@ class GitServiceAuth(AbstractGitAuth):
             auth_files_path=workdir,  # this is ... not great
         )
 
-    @async_to_deferred
     async def _download_file(
         self,
         path: str,

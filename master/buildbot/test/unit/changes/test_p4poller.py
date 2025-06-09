@@ -113,9 +113,6 @@ class TestP4Poller(
         self.setup_master_run_process()
         yield self.setUpChangeSource()
 
-    def tearDown(self):
-        return self.tearDownChangeSource()
-
     def add_p4_describe_result(self, number, result):
         self.expect_commands(
             ExpectMasterShell(['p4', 'describe', '-s', str(number)]).stdout(result)
@@ -215,7 +212,7 @@ class TestP4Poller(
                     'comments': 'creation',
                     'files': ['whatbranch'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': '',
                     'revision': '2',
                     'revlink': '',
@@ -232,7 +229,7 @@ class TestP4Poller(
                     'ASDF-GUI-P3-\u2018Upgrade Icon\u2019 disappears sometimes.',
                     'files': ['branch_b_file', 'whatbranch'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': '',
                     'revision': '3',
                     'revlink': '',
@@ -249,7 +246,7 @@ class TestP4Poller(
                     'ASDF-GUI-P3-\u2018Upgrade Icon\u2019 disappears sometimes.',
                     'files': ['whatbranch'],
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': '',
                     'revision': '3',
                     'revlink': '',
@@ -477,7 +474,7 @@ class TestP4Poller(
                         'Item 1\n\tItem 2',
                         'files': ['branch_c_file'],
                         'project': '',
-                        'properties': {},
+                        'properties': None,
                         'repository': '',
                         'revision': '5',
                         'revlink': '',
@@ -494,7 +491,7 @@ class TestP4Poller(
                         'Item 1\n\tItem 2',
                         'files': ['branch_b_file'],
                         'project': '',
-                        'properties': {},
+                        'properties': None,
                         'repository': '',
                         'revision': '5',
                         'revlink': '',

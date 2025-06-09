@@ -46,17 +46,16 @@ class TestForceScheduler(
     SCHEDULERID = 9
     maxDiff = None
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpScheduler()
+        yield self.setUpScheduler()
 
-    def tearDown(self):
-        self.tearDownScheduler()
-
+    @defer.inlineCallbacks
     def makeScheduler(self, name='testsched', builderNames=None, **kw):
         if builderNames is None:
             builderNames = ['a', 'b']
-        sched = self.attachScheduler(
+        sched = yield self.attachScheduler(
             ForceScheduler(name=name, builderNames=builderNames, **kw),
             self.OBJECTID,
             self.SCHEDULERID,
@@ -169,7 +168,8 @@ class TestForceScheduler(
 
     @defer.inlineCallbacks
     def test_basicForce(self):
-        sched = self.makeScheduler()
+        sched = yield self.makeScheduler()
+        yield self.master.startService()
 
         res = yield sched.force(
             'user',
@@ -182,7 +182,7 @@ class TestForceScheduler(
         )
 
         # only one builder forced, so there should only be one brid
-        self.assertEqual(res, (500, {1000: 100}))
+        self.assertEqual(res, (500, {300: 100}))
         self.assertEqual(
             self.addBuildsetCalls,
             [
@@ -214,7 +214,8 @@ class TestForceScheduler(
     @defer.inlineCallbacks
     def test_basicForce_reasonString(self):
         """Same as above, but with a reasonString"""
-        sched = self.makeScheduler(reasonString='%(owner)s wants it %(reason)s')
+        sched = yield self.makeScheduler(reasonString='%(owner)s wants it %(reason)s')
+        yield self.master.startService()
 
         res = yield sched.force(
             'user',
@@ -260,7 +261,8 @@ class TestForceScheduler(
 
     @defer.inlineCallbacks
     def test_force_allBuilders(self):
-        sched = self.makeScheduler()
+        sched = yield self.makeScheduler()
+        yield self.master.startService()
 
         res = yield sched.force(
             'user',
@@ -270,7 +272,7 @@ class TestForceScheduler(
             repository='d',
             project='p',
         )
-        self.assertEqual(res, (500, {1000: 100, 1001: 101}))
+        self.assertEqual(res, (500, {300: 100, 301: 101}))
         self.assertEqual(
             self.addBuildsetCalls,
             [
@@ -301,7 +303,8 @@ class TestForceScheduler(
 
     @defer.inlineCallbacks
     def test_force_someBuilders(self):
-        sched = self.makeScheduler(builderNames=['a', 'b', 'c'])
+        sched = yield self.makeScheduler(builderNames=['a', 'b', 'c'])
+        yield self.master.startService()
 
         res = yield sched.force(
             'user',
@@ -312,7 +315,7 @@ class TestForceScheduler(
             repository='d',
             project='p',
         )
-        self.assertEqual(res, (500, {1000: 100, 1001: 101}))
+        self.assertEqual(res, (500, {300: 100, 301: 101}))
         self.assertEqual(
             self.addBuildsetCalls,
             [
@@ -380,7 +383,8 @@ class TestForceScheduler(
 
     @defer.inlineCallbacks
     def test_good_codebases(self):
-        sched = self.makeScheduler(codebases=['foo', CodebaseParameter('bar')])
+        sched = yield self.makeScheduler(codebases=['foo', CodebaseParameter('bar')])
+        yield self.master.startService()
         yield sched.force(
             'user',
             builderNames=['a'],
@@ -433,9 +437,10 @@ class TestForceScheduler(
 
     @defer.inlineCallbacks
     def test_codebase_with_patch(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             codebases=['foo', CodebaseParameter('bar', patch=PatchParameter())]
         )
+        yield self.master.startService()
         yield sched.force(
             'user',
             builderNames=['a'],
@@ -550,7 +555,8 @@ class TestForceScheduler(
                     print("Note: for quick fix, pip install xerox")
             self.assertEqual(gotSpec, expectSpec)
 
-        sched = self.makeScheduler(properties=[prop])
+        sched = yield self.makeScheduler(properties=[prop])
+        yield self.master.startService()
 
         if not req:
             req = {name: value, 'reason': 'because'}
@@ -579,7 +585,7 @@ class TestForceScheduler(
             self.fail("expectKind is wrong type!")
 
         # only forced on 'a'
-        self.assertEqual((bsid, brids), (500, {1000: 100}))
+        self.assertEqual((bsid, brids), (500, {300: 100}))
         self.assertEqual(
             self.addBuildsetCalls,
             [
@@ -607,7 +613,7 @@ class TestForceScheduler(
         return None
 
     def test_StringParameter(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value="testedvalue",
             expect="testedvalue",
             klass=StringParameter,
@@ -618,7 +624,7 @@ class TestForceScheduler(
         )
 
     def test_StringParameter_Required(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value=" ",
             expect=CollectedValidationError,
             expectKind=Exception,
@@ -627,7 +633,7 @@ class TestForceScheduler(
         )
 
     def test_StringParameter_maxsize(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value="xx" * 20,
             expect=CollectedValidationError,
             expectKind=Exception,
@@ -636,7 +642,7 @@ class TestForceScheduler(
         )
 
     def test_FileParameter_maxsize(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value="xx" * 20,
             expect=CollectedValidationError,
             expectKind=Exception,
@@ -645,7 +651,7 @@ class TestForceScheduler(
         )
 
     def test_FileParameter(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value="xx",
             expect="xx",
             klass=FileParameter,
@@ -680,7 +686,7 @@ class TestForceScheduler(
             '"maxsize": null, "size": 10, "tooltip": ""}]}'
         )
 
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             req={"p1_author": 'me', "reason": 'because'},
             expect={'author': 'me', 'body': '', 'comment': '', 'level': 1, 'subdir': '.'},
             klass=PatchParameter,
@@ -688,7 +694,7 @@ class TestForceScheduler(
         )
 
     def test_IntParameter(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value="123",
             expect=123,
             klass=IntParameter,
@@ -699,7 +705,7 @@ class TestForceScheduler(
         )
 
     def test_FixedParameter(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value="123",
             expect="321",
             klass=FixedParameter,
@@ -712,7 +718,7 @@ class TestForceScheduler(
 
     def test_BooleanParameter_True(self):
         req = {"p1": True, "reason": 'because'}
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value="123",
             expect=True,
             klass=BooleanParameter,
@@ -725,7 +731,7 @@ class TestForceScheduler(
 
     def test_BooleanParameter_False(self):
         req = {"p2": True, "reason": 'because'}
-        self.do_ParameterTest(value="123", expect=False, klass=BooleanParameter, req=req)
+        return self.do_ParameterTest(value="123", expect=False, klass=BooleanParameter, req=req)
 
     def test_UserNameParameter(self):
         email = "test <test@buildbot.net>"
@@ -736,7 +742,7 @@ class TestForceScheduler(
             '"hide": false, "maxsize": null, "size": 30, '
             '"need_email": true, "autopopulate": null, "tooltip": ""}'
         )
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value=email,
             expect=email,
             klass=UserNameParameter(),
@@ -754,7 +760,7 @@ class TestForceScheduler(
             '"hide": false, "maxsize": null, "size": 30, '
             '"need_email": true, "autopopulate": null, "tooltip": ""}'
         )
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value=email,
             expect=email,
             klass=UserNameParameter(),
@@ -772,7 +778,7 @@ class TestForceScheduler(
             '"hide": false, "maxsize": null, "size": 30, '
             '"need_email": true, "autopopulate": null, "tooltip": ""}'
         )
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value=email,
             expect=email,
             klass=UserNameParameter(),
@@ -782,7 +788,7 @@ class TestForceScheduler(
         )
 
     def test_ChoiceParameter(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value='t1',
             expect='t1',
             klass=ChoiceStringParameter,
@@ -794,7 +800,7 @@ class TestForceScheduler(
         )
 
     def test_ChoiceParameterError(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value='t3',
             expect=CollectedValidationError,
             expectKind=Exception,
@@ -804,12 +810,12 @@ class TestForceScheduler(
         )
 
     def test_ChoiceParameterError_notStrict(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value='t1', expect='t1', strict=False, klass=ChoiceStringParameter, choices=['t1', 't2']
         )
 
     def test_ChoiceParameterMultiple(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value=['t1', 't2'],
             expect=['t1', 't2'],
             klass=ChoiceStringParameter,
@@ -822,7 +828,7 @@ class TestForceScheduler(
         )
 
     def test_ChoiceParameterMultipleError(self):
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             value=['t1', 't3'],
             expect=CollectedValidationError,
             expectKind=Exception,
@@ -843,7 +849,7 @@ class TestForceScheduler(
             '"type": "int", "default": 0, "required": false, "multiple": false, '
             '"regex": null, "hide": false, "maxsize": null, "size": 10, "tooltip": ""}]}'
         )
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             req={"p1_foo": '123', "reason": 'because'},
             expect={"foo": 123},
             klass=NestedParameter,
@@ -858,7 +864,7 @@ class TestForceScheduler(
             ),
             IntParameter(name="foo"),
         ]
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             req={
                 "p1_foo": '123',
                 "p1_inner_str": "bar",
@@ -886,7 +892,7 @@ class TestForceScheduler(
                 ],
             ),
         ]
-        self.do_ParameterTest(
+        return self.do_ParameterTest(
             req={
                 "foo": '123',
                 "inner_str": "bar",
@@ -921,10 +927,6 @@ class TestForceScheduler(
         ):
             ForceScheduler(name='testsched', builderNames=[], codebases=['bar'], username="foo")
 
-    def test_notstring_name(self):
-        with self.assertRaisesConfigError("ForceScheduler name must be a unicode string:"):
-            ForceScheduler(name=1234, builderNames=[], codebases=['bar'], username="foo")
-
     def test_notidentifier_name(self):
         # FIXME: this test should be removed eventually when bug 3460 gets a
         # real fix
@@ -937,29 +939,6 @@ class TestForceScheduler(
         with self.assertRaisesConfigError("ForceScheduler name must not be empty:"):
             ForceScheduler(name='', builderNames=[], codebases=['bar'], username="foo")
 
-    def test_integer_builderNames(self):
-        with self.assertRaisesConfigError(
-            "ForceScheduler 'testsched': builderNames must be a list of strings:"
-        ):
-            ForceScheduler(name='testsched', builderNames=1234, codebases=['bar'], username="foo")
-
-    def test_listofints_builderNames(self):
-        with self.assertRaisesConfigError(
-            "ForceScheduler 'testsched': builderNames must be a list of strings:"
-        ):
-            ForceScheduler(name='testsched', builderNames=[1234], codebases=['bar'], username="foo")
-
-    def test_listofunicode_builderNames(self):
-        ForceScheduler(name='testsched', builderNames=['a', 'b'])
-
-    def test_listofmixed_builderNames(self):
-        with self.assertRaisesConfigError(
-            "ForceScheduler 'testsched': builderNames must be a list of strings:"
-        ):
-            ForceScheduler(
-                name='testsched', builderNames=['test', 1234], codebases=['bar'], username="foo"
-            )
-
     def test_integer_properties(self):
         with self.assertRaisesConfigError(
             "ForceScheduler 'testsched': properties must be a list of BaseParameters:"
@@ -967,8 +946,6 @@ class TestForceScheduler(
             ForceScheduler(
                 name='testsched',
                 builderNames=[],
-                codebases=['bar'],
-                username="foo",
                 properties=1234,
             )
 
@@ -979,8 +956,6 @@ class TestForceScheduler(
             ForceScheduler(
                 name='testsched',
                 builderNames=[],
-                codebases=['bar'],
-                username="foo",
                 properties=[1234, 2345],
             )
 
@@ -991,8 +966,6 @@ class TestForceScheduler(
             ForceScheduler(
                 name='testsched',
                 builderNames=[],
-                codebases=['bar'],
-                username="foo",
                 properties=[
                     BaseParameter(
                         name="test",

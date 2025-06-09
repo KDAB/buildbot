@@ -26,17 +26,22 @@ from buildbot.test.util.reporter import ReporterTestMixin
 
 
 class TestZulipStatusPush(
-    unittest.TestCase, ReporterTestMixin, LoggingMixin, ConfigErrorsMixin, TestReactorMixin
+    ReporterTestMixin, LoggingMixin, ConfigErrorsMixin, TestReactorMixin, unittest.TestCase
 ):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
         self.setup_reporter_test()
-        self.master = fakemaster.make_master(testcase=self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(
+            testcase=self, wantData=True, wantDb=True, wantMq=True
+        )
 
-    @defer.inlineCallbacks
-    def tearDown(self):
-        if self.master.running:
-            yield self.master.stopService()
+        @defer.inlineCallbacks
+        def cleanup():
+            if self.master.running:
+                yield self.master.stopService()
+
+        self.addCleanup(cleanup)
 
     @defer.inlineCallbacks
     def setupZulipStatusPush(self, endpoint="http://example.com", token="123", stream=None):

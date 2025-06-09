@@ -119,9 +119,6 @@ class TestUpgradeMasterFunctions(
         self.basedir = os.path.abspath(os.path.join('test', 'basedir'))
         self.setUpStdoutAssertions()
 
-    def tearDown(self):
-        self.tearDownDirs()
-
     def writeFile(self, path, contents):
         with open(path, "w", encoding='utf-8') as f:
             f.write(contents)

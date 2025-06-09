@@ -18,6 +18,7 @@ import json
 
 import sqlalchemy as sa
 import sqlalchemy.exc
+from twisted.internet import defer
 
 from buildbot.db import base
 
@@ -31,11 +32,11 @@ class ObjDict(dict):
 
 
 class StateConnectorComponent(base.DBConnectorComponent):
+    @defer.inlineCallbacks
     def getObjectId(self, name, class_name):
         # defer to a cached method that only takes one parameter (a tuple)
-        d = self._getObjectId((name, class_name))
-        d.addCallback(lambda objdict: objdict['id'])
-        return d
+        objdict = yield self._getObjectId((name, class_name))
+        return objdict['id']
 
     # returns a Deferred that returns a value
     @base.cached('objectids')
@@ -132,7 +133,7 @@ class StateConnectorComponent(base.DBConnectorComponent):
         try:
             value_json = json.dumps(value)
         except (TypeError, ValueError) as e:
-            raise TypeError(f"Error encoding JSON for {repr(value)}") from e
+            raise TypeError(f"Error encoding JSON for {value!r}") from e
 
         name = self.ensureLength(object_state_tbl.c.name, name)
 
@@ -183,7 +184,7 @@ class StateConnectorComponent(base.DBConnectorComponent):
                 try:
                     value_json = json.dumps(res)
                 except (TypeError, ValueError) as e:
-                    raise TypeError(f"Error encoding JSON for {repr(res)}") from e
+                    raise TypeError(f"Error encoding JSON for {res!r}") from e
                 self._test_timing_hook(conn)
                 try:
                     conn.execute(

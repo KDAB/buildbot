@@ -13,7 +13,6 @@
 #
 # Copyright Buildbot Team Members
 
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,6 +23,7 @@ from twisted.internet import defer
 
 from buildbot.db import NULL
 from buildbot.db import base
+from buildbot.util.sautils import hash_columns
 from buildbot.warnings import warn_deprecated
 
 if TYPE_CHECKING:
@@ -145,9 +145,9 @@ class SchedulersConnectorComponent(base.DBConnectorComponent):
 
         return self.db.pool.do(thd)
 
-    def findSchedulerId(self, name: str) -> int:
+    def findSchedulerId(self, name: str) -> defer.Deferred[int]:
         tbl = self.db.model.schedulers
-        name_hash = self.hashColumns(name)
+        name_hash = hash_columns(name)
         return self.findSomethingId(
             tbl=tbl,
             whereclause=(tbl.c.name_hash == name_hash),
@@ -190,6 +190,20 @@ class SchedulersConnectorComponent(base.DBConnectorComponent):
                 if row.masterid == masterid:
                     return None
                 raise SchedulerAlreadyClaimedError(f"already claimed by {row.name}") from e
+            return None
+
+        return self.db.pool.do(thd)
+
+    def get_scheduler_master(self, schedulerid):
+        def thd(conn):
+            q = sa.select(self.db.model.scheduler_masters.c.masterid).where(
+                self.db.model.scheduler_masters.c.schedulerid == schedulerid
+            )
+            r = conn.execute(q)
+            row = r.fetchone()
+            conn.close()
+            if row:
+                return row.masterid
             return None
 
         return self.db.pool.do(thd)

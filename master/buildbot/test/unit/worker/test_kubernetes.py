@@ -75,7 +75,7 @@ class TestKubernetesWorker(TestReactorMixin, unittest.TestCase):
         worker = kubernetes.KubeLatentWorker(
             *args, masterFQDN="buildbot-master", kube_config=config, **kwargs
         )
-        self.master = fakemaster.make_master(self, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantData=True)
         self._http = yield fakehttpclientservice.HTTPClientService.getService(
             self.master, self, "https://kube.example.com"
         )
@@ -98,6 +98,7 @@ class TestKubernetesWorker(TestReactorMixin, unittest.TestCase):
                     "image": image,
                     "env": [
                         {"name": "BUILDMASTER", "value": "buildbot-master"},
+                        {"name": "BUILDMASTER_PROTOCOL", "value": "pb"},
                         {"name": "WORKERNAME", "value": "worker"},
                         {"name": "WORKERPASS", "value": "random_pw"},
                         {"name": "BUILDMASTER_PORT", "value": "1234"},
@@ -335,6 +336,7 @@ class TestKubernetesWorker(TestReactorMixin, unittest.TestCase):
                     "image": "rendered:buildbot/buildbot-worker",
                     "env": [
                         {"name": "BUILDMASTER", "value": "buildbot-master"},
+                        {"name": "BUILDMASTER_PROTOCOL", "value": "pb"},
                         {"name": "WORKERNAME", "value": "worker"},
                         {"name": "WORKERPASS", "value": "random_pw"},
                         {"name": "BUILDMASTER_PORT", "value": "1234"},

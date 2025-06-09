@@ -31,14 +31,15 @@ class LogEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = logs.LogEndpoint
     resourceTypeClass = logs.Log
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=77, name='builder77'),
             fakedb.Master(id=88),
             fakedb.Worker(id=13, name='wrk'),
             fakedb.Buildset(id=8822),
-            fakedb.BuildRequest(id=82, buildsetid=8822),
+            fakedb.BuildRequest(id=82, builderid=77, buildsetid=8822),
             fakedb.Build(
                 id=13, builderid=77, masterid=88, workerid=13, buildrequestid=82, number=3
             ),
@@ -46,9 +47,6 @@ class LogEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.Log(id=60, stepid=50, name='stdio', slug='stdio', type='s'),
             fakedb.Log(id=61, stepid=50, name='errors', slug='errors', type='t'),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get_existing(self):
@@ -116,14 +114,15 @@ class LogsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = logs.LogsEndpoint
     resourceTypeClass = logs.Log
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=77),
             fakedb.Master(id=88),
             fakedb.Worker(id=13, name='wrk'),
             fakedb.Buildset(id=8822),
-            fakedb.BuildRequest(id=82, buildsetid=8822),
+            fakedb.BuildRequest(id=82, builderid=77, buildsetid=8822),
             fakedb.Build(
                 id=13, builderid=77, masterid=88, workerid=13, buildrequestid=82, number=3
             ),
@@ -135,9 +134,6 @@ class LogsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.Log(id=71, stepid=51, name='results_html', type='h'),
             fakedb.Step(id=52, buildid=13, number=11, name='nothing'),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get_stepid(self):
@@ -196,9 +192,10 @@ class LogsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
 
 class Log(TestReactorMixin, interfaces.InterfaceTests, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
         self.rtype = logs.Log(self.master)
 
     @defer.inlineCallbacks

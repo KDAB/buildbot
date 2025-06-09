@@ -85,7 +85,7 @@ class FakeWorkerWorker(pb.Referenceable):
         persp.broker.notifyOnDisconnect(fire_deferreds)
 
     def remote_print(self, message):
-        log.msg(f"WORKER-SIDE: remote_print({repr(message)})")
+        log.msg(f"WORKER-SIDE: remote_print({message!r})")
 
     def remote_getWorkerInfo(self):
         return {
@@ -139,7 +139,7 @@ class MyWorker(worker.Worker):
         d.callback(None)
 
 
-class TestWorkerComm(unittest.TestCase, TestReactorMixin):
+class TestWorkerComm(TestReactorMixin, unittest.TestCase):
     """
     Test handling of connections from workers as integrated with
      - Twisted Spread
@@ -162,7 +162,7 @@ class TestWorkerComm(unittest.TestCase, TestReactorMixin):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantData=True, wantDb=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantData=True, wantDb=True)
 
         # set the worker port to a loopback address with unspecified
         # port
@@ -195,22 +195,26 @@ class TestWorkerComm(unittest.TestCase, TestReactorMixin):
         self.server_connection_string = "tcp:0:interface=127.0.0.1"
         self.client_connection_string_tpl = "tcp:host=127.0.0.1:port={port}"
 
-    def tearDown(self):
-        if self.broker:
-            del self.broker
-        if self.endpoint:
-            del self.endpoint
-        deferreds = self._detach_deferreds + [
-            self.pbmanager.stopService(),
-            self.botmaster.stopService(),
-            self.workers.stopService(),
-        ]
+        @defer.inlineCallbacks
+        def cleanup():
+            if self.broker:
+                del self.broker
+            if self.endpoint:
+                del self.endpoint
+            deferreds = [
+                *self._detach_deferreds,
+                self.pbmanager.stopService(),
+                self.botmaster.stopService(),
+                self.workers.stopService(),
+            ]
 
-        # if the worker is still attached, wait for it to detach, too
-        if self.buildworker and self.buildworker.detach_d:
-            deferreds.append(self.buildworker.detach_d)
+            # if the worker is still attached, wait for it to detach, too
+            if self.buildworker and self.buildworker.detach_d:
+                deferreds.append(self.buildworker.detach_d)
 
-        return defer.gatherResults(deferreds)
+            yield defer.gatherResults(deferreds, consumeErrors=True)
+
+        self.addCleanup(cleanup)
 
     @defer.inlineCallbacks
     def addWorker(self, **kwargs):

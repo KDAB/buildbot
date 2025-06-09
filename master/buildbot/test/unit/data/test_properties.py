@@ -32,9 +32,10 @@ class BuildsetPropertiesEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = properties.BuildsetPropertiesEndpoint
     resourceTypeClass = properties.Properties
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Buildset(id=13, reason='because I said so'),
             fakedb.SourceStamp(id=92),
             fakedb.SourceStamp(id=93),
@@ -43,9 +44,6 @@ class BuildsetPropertiesEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.Buildset(id=14, reason='no sourcestamps'),
             fakedb.BuildsetProperty(buildsetid=14),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get_properties(self):
@@ -58,9 +56,10 @@ class BuildPropertiesEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = properties.BuildPropertiesEndpoint
     resourceTypeClass = properties.Properties
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Builder(id=1),
             fakedb.Buildset(id=28),
             fakedb.BuildRequest(id=5, buildsetid=28, builderid=1),
@@ -70,9 +69,6 @@ class BuildPropertiesEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.BuildProperty(buildid=786, name="year", value=1651, source="Wikipedia"),
             fakedb.BuildProperty(buildid=786, name="island_name", value="despair", source="Book"),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get_properties(self):
@@ -87,9 +83,10 @@ class BuildPropertiesEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
 
 class Properties(interfaces.InterfaceTests, TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=False, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantMq=False, wantDb=True, wantData=True)
         self.rtype = properties.Properties(self.master)
 
     @defer.inlineCallbacks
@@ -101,7 +98,9 @@ class Properties(interfaces.InterfaceTests, TestReactorMixin, unittest.TestCase)
         setattr(self.master.db.builds, dbMethodName, m)
         res = yield method(*args, **kwargs)
         self.assertIdentical(res, rv)
-        m.assert_called_with(*(exp_args or args), **((exp_kwargs is None) and kwargs or exp_kwargs))
+        m.assert_called_with(
+            *(exp_args or args), **(((exp_kwargs is None) and kwargs) or exp_kwargs)
+        )
 
     def test_signature_setBuildProperty(self):
         @self.assertArgSpecMatches(
@@ -125,12 +124,13 @@ class Properties(interfaces.InterfaceTests, TestReactorMixin, unittest.TestCase)
 
     @defer.inlineCallbacks
     def test_setBuildProperties(self):
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
+            fakedb.Builder(id=1),
             fakedb.Buildset(id=28),
-            fakedb.BuildRequest(id=5, buildsetid=28),
+            fakedb.BuildRequest(id=5, builderid=1, buildsetid=28),
             fakedb.Master(id=3),
             fakedb.Worker(id=42, name="Friday"),
-            fakedb.Build(id=1234, buildrequestid=5, masterid=3, workerid=42),
+            fakedb.Build(id=1234, builderid=1, buildrequestid=5, masterid=3, workerid=42),
         ])
 
         self.master.db.builds.setBuildProperty = mock.Mock(

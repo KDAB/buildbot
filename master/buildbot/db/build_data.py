@@ -13,19 +13,21 @@
 #
 # Copyright Buildbot Team Members
 
-
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
-from twisted.internet import defer
 from twisted.python import deprecate
 from twisted.python import versions
 
 from buildbot.db import NULL
 from buildbot.db import base
 from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    from twisted.internet import defer
 
 
 @dataclass
@@ -168,14 +170,13 @@ class BuildDataConnectorComponent(base.DBConnectorComponent):
                 q = q.where(
                     (builds.c.complete_at >= older_than_timestamp) | (builds.c.complete_at == NULL)
                 )
+                # n.b.: in sqlite we need to filter on `>= older_than_timestamp` because of the following `NOT IN` clause...
 
                 q = build_data.delete().where(build_data.c.buildid.notin_(q))
             else:
                 q = build_data.delete()
                 q = q.where(builds.c.id == build_data.c.buildid)
-                q = q.where(
-                    (builds.c.complete_at >= older_than_timestamp) | (builds.c.complete_at == NULL)
-                )
+                q = q.where(builds.c.complete_at < older_than_timestamp)
             res = conn.execute(q)
             conn.commit()
             res.close()

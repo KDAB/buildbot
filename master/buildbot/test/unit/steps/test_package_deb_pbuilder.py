@@ -33,9 +33,6 @@ class TestDebPbuilder(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_new(self):
         self.setup_step(pbuilder.DebPbuilder())
         self.expect_commands(
@@ -491,9 +488,6 @@ class TestDebCowbuilder(TestBuildStepMixin, TestReactorMixin, unittest.TestCase)
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_new(self):
         self.setup_step(pbuilder.DebCowbuilder())
         self.expect_commands(
@@ -642,9 +636,6 @@ class TestUbuPbuilder(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_no_distribution(self):
         with self.assertRaises(config.ConfigErrors):
             pbuilder.UbuPbuilder()
@@ -693,9 +684,6 @@ class TestUbuCowbuilder(TestBuildStepMixin, TestReactorMixin, unittest.TestCase)
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     def test_no_distribution(self):
         with self.assertRaises(config.ConfigErrors):

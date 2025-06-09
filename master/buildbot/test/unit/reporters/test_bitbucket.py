@@ -43,7 +43,7 @@ class TestBitbucketStatusPush(
         self.setup_reporter_test()
         self.reporter_test_repo = 'https://example.org/user/repo'
 
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
         self._http = yield fakehttpclientservice.HTTPClientService.getService(self.master, self, "")
         self.httpsession = httpclientservice.HTTPSession(
@@ -58,10 +58,7 @@ class TestBitbucketStatusPush(
         self.bsp = BitbucketStatusPush(Interpolate('key'), Interpolate('secret'))
         yield self.bsp.setServiceParent(self.master)
         yield self.bsp.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.bsp.stopService()
+        self.addCleanup(self.bsp.stopService)
 
     @defer.inlineCallbacks
     def test_basic(self):
@@ -276,7 +273,7 @@ class TestBitbucketStatusPushProperties(
         self.setup_reporter_test()
         self.reporter_test_repo = 'https://example.org/user/repo'
 
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
         self._http = yield fakehttpclientservice.HTTPClientService.getService(
             self.master,
@@ -306,10 +303,7 @@ class TestBitbucketStatusPushProperties(
         )
         yield self.bsp.setServiceParent(self.master)
         yield self.bsp.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.bsp.stopService()
+        self.addCleanup(self.bsp.stopService)
 
     @defer.inlineCallbacks
     def test_properties(self):
@@ -376,15 +370,12 @@ class TestBitbucketStatusPushRepoParsing(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
         self.bsp = BitbucketStatusPush(Interpolate('key'), Interpolate('secret'))
         yield self.bsp.setServiceParent(self.master)
         yield self.bsp.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.bsp.stopService()
+        self.addCleanup(self.bsp.stopService)
 
     def parse(self, repourl):
         return tuple(self.bsp.get_owner_and_repo(repourl))

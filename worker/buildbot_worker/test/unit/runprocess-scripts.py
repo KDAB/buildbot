@@ -18,20 +18,36 @@
 # have access to any of the Buildbot source.  Functions here should be kept
 # very simple!
 
+from __future__ import annotations
+
 import os
 import select
 import signal
 import subprocess
 import sys
 import time
+from typing import TYPE_CHECKING
 
 import psutil
+
+if TYPE_CHECKING:
+    from typing import Callable
+    from typing import NoReturn
+    from typing import TypeVar
+
+    _ScriptFnType = TypeVar("_ScriptFnType", bound=Callable[[], None])
 
 # utils
 
 
-def invoke_script(function, *args):
-    cmd = [sys.executable, __file__, function] + list(args)
+def _alarm(seconds: int) -> int:
+    if not hasattr(signal, 'alarm'):
+        return 0
+    return signal.alarm(seconds)
+
+
+def invoke_script(function: str, *args: str) -> None:
+    cmd = [sys.executable, __file__, function, *list(args)]
     if os.name == 'nt':
         DETACHED_PROCESS = 0x00000008
         subprocess.Popen(
@@ -47,7 +63,7 @@ def invoke_script(function, *args):
         subprocess.Popen(cmd, shell=False, stdin=None, stdout=None, stderr=None, close_fds=True)
 
 
-def write_pidfile(pidfile):
+def write_pidfile(pidfile: str) -> None:
     pidfile_tmp = pidfile + "~"
     f = open(pidfile_tmp, "w")
     f.write(str(os.getpid()))
@@ -55,16 +71,16 @@ def write_pidfile(pidfile):
     os.rename(pidfile_tmp, pidfile)
 
 
-def sleep_forever():
-    signal.alarm(110)  # die after 110 seconds
+def sleep_forever() -> NoReturn:
+    _alarm(110)  # die after 110 seconds
     while True:
         time.sleep(10)
 
 
-script_fns = {}
+script_fns: dict[str, Callable] = {}
 
 
-def script(fn):
+def script(fn: _ScriptFnType) -> _ScriptFnType:
     script_fns[fn.__name__] = fn
     return fn
 
@@ -73,14 +89,14 @@ def script(fn):
 
 
 @script
-def write_pidfile_and_sleep():
+def write_pidfile_and_sleep() -> NoReturn:
     pidfile = sys.argv[2]
     write_pidfile(pidfile)
     sleep_forever()
 
 
 @script
-def spawn_child():
+def spawn_child() -> NoReturn:
     parent_pidfile, child_pidfile = sys.argv[2:]
     invoke_script('write_pidfile_and_sleep', child_pidfile)
     write_pidfile(parent_pidfile)
@@ -88,7 +104,7 @@ def spawn_child():
 
 
 @script
-def wait_for_pid_death_and_write_pidfile_and_sleep():
+def wait_for_pid_death_and_write_pidfile_and_sleep() -> NoReturn:
     wait_pid = int(sys.argv[2])
     pidfile = sys.argv[3]
 
@@ -100,8 +116,8 @@ def wait_for_pid_death_and_write_pidfile_and_sleep():
 
 
 @script
-def double_fork():
-    if os.name == 'posix':
+def double_fork() -> NoReturn:
+    if sys.platform != "win32":
         # when using a PTY, the child process will get SIGHUP when the
         # parent process exits, so ignore that.
         signal.signal(signal.SIGHUP, signal.SIG_IGN)
@@ -115,7 +131,7 @@ def double_fork():
 
 
 @script
-def assert_stdin_closed():
+def assert_stdin_closed() -> None:
     # EOF counts as readable data, so we should see stdin in the readable list,
     # although it may not appear immediately, and select may return early
     bail_at = time.time() + 10
@@ -129,10 +145,7 @@ def assert_stdin_closed():
 
 # make sure this process dies if necessary
 
-if not hasattr(signal, 'alarm'):
-    signal.alarm = lambda t: None
-signal.alarm(110)  # die after 110 seconds
-
+_alarm(110)  # die after 110 seconds
 # dispatcher
 
 script_fns[sys.argv[1]]()

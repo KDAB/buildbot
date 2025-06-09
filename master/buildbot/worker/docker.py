@@ -36,10 +36,9 @@ try:
     import docker
     from docker.errors import NotFound
 
-    _hush_pyflakes = [docker]
-    docker_py_version = parse_version(docker.__version__)
+    docker_py_version = parse_version(docker.__version__)  # type: ignore[attr-defined]
 except ImportError:
-    docker = None
+    docker = None  # type: ignore[assignment]
     docker_py_version = parse_version("0.0")
 
 
@@ -62,7 +61,9 @@ def _handle_stream_line(line):
 
 
 class DockerBaseWorker(AbstractLatentWorker):
-    def checkConfig(self, name, password=None, image=None, masterFQDN=None, **kwargs):
+    def checkConfig(
+        self, name, password=None, image=None, masterFQDN=None, master_protocol='pb', **kwargs
+    ):
         # Set build_wait_timeout to 0 if not explicitly set: Starting a
         # container is almost immediate, we can afford doing so for each build.
         if 'build_wait_timeout' not in kwargs:
@@ -73,7 +74,9 @@ class DockerBaseWorker(AbstractLatentWorker):
 
         super().checkConfig(name, password, **kwargs)
 
-    def reconfigService(self, name, password=None, image=None, masterFQDN=None, **kwargs):
+    def reconfigService(
+        self, name, password=None, image=None, masterFQDN=None, master_protocol='pb', **kwargs
+    ):
         # Set build_wait_timeout to 0 if not explicitly set: Starting a
         # container is almost immediate, we can afford doing so for each build.
         if 'build_wait_timeout' not in kwargs:
@@ -83,6 +86,7 @@ class DockerBaseWorker(AbstractLatentWorker):
         if masterFQDN is None:
             masterFQDN = socket.getfqdn()
         self.masterFQDN = masterFQDN
+        self.master_protocol = master_protocol
         self.image = image
         masterName = unicode2bytes(self.master.name)
         self.masterhash = hashlib.sha1(masterName).hexdigest()[:6]
@@ -100,6 +104,7 @@ class DockerBaseWorker(AbstractLatentWorker):
     def createEnvironment(self, build=None):
         result = {
             "BUILDMASTER": self.masterFQDN,
+            'BUILDMASTER_PROTOCOL': self.master_protocol,
             "WORKERNAME": self.name,
             "WORKERPASS": self.password,
         }
@@ -138,6 +143,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin, DockerBaseWorker):
         tls=None,
         followStartupLogs=False,
         masterFQDN=None,
+        master_protocol='pb',
         hostconfig=None,
         autopull=False,
         alwaysPull=False,
@@ -147,7 +153,9 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin, DockerBaseWorker):
         hostname=None,
         **kwargs,
     ):
-        super().checkConfig(name, password, image, masterFQDN, **kwargs)
+        super().checkConfig(
+            name, password, image, masterFQDN=masterFQDN, master_protocol=master_protocol, **kwargs
+        )
 
         if docker_py_version < parse_version("4.0.0"):
             config.error("The python module 'docker>=4.0' is needed to use a DockerLatentWorker")
@@ -169,7 +177,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin, DockerBaseWorker):
                     _, __ = volume_string.split(":", 1)
                 except ValueError:
                     config.error(
-                        "Invalid volume definition for docker " f"{volume_string}. Skipping..."
+                        f"Invalid volume definition for docker {volume_string}. Skipping..."
                     )
                     continue
 
@@ -187,6 +195,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin, DockerBaseWorker):
         tls=None,
         followStartupLogs=False,
         masterFQDN=None,
+        master_protocol='pb',
         hostconfig=None,
         autopull=False,
         alwaysPull=False,
@@ -197,7 +206,9 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin, DockerBaseWorker):
         hostname=None,
         **kwargs,
     ):
-        yield super().reconfigService(name, password, image, masterFQDN, **kwargs)
+        yield super().reconfigService(
+            name, password, image, masterFQDN=masterFQDN, master_protocol=master_protocol, **kwargs
+        )
         self.docker_host = docker_host
         self.volumes = volumes or []
         self.followStartupLogs = followStartupLogs
@@ -234,9 +245,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin, DockerBaseWorker):
                     volume = bits[1]
 
             except ValueError:
-                config.error(
-                    "Invalid volume definition for docker " f"{volume_string}. Skipping..."
-                )
+                config.error(f"Invalid volume definition for docker {volume_string}. Skipping...")
                 continue
 
             if volume.endswith(':ro') or volume.endswith(':rw'):
@@ -407,7 +416,7 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin, DockerBaseWorker):
             docker_client.close()
             # The following was noticed in certain usage of Docker on Windows
             if 'The container operating system does not match the host operating system' in str(e):
-                msg = f'Image used for build is wrong: {str(e)}'
+                msg = f'Image used for build is wrong: {e!s}'
                 raise LatentWorkerCannotSubstantiate(msg) from e
             raise
 
@@ -457,10 +466,18 @@ class DockerLatentWorker(CompatibleLatentWorkerMixin, DockerBaseWorker):
     def _thd_stop_instance(self, instance, curr_client_args, fast):
         docker_client = self._getDockerClient(curr_client_args)
         log.msg(f"Stopping container {instance['Id'][:6]}...")
-        docker_client.stop(instance['Id'])
+        try:
+            docker_client.stop(instance['Id'])
+        except docker.errors.NotFound as not_found_err:
+            log.msg('Cannot stop container {}: {}'.format(instance['Id'][:6], not_found_err))
+            # don't try to wait for it.
+            fast = True
         if not fast:
             docker_client.wait(instance['Id'])
-        docker_client.remove_container(instance['Id'], v=True, force=True)
+        try:
+            docker_client.remove_container(instance['Id'], v=True, force=True)
+        except docker.errors.NotFound as not_found_err:
+            log.msg('Cannot remove container {}: {}'.format(instance['Id'][:6], not_found_err))
         if self.image is None:
             try:
                 docker_client.remove_image(image=instance['image'])

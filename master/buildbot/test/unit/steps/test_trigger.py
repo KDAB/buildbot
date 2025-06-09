@@ -12,6 +12,7 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
+from __future__ import annotations
 
 from unittest.mock import Mock
 
@@ -40,7 +41,7 @@ class FakeTriggerable:
     triggered_with = None
     result = SUCCESS
     bsid = 1
-    brids = {}
+    brids: dict[int, int] = {}
     exception = False
     never_finish = False
 
@@ -102,9 +103,6 @@ class TestTrigger(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     @defer.inlineCallbacks
     def setup_step(self, step, sourcestampsInBuild=None, gotRevisionsInBuild=None, *args, **kwargs):
         sourcestamps = sourcestampsInBuild or []
@@ -117,7 +115,6 @@ class TestTrigger(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
 
         # set up a buildmaster that knows about two fake schedulers, a and b
         m = self.master
-        m.db.checkForeignKeys = True
         self.build.builder.botmaster = m.botmaster
         self.build.conn = object()
         m.config.buildbotURL = "baseurl/"
@@ -145,7 +142,7 @@ class TestTrigger(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
                 builderid=builderid,
             )
 
-        m.db.insert_test_data([
+        yield m.db.insert_test_data([
             fakedb.Builder(id=77, name='A'),
             fakedb.Builder(id=78, name='B'),
             fakedb.Builder(id=79, name='C1'),
@@ -205,12 +202,9 @@ class TestTrigger(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.assertEqual(self.scheduler_b.triggered_with, self.exp_b_trigger)
 
         # check the URLs
-        stepUrls = self.master.data.updates.stepUrls
-        if stepUrls:
-            got_added_urls = stepUrls[list(stepUrls)[0]]
-        else:
-            got_added_urls = []
-        self.assertEqual(sorted(got_added_urls), sorted(self.exp_added_urls))
+        step_data = yield self.master.data.get(('steps', self.get_nth_step(0).stepid))
+        step_urls = [(url['name'], url['url']) for url in step_data['urls']]
+        self.assertEqual(step_urls, sorted(self.exp_added_urls))
 
         if self.exp_add_sourcestamp:
             self.assertEqual(self.addSourceStamp_kwargs, self.exp_add_sourcestamp)

@@ -13,11 +13,16 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
 from collections import defaultdict
+from typing import TYPE_CHECKING
+from typing import ClassVar
 
 from twisted.internet import defer
-from twisted.internet import reactor
 from twisted.python import log
+from twisted.python.deprecate import deprecatedModuleAttribute
+from twisted.python.versions import Version
 
 from buildbot import config
 from buildbot import util
@@ -27,9 +32,13 @@ from buildbot.schedulers import base
 from buildbot.schedulers import dependent
 from buildbot.util import NotABranch
 from buildbot.util.codebase import AbsoluteSourceStampsMixin
+from buildbot.warnings import warn_deprecated
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
-class BaseBasicScheduler(base.BaseScheduler):
+class BaseBasicScheduler(base.ReconfigurableBaseScheduler):
     """
     @param onlyImportant: If True, only important changes will be added to the
                           buildset.
@@ -37,7 +46,7 @@ class BaseBasicScheduler(base.BaseScheduler):
 
     """
 
-    compare_attrs = (
+    compare_attrs: ClassVar[Sequence[str]] = (
         'treeStableTimer',
         'change_filter',
         'fileIsImportant',
@@ -45,17 +54,21 @@ class BaseBasicScheduler(base.BaseScheduler):
         'reason',
     )
 
-    _reactor = reactor  # for tests
-
     fileIsImportant = None
     reason = ''
 
     class NotSet:
         pass
 
-    def __init__(
+    def __init__(self, name, **kwargs):
+        super().__init__(name=name, **kwargs)
+        # the IDelayedCall used to wake up when this scheduler's
+        # treeStableTimer expires.
+        self._stable_timers = defaultdict(lambda: None)
+        self._stable_timers_lock = defer.DeferredLock()
+
+    def checkConfig(
         self,
-        name,
         shouldntBeSet=NotSet,
         treeStableTimer=None,
         builderNames=None,
@@ -73,25 +86,43 @@ class BaseBasicScheduler(base.BaseScheduler):
         if fileIsImportant and not callable(fileIsImportant):
             config.error("fileIsImportant must be a callable")
 
-        # initialize parent classes
-        super().__init__(name, builderNames, **kwargs)
+        super().checkConfig(builderNames=builderNames, **kwargs)
+
+    @defer.inlineCallbacks
+    def reconfigService(
+        self,
+        shouldntBeSet=NotSet,
+        treeStableTimer=None,
+        builderNames=None,
+        branch=NotABranch,
+        branches=NotABranch,
+        fileIsImportant=None,
+        categories=None,
+        reason="The %(classname)s scheduler named '%(name)s' triggered this build",
+        change_filter=None,
+        onlyImportant=False,
+        **kwargs,
+    ):
+        yield super().reconfigService(builderNames=builderNames, **kwargs)
 
         self.treeStableTimer = treeStableTimer
-        if fileIsImportant is not None:
-            self.fileIsImportant = fileIsImportant
+        self.fileIsImportant = fileIsImportant
         self.onlyImportant = onlyImportant
         self.change_filter = self.getChangeFilter(
             branch=branch, branches=branches, change_filter=change_filter, categories=categories
         )
 
-        # the IDelayedCall used to wake up when this scheduler's
-        # treeStableTimer expires.
-        self._stable_timers = defaultdict(lambda: None)
-        self._stable_timers_lock = defer.DeferredLock()
-
         self.reason = util.bytes2unicode(
-            reason % {'name': name, 'classname': self.__class__.__name__}
+            reason % {'name': self.name, 'classname': self.__class__.__name__}
         )
+
+        if self.active:
+            yield self._stopConsumingChanges()
+            yield self.startConsumingChanges(
+                fileIsImportant=self.fileIsImportant,
+                change_filter=self.change_filter,
+                onlyImportant=self.onlyImportant,
+            )
 
     def getChangeFilter(self, branch, branches, change_filter, categories):
         raise NotImplementedError
@@ -163,7 +194,7 @@ class BaseBasicScheduler(base.BaseScheduler):
                 d = self.stableTimerFired(timer_name)
                 d.addErrback(log.err, "while firing stable timer")
 
-            self._stable_timers[timer_name] = self._reactor.callLater(
+            self._stable_timers[timer_name] = self.master.reactor.callLater(
                 self.treeStableTimer, fire_timer
             )
 
@@ -224,9 +255,19 @@ class BaseBasicScheduler(base.BaseScheduler):
 
 
 class SingleBranchScheduler(AbsoluteSourceStampsMixin, BaseBasicScheduler):
-    def __init__(self, name, createAbsoluteSourceStamps=False, **kwargs):
+    createAbsoluteSourceStamps = None
+
+    def checkConfig(self, createAbsoluteSourceStamps=False, **kwargs):
+        super().checkConfig(**kwargs)
+
+    @defer.inlineCallbacks
+    def reconfigService(
+        self,
+        createAbsoluteSourceStamps=False,
+        **kwargs,
+    ):
         self.createAbsoluteSourceStamps = createAbsoluteSourceStamps
-        super().__init__(name, **kwargs)
+        yield super().reconfigService(**kwargs)
 
     @defer.inlineCallbacks
     def gotChange(self, change, important):
@@ -264,11 +305,12 @@ class Scheduler(SingleBranchScheduler):
     "alias for SingleBranchScheduler"
 
     def __init__(self, *args, **kwargs):
-        log.msg(
-            "WARNING: the name 'Scheduler' is deprecated; use "
-            + "buildbot.schedulers.basic.SingleBranchScheduler instead "
-            + "(note that this may require you to change your import "
-            + "statement)"
+        warn_deprecated(
+            '4.3.0',
+            (
+                'the name \'Scheduler\' is deprecated; use '
+                'buildbot.schedulers.basic.SingleBranchScheduler instead'
+            ),
         )
         super().__init__(*args, **kwargs)
 
@@ -294,3 +336,10 @@ class AnyBranchScheduler(BaseBasicScheduler):
 
 # now at buildbot.schedulers.dependent, but keep the old name alive
 Dependent = dependent.Dependent
+
+deprecatedModuleAttribute(
+    Version('buildbot', 4, 3, 0),
+    message='Use buildbot.schedulers.dependent.Dependent',
+    moduleName='buildbot.schedulers.basic',
+    name='Dependent',
+)

@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from typing import TypedDict
 
 from twisted.internet import defer
 
@@ -24,9 +25,21 @@ from buildbot.data import types
 
 if TYPE_CHECKING:
     from buildbot.db.builders import BuilderModel
+    from buildbot.util.twisted import InlineCallbacksType
 
 
-def _db2data(builder: BuilderModel):
+class BuilderData(TypedDict):
+    builderid: int
+    name: str
+    masterids: list[int]
+    description: str | None
+    description_format: str | None
+    description_html: str | None
+    projectid: int | None
+    tags: list[str]
+
+
+def _db2data(builder: BuilderModel) -> BuilderData:
     return {
         "builderid": builder.id,
         "name": builder.name,
@@ -41,14 +54,14 @@ def _db2data(builder: BuilderModel):
 
 class BuilderEndpoint(base.BuildNestingMixin, base.Endpoint):
     kind = base.EndpointKind.SINGLE
-    pathPatterns = """
-        /builders/n:builderid
-        /builders/s:buildername
-        /masters/n:masterid/builders/n:builderid
-    """
+    pathPatterns = [
+        "/builders/n:builderid",
+        "/builders/s:buildername",
+        "/masters/n:masterid/builders/n:builderid",
+    ]
 
     @defer.inlineCallbacks
-    def get(self, resultSpec, kwargs):
+    def get(self, resultSpec, kwargs) -> InlineCallbacksType[BuilderData | None]:
         builderid = yield self.getBuilderId(kwargs)
         if builderid is None:
             return None
@@ -65,34 +78,30 @@ class BuilderEndpoint(base.BuildNestingMixin, base.Endpoint):
 class BuildersEndpoint(base.Endpoint):
     kind = base.EndpointKind.COLLECTION
     rootLinkName = 'builders'
-    pathPatterns = """
-        /builders
-        /masters/n:masterid/builders
-        /projects/n:projectid/builders
-    """
+    pathPatterns = [
+        "/builders",
+        "/masters/n:masterid/builders",
+        "/projects/n:projectid/builders",
+        "/workers/n:workerid/builders",
+    ]
 
     @defer.inlineCallbacks
-    def get(self, resultSpec, kwargs):
+    def get(self, resultSpec, kwargs) -> InlineCallbacksType[list[BuilderData]]:
         bdicts = yield self.master.db.builders.getBuilders(
-            masterid=kwargs.get('masterid', None), projectid=kwargs.get('projectid', None)
+            masterid=kwargs.get('masterid', None),
+            projectid=kwargs.get('projectid', None),
+            workerid=kwargs.get('workerid', None),
         )
         return [_db2data(bd) for bd in bdicts]
-
-    def get_kwargs_from_graphql(self, parent, resolve_info, args):
-        if parent is not None:
-            return {'masterid': parent['masterid']}
-        return {}
 
 
 class Builder(base.ResourceType):
     name = "builder"
     plural = "builders"
     endpoints = [BuilderEndpoint, BuildersEndpoint]
-    keyField = 'builderid'
-    eventPathPatterns = """
-        /builders/:builderid
-    """
-    subresources = ["Build", "Forcescheduler", "Scheduler", "Buildrequest"]
+    eventPathPatterns = [
+        "/builders/:builderid",
+    ]
 
     class EntityType(types.Entity):
         builderid = types.Integer()
@@ -104,7 +113,7 @@ class Builder(base.ResourceType):
         projectid = types.NoneOk(types.Integer())
         tags = types.List(of=types.String())
 
-    entityType = EntityType(name, 'Builder')
+    entityType = EntityType(name)
 
     @defer.inlineCallbacks
     def generateEvent(self, _id, event):
@@ -112,13 +121,19 @@ class Builder(base.ResourceType):
         self.produceEvent(builder, event)
 
     @base.updateMethod
-    def findBuilderId(self, name):
+    def findBuilderId(self, name: str) -> defer.Deferred[int]:
         return self.master.db.builders.findBuilderId(name)
 
     @base.updateMethod
     @defer.inlineCallbacks
     def updateBuilderInfo(
-        self, builderid, description, description_format, description_html, projectid, tags
+        self,
+        builderid: int,
+        description: str | None,
+        description_format: str | None,
+        description_html: str | None,
+        projectid: int,
+        tags: list[int | str],
     ):
         ret = yield self.master.db.builders.updateBuilderInfo(
             builderid, description, description_format, description_html, projectid, tags
@@ -128,7 +143,7 @@ class Builder(base.ResourceType):
 
     @base.updateMethod
     @defer.inlineCallbacks
-    def updateBuilderList(self, masterid, builderNames):
+    def updateBuilderList(self, masterid: int, builderNames: list[str]):
         # get the "current" list of builders for this master, so we know what
         # changes to make.  Race conditions here aren't a great worry, as this
         # is the only master inserting or deleting these records.

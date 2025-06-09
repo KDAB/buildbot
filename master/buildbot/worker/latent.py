@@ -13,10 +13,13 @@
 #
 # Portions Copyright Buildbot Team Members
 # Portions Copyright Canonical Ltd. 2009
+from __future__ import annotations
 
 import enum
 import random
 import string
+from typing import TYPE_CHECKING
+from typing import Any
 
 from twisted.internet import defer
 from twisted.python import failure
@@ -29,6 +32,9 @@ from buildbot.interfaces import LatentWorkerFailedToSubstantiate
 from buildbot.interfaces import LatentWorkerSubstantiatiationCancelled
 from buildbot.util import Notifier
 from buildbot.worker.base import AbstractWorker
+
+if TYPE_CHECKING:
+    from twisted.internet.base import DelayedCall
 
 
 class States(enum.Enum):
@@ -80,8 +86,8 @@ class AbstractLatentWorker(AbstractWorker):
     See ec2.py for a concrete example.
     """
 
-    substantiation_build = None
-    build_wait_timer = None
+    substantiation_build: Any = None
+    build_wait_timer: DelayedCall | None = None
     start_missing_on_startup = False
 
     # override if the latent worker may connect without substantiate. Most
@@ -156,9 +162,9 @@ class AbstractLatentWorker(AbstractWorker):
         NOT_SUBSTANTIATED -> SHUT_DOWN
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._substantiation_notifier = Notifier()
+        self._substantiation_notifier: Notifier[bool] = Notifier()
         self._start_stop_lock = defer.DeferredLock()
         self._check_instance_timer = None
 
@@ -219,25 +225,25 @@ class AbstractLatentWorker(AbstractWorker):
                 ).format(action_str, self)
             )
 
-    def start_instance(self, build):
+    def start_instance(self, build) -> defer.Deferred[bool]:
         # responsible for starting instance that will try to connect with this
         # master.  Should return deferred with either True (instance started)
         # or False (instance not started, so don't run a build here).  Problems
         # should use an errback.
         raise NotImplementedError
 
-    def stop_instance(self, fast=False):
+    def stop_instance(self, fast=False) -> defer.Deferred[bool]:
         # responsible for shutting down instance.
         raise NotImplementedError
 
-    def check_instance(self):
+    def check_instance(self) -> tuple[bool, str]:
         return (True, "")
 
     @property
-    def substantiated(self):
+    def substantiated(self) -> bool:
         return self.state == States.SUBSTANTIATED and self.conn is not None
 
-    def substantiate(self, wfb, build):
+    def substantiate(self, wfb: Any, build: Any) -> defer.Deferred[bool]:
         log.msg(f"substantiating worker {wfb}")
 
         if self.state == States.SHUT_DOWN:
@@ -321,7 +327,7 @@ class AbstractLatentWorker(AbstractWorker):
             self._substantiation_failed(failure.Failure(e))
             # swallow the failure as it is notified
 
-    def _fireSubstantiationNotifier(self, result):
+    def _fireSubstantiationNotifier(self, result: bool | failure.Failure) -> None:
         if not self._substantiation_notifier:
             log.msg(f"No substantiation deferred for {self.name}")
             return
@@ -370,7 +376,7 @@ class AbstractLatentWorker(AbstractWorker):
         self.missing_timer = None
         return self._substantiation_failed(defer.TimeoutError())
 
-    def _substantiation_failed(self, failure):
+    def _substantiation_failed(self, failure: failure.Failure) -> defer.Deferred | None:
         if self.state in [States.SUBSTANTIATING, States.SUBSTANTIATING_STARTING]:
             self._fireSubstantiationNotifier(failure)
 

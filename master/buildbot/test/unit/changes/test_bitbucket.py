@@ -125,7 +125,7 @@ class PullRequestRest:
     "id": %(id)d
 
 }
-"""  # noqa pylint: disable=line-too-long
+"""
 
     def __init__(self, nr, title, description, display_name, source, created_on, updated_on=None):
         self.nr = nr
@@ -198,7 +198,7 @@ class PullRequestListRest:
             "merge_commit": null,
             "id": %(id)s
         }
-"""  # noqa pylint: disable=line-too-long
+"""
 
     def __init__(self, owner, slug, prs):
         self.owner = owner
@@ -244,10 +244,10 @@ class PullRequestListRest:
         )
         pr_url_re = re.compile(
             rf"https://api.bitbucket.org/2.0/repositories/{self.owner}/{self.slug}/pullrequests/(?P<id>\d+)"
-        )  # noqa pylint: disable=line-too-long
+        )
         source_commit_url_re = re.compile(
             r"https://api.bitbucket.org/2.0/repositories/(?P<src_owner>.*)/(?P<src_slug>.*)/commit/(?P<hash>\d+)"
-        )  # noqa pylint: disable=line-too-long
+        )
         source_url_re = re.compile(
             r"https://api.bitbucket.org/2.0/repositories/(?P<src_owner>.*)/(?P<src_slug>.*)"
         )
@@ -303,9 +303,6 @@ class TestBitbucketPullrequestPoller(
         )
 
         return self.setUpChangeSource()
-
-    def tearDown(self):
-        return self.tearDownChangeSource()
 
     def _fakeGetPage(self, result):
         # Install a fake getPage that puts the requested URL in self.getPage_got_url
@@ -398,7 +395,7 @@ class TestBitbucketPullrequestPoller(
 
         self._http.expect(
             'get',
-            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',  # noqa pylint: disable=line-too-long
+            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',
             content=self.rest_src.diff_response(),
         )
 
@@ -456,7 +453,7 @@ class TestBitbucketPullrequestPoller(
 
         self._http.expect(
             'get',
-            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',  # noqa pylint: disable=line-too-long
+            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',
             content=self.rest_src.diff_response(),
         )
 
@@ -543,7 +540,7 @@ class TestBitbucketPullrequestPoller(
 
         self._http.expect(
             'get',
-            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',  # noqa pylint: disable=line-too-long
+            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',
             content=self.rest_src.diff_response(),
         )
 
@@ -571,7 +568,7 @@ class TestBitbucketPullrequestPoller(
 
         self._http.expect(
             'get',
-            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/2222222222222222222222222222222222222222',  # noqa pylint: disable=line-too-long
+            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/2222222222222222222222222222222222222222',
             content=self.rest_src.diff_response(),
         )
 
@@ -693,7 +690,7 @@ class TestBitbucketPullrequestPoller(
 
         self._http.expect(
             'get',
-            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',  # noqa pylint: disable=line-too-long
+            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',
             content=self.rest_src.diff_response(),
         )
 
@@ -751,7 +748,7 @@ class TestBitbucketPullrequestPoller(
 
         self._http.expect(
             'get',
-            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',  # noqa pylint: disable=line-too-long
+            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',
             content=self.rest_src.diff_response(),
         )
 
@@ -812,7 +809,7 @@ class TestBitbucketPullrequestPoller(
 
         self._http.expect(
             'get',
-            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',  # noqa pylint: disable=line-too-long
+            'https://api.bitbucket.org/2.0/repositories/contributor/slug/diff/1111111111111111111111111111111111111111',
             content=self.rest_src.diff_response(),
         )
 

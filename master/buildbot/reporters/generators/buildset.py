@@ -13,6 +13,11 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import ClassVar
+
 from twisted.internet import defer
 from zope.interface import implementer
 
@@ -23,6 +28,9 @@ from buildbot.reporters.message import MessageFormatter
 
 from .utils import BuildStatusGeneratorMixin
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 @implementer(interfaces.IReportGenerator)
 class BuildSetStatusGenerator(BuildStatusGeneratorMixin):
@@ -30,7 +38,7 @@ class BuildSetStatusGenerator(BuildStatusGeneratorMixin):
         ('buildsets', None, 'complete'),
     ]
 
-    compare_attrs = ['formatter']
+    compare_attrs: ClassVar[Sequence[str]] = ['formatter']
 
     def __init__(
         self,
@@ -147,7 +155,7 @@ class BuildSetCombinedStatusGenerator:
         ("buildsets", None, "complete"),
     ]
 
-    compare_attrs = ["formatter"]
+    compare_attrs: ClassVar[Sequence[str]] = ["formatter"]
 
     def __init__(self, message_formatter):
         self.formatter = message_formatter

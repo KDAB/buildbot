@@ -12,10 +12,14 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
+from __future__ import annotations
 
 import os
+import platform
 import shutil
 import socket
+from typing import TYPE_CHECKING
+from typing import cast
 
 from twisted.cred import checkers
 from twisted.cred import portal
@@ -26,13 +30,22 @@ from twisted.trial import unittest
 from zope.interface import implementer
 
 from buildbot_worker import bot
-from buildbot_worker.test.util import misc
 
 try:
     from unittest.mock import Mock
 except ImportError:
     from unittest.mock import Mock
 
+if TYPE_CHECKING:
+    from typing import Any
+    from typing import Callable
+
+    from twisted.internet.interfaces import IListeningPort
+    from twisted.internet.interfaces import IReactorTCP
+    from twisted.internet.interfaces import ITransport
+    from zope.interface import Interface
+
+    from buildbot_worker.util.twisted import InlineCallbacksType
 
 # I don't see any simple way to test the PB equipment without actually setting
 # up a TCP connection.  This just tests that the PB code will connect and can
@@ -41,10 +54,11 @@ except ImportError:
 
 
 class MasterPerspective(pb.Avatar):
-    def __init__(self, on_keepalive=None):
+    def __init__(self, on_keepalive: Callable[[], None] | None = None) -> None:
         self.on_keepalive = on_keepalive
+        self.mind: object | None = None
 
-    def perspective_keepalive(self):
+    def perspective_keepalive(self) -> None:
         if self.on_keepalive:
             on_keepalive = self.on_keepalive
             self.on_keepalive = None
@@ -53,12 +67,21 @@ class MasterPerspective(pb.Avatar):
 
 @implementer(portal.IRealm)
 class MasterRealm:
-    def __init__(self, perspective, on_attachment):
+    def __init__(
+        self,
+        perspective: MasterPerspective,
+        on_attachment: Callable[[object | None], None | defer.Deferred[None]] | None,
+    ) -> None:
         self.perspective = perspective
         self.on_attachment = on_attachment
 
     @defer.inlineCallbacks
-    def requestAvatar(self, avatarId, mind, *interfaces):
+    def requestAvatar(
+        self,
+        avatarId: bytes | tuple,
+        mind: object | None,
+        *interfaces: type[Interface],
+    ) -> InlineCallbacksType[tuple[type[Interface], object, Callable[[], None]]]:
         assert pb.IPerspective in interfaces
         self.mind = mind
         self.perspective.mind = mind
@@ -67,15 +90,18 @@ class MasterRealm:
 
         return pb.IPerspective, self.perspective, lambda: None
 
-    def shutdown(self):
-        return self.mind.broker.transport.loseConnection()
+    def shutdown(self) -> defer.Deferred[None]:
+        mind = cast("pb.RemoteReference", self.mind)
+        broker = cast("pb.Broker", mind.broker)
+        transport = cast("ITransport", broker.transport)
+        return defer.maybeDeferred(transport.loseConnection)
 
 
-class TestWorker(misc.PatcherMixin, unittest.TestCase):
-    def setUp(self):
-        self.realm = None
-        self.worker = None
-        self.listeningport = None
+class TestWorker(unittest.TestCase):
+    def setUp(self) -> None:
+        self.realm: MasterRealm | None = None
+        self.worker: bot.Worker | None = None
+        self.listeningport: IListeningPort | None = None
 
         self.basedir = os.path.abspath("basedir")
         if os.path.exists(self.basedir):
@@ -83,33 +109,41 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
         os.makedirs(self.basedir)
 
     @defer.inlineCallbacks
-    def tearDown(self):
+    def tearDown(self) -> InlineCallbacksType[None]:  # type: ignore[override]
         if self.realm:
             yield self.realm.shutdown()
-        if self.worker and self.worker.running:
-            yield self.worker.stopService()
         if self.listeningport:
             yield self.listeningport.stopListening()
         if os.path.exists(self.basedir):
             shutil.rmtree(self.basedir)
 
-    def start_master(self, perspective, on_attachment=None):
+    def start_master(
+        self,
+        perspective: MasterPerspective,
+        on_attachment: Callable[[object | None], None | defer.Deferred[None]] | None = None,
+    ) -> int:
         self.realm = MasterRealm(perspective, on_attachment)
         p = portal.Portal(self.realm)
         p.registerChecker(checkers.InMemoryUsernamePasswordDatabaseDontUse(testy=b"westy"))
-        self.listeningport = reactor.listenTCP(0, pb.PBServerFactory(p), interface='127.0.0.1')
+        self.listeningport = cast("IReactorTCP", reactor).listenTCP(
+            0,
+            pb.PBServerFactory(p),
+            interface='127.0.0.1',
+        )
         # return the dynamically allocated port number
-        return self.listeningport.getHost().port
+        host = self.listeningport.getHost()
+        assert hasattr(host, 'port')
+        return host.port
 
-    def test_constructor_minimal(self):
+    def test_constructor_minimal(self) -> None:
         # only required arguments
         bot.Worker('mstr', 9010, 'me', 'pwd', '/s', 10, protocol='pb')
 
-    def test_constructor_083_tac(self):
+    def test_constructor_083_tac(self) -> None:
         """invocation as made from default 0.8.3 tac files"""
         bot.Worker('mstr', 9010, 'me', 'pwd', '/s', 10, umask=0o123, protocol='pb', maxdelay=10)
 
-    def test_constructor_091_tac(self):
+    def test_constructor_091_tac(self) -> None:
         # invocation as made from default 0.9.1 tac files
         bot.Worker(
             None,
@@ -124,7 +158,7 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
             maxdelay=10,
         )
 
-    def test_constructor_invalid_both_styles(self):
+    def test_constructor_invalid_both_styles(self) -> None:
         """Can't instantiate with both host/port and connection string."""
         # assertRaises as a context manager appears in Python 2.7
         self.assertRaises(
@@ -139,7 +173,7 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
             connection_string="tcp:anything",
         )
 
-    def test_constructor_invalid_both_styles_partial(self):
+    def test_constructor_invalid_both_styles_partial(self) -> None:
         # assertRaises as a context manager appears in Python 2.7
         self.assertRaises(
             AssertionError,
@@ -153,7 +187,7 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
             connection_string="tcp:anything",
         )
 
-    def test_constructor_invalid_both_styles_partial2(self):
+    def test_constructor_invalid_both_styles_partial2(self) -> None:
         """Can't instantiate with both host/port and connection string."""
         # assertRaises as a context manager appears in Python 2.7
         self.assertRaises(
@@ -169,7 +203,7 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
             connection_string="tcp:anything",
         )
 
-    def test_constructor_full(self):
+    def test_constructor_full(self) -> None:
         # invocation with all args
         bot.Worker(
             'mstr',
@@ -183,16 +217,17 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
             keepaliveTimeout=10,
             unicode_encoding='utf8',
             protocol='pb',
-            allow_shutdown=True,
+            allow_shutdown=True,  # type: ignore[arg-type]
         )
 
-    def test_worker_print(self):
-        d = defer.Deferred()
+    def test_worker_print(self) -> defer.Deferred[None]:
+        d: defer.Deferred[None] = defer.Deferred()
 
         # set up to call print when we are attached, and chain the results onto
         # the deferred for the whole test
-        def call_print(mind):
-            print_d = mind.callRemote("print", "Hi, worker.")
+        def call_print(mind: object | None) -> None:
+            print_d = cast("pb.RemoteReference", mind).callRemote("print", "Hi, worker.")
+            assert isinstance(print_d, defer.Deferred)
             print_d.addCallbacks(d.callback, d.errback)
 
         # start up the master and worker
@@ -209,12 +244,16 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
             protocol='pb',
         )
         self.worker.startService()
+        self.addCleanup(self.worker.stopService)
 
         # and wait for the result of the print
         return d
 
-    def test_recordHostname_uname(self):
-        self.patch_os_uname(lambda: [0, 'test-hostname.domain.com'])
+    def test_recordHostname_uname(self) -> None:
+        def _uname() -> os.uname_result:
+            return os.uname_result(('0', 'test-hostname.domain.com', '', '', ''))
+
+        self.patch(platform, 'uname', _uname)
 
         self.worker = bot.Worker(
             "127.0.0.1",
@@ -231,11 +270,11 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
             twistdHostname = f.read().strip()
         self.assertEqual(twistdHostname, 'test-hostname.domain.com')
 
-    def test_recordHostname_getfqdn(self):
-        def missing():
-            raise AttributeError
+    def test_recordHostname_getfqdn(self) -> None:
+        def _uname() -> os.uname_result:
+            return os.uname_result(('', '', '', '', ''))
 
-        self.patch_os_uname(missing)
+        self.patch(platform, 'uname', _uname)
         self.patch(socket, "getfqdn", lambda: 'test-hostname.domain.com')
 
         self.worker = bot.Worker(
@@ -253,15 +292,15 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
             twistdHostname = f.read().strip()
         self.assertEqual(twistdHostname, 'test-hostname.domain.com')
 
-    def test_worker_graceful_shutdown(self):
+    def test_worker_graceful_shutdown(self) -> defer.Deferred[None]:
         """Test that running the build worker's gracefulShutdown method results
         in a call to the master's shutdown method"""
-        d = defer.Deferred()
+        d: defer.Deferred[None] = defer.Deferred()
 
         fakepersp = Mock()
-        called = []
+        called: list[tuple[str, ...]] = []
 
-        def fakeCallRemote(*args):
+        def fakeCallRemote(*args: str) -> defer.Deferred[None]:
             called.append(args)
             d1 = defer.succeed(None)
             return d1
@@ -270,9 +309,11 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
 
         # set up to call shutdown when we are attached, and chain the results onto
         # the deferred for the whole test
-        def call_shutdown(mind):
+        def call_shutdown(mind: object | None) -> None:
+            assert self.worker is not None
             self.worker.bf.perspective = fakepersp
             shutdown_d = self.worker.gracefulShutdown()
+            assert shutdown_d is not None
             shutdown_d.addCallbacks(d.callback, d.errback)
 
         persp = MasterPerspective()
@@ -290,15 +331,16 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
         )
 
         self.worker.startService()
+        self.addCleanup(self.worker.stopService)
 
-        def check(ign):
+        def check(ign: Any) -> None:
             self.assertEqual(called, [('shutdown',)])
 
         d.addCallback(check)
 
         return d
 
-    def test_worker_shutdown(self):
+    def test_worker_shutdown(self) -> None:
         """Test watching an existing shutdown_file results in gracefulShutdown
         being called."""
 
@@ -315,7 +357,7 @@ class TestWorker(misc.PatcherMixin, unittest.TestCase):
         )
 
         # Mock out gracefulShutdown
-        worker.gracefulShutdown = Mock()
+        worker.gracefulShutdown = Mock()  # type: ignore[method-assign]
 
         # Mock out os.path methods
         exists = Mock()

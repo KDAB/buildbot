@@ -12,12 +12,14 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
+from __future__ import annotations
 
 import textwrap
 
 from twisted.internet import defer
 from twisted.trial import unittest
 
+from buildbot.data import base
 from buildbot.data import logchunks
 from buildbot.data import resultspec
 from buildbot.test import fakedb
@@ -25,8 +27,8 @@ from buildbot.test.util import endpoint
 
 
 class LogChunkEndpointBase(endpoint.EndpointMixin, unittest.TestCase):
-    endpointClass = logchunks.LogChunkEndpoint
-    resourceTypeClass = logchunks.LogChunk
+    endpointClass: type[base.Endpoint] = logchunks.LogChunkEndpoint
+    resourceTypeClass: type[base.ResourceType] = logchunks.LogChunk
     endpointname = "contents"
     log60Lines = [
         'line zero',
@@ -39,15 +41,16 @@ class LogChunkEndpointBase(endpoint.EndpointMixin, unittest.TestCase):
     ]
     log61Lines = [f'{i:08d}' for i in range(100)]
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data(
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data(
             [
                 fakedb.Builder(id=77),
                 fakedb.Worker(id=13, name='wrk'),
                 fakedb.Master(id=88),
                 fakedb.Buildset(id=8822),
-                fakedb.BuildRequest(id=82, buildsetid=8822),
+                fakedb.BuildRequest(id=82, builderid=77, buildsetid=8822),
                 fakedb.Build(
                     id=13, builderid=77, masterid=88, workerid=13, buildrequestid=82, number=3
                 ),
@@ -91,9 +94,6 @@ class LogChunkEndpointBase(endpoint.EndpointMixin, unittest.TestCase):
                 # logid 62 is empty
             ]
         )
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def do_test_chunks(self, path, logid, expLines):
@@ -222,12 +222,12 @@ class RawLogChunkEndpoint(LogChunkEndpointBase):
         logchunk = yield self.callGet(path)
         self.validateData(logchunk)
         if logid == 60:
-            expContent = 'Builder: some:builder\nBuild number: 3\nWorker name: wrk\n'
+            expContent = 'Builder: builder-77\nBuild number: 3\nWorker name: wrk\n'
             expContent += ''.join([f"{line[1:]}\n" for line in expLines])
-            expFilename = "some:builder_build_3_step_make_log_stdio"
+            expFilename = "builder-77_build_3_step_make_log_stdio"
         else:
             expContent = '\n'.join(expLines) + '\n'
-            expFilename = "some:builder_build_3_step_make_log_errors"
+            expFilename = "builder-77_build_3_step_make_log_errors"
 
         self.assertEqual(
             logchunk, {'filename': expFilename, 'mime-type': "text/plain", 'raw': expContent}

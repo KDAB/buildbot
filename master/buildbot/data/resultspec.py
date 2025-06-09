@@ -24,16 +24,13 @@ from twisted.python import log
 from buildbot.data import base
 
 if TYPE_CHECKING:
-    from typing import Sequence
+    from collections.abc import Sequence
 
 
 class NotSupportedFieldTypeError(TypeError):
     def __init__(self, data, *args: object) -> None:
         super().__init__(
-            (
-                f"Unsupported data type '{type(data)}': "
-                "must be an instance of Dict or a Dataclass."
-            ),
+            (f"Unsupported data type '{type(data)}': must be an instance of Dict or a Dataclass."),
             *args,
         )
 
@@ -103,7 +100,7 @@ class FieldBase:
         # only support string values, because currently there are no queries against lists in SQL
     }
 
-    def __init__(self, field: bytes, op: str, values: Sequence):
+    def __init__(self, field: bytes | str, op: str, values: Sequence | set):
         self.field = field
         self.op = op
         self.values = values
@@ -218,7 +215,7 @@ class ReverseComparator:
 
 
 class ResultSpec:
-    __slots__ = ['filters', 'fields', 'properties', 'order', 'limit', 'offset', 'fieldMapping']
+    __slots__ = ['fieldMapping', 'fields', 'filters', 'limit', 'offset', 'order', 'properties']
 
     def __init__(
         self, filters=None, fields=None, properties=None, order=None, limit=None, offset=None
@@ -429,9 +426,9 @@ class ResultSpec:
             # item collection
             if isinstance(data, base.ListResult):
                 # if pagination was applied, then fields, etc. must be empty
-                assert (
-                    not fields and not order and not filters
-                ), "endpoint must apply fields, order, and filters if it performs pagination"
+                assert not fields and not order and not filters, (
+                    "endpoint must apply fields, order, and filters if it performs pagination"
+                )
                 offset = data.offset
                 total = data.total
                 limit = data.limit

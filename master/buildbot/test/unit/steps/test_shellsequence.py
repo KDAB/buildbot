@@ -41,9 +41,6 @@ class TestOneShellCommand(
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def testShellArgInput(self):
         with self.assertRaisesConfigError("the 'command' parameter of ShellArg must not be None"):
             shellsequence.ShellArg(command=None)

@@ -11,7 +11,9 @@
 # this program; if not, write to the Free Software Foundation, Inc., 51
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
-# Copyright Buildbot Team Members
+# Copyright Buildbot Team Member
+
+from __future__ import annotations
 
 from urllib.parse import quote_plus as urlquote_plus
 
@@ -38,7 +40,7 @@ HOSTED_BASE_URL = 'https://gitlab.com'
 
 
 class GitLabStatusPush(ReporterBase):
-    name = "GitLabStatusPush"
+    name: str | None = "GitLabStatusPush"  # type: ignore[assignment]
 
     def checkConfig(
         self,
@@ -148,8 +150,7 @@ class GitLabStatusPush(ReporterBase):
             proj = yield response.json()
             if response.code not in (200,):
                 log.msg(
-                    'Unknown (or hidden) gitlab project'
-                    f'{project_full_name}: {proj.get("message")}'
+                    f'Unknown (or hidden) gitlab project{project_full_name}: {proj.get("message")}'
                 )
                 return None
             self.project_ids[project_full_name] = proj['id']
@@ -221,8 +222,5 @@ class GitLabStatusPush(ReporterBase):
             except Exception as e:
                 log.err(
                     e,
-                    (
-                        f'Failed to send status "{state}" for '
-                        f'{sourcestamp["repository"]} at {sha}'
-                    ),
+                    (f'Failed to send status "{state}" for {sourcestamp["repository"]} at {sha}'),
                 )

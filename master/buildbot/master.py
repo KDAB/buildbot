@@ -15,6 +15,7 @@
 
 
 import os
+import platform
 import signal
 import socket
 
@@ -22,7 +23,6 @@ from twisted.application import internet
 from twisted.internet import defer
 from twisted.internet import task
 from twisted.internet import threads
-from twisted.python import failure
 from twisted.python import log
 
 import buildbot
@@ -33,7 +33,6 @@ from buildbot.changes.manager import ChangeManager
 from buildbot.config.master import FileLoader
 from buildbot.config.master import MasterConfig
 from buildbot.data import connector as dataconnector
-from buildbot.data import graphql
 from buildbot.db import connector as dbconnector
 from buildbot.db import exceptions
 from buildbot.machine.manager import MachineManager
@@ -100,9 +99,6 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         # set up child services
         self._services_d = self.create_child_services()
 
-        # db configured values
-        self.configured_db_url = None
-
         # configuration / reconfiguration handling
         self.config = MasterConfig()
         self.config_version = 0  # increased by one on each reconfig
@@ -123,9 +119,8 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         check_functional_environment(self.config)
 
         # figure out local hostname
-        try:
-            self.hostname = os.uname()[1]  # only on unix
-        except AttributeError:
+        self.hostname = platform.uname()[1]
+        if not self.hostname:
             self.hostname = socket.getfqdn()
 
         # public attributes
@@ -154,15 +149,19 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
 
         self.workers = workermanager.WorkerManager(self)
         yield self.workers.setServiceParent(self)
+        self.workers.reconfig_priority = 127
 
         self.change_svc = ChangeManager()
         yield self.change_svc.setServiceParent(self)
 
         self.botmaster = BotMaster()
         yield self.botmaster.setServiceParent(self)
+        # must be configured first so that projects and codebases are registered
+        self.botmaster.reconfig_priority = 1001
 
         self.machine_manager = MachineManager()
         yield self.machine_manager.setServiceParent(self)
+        self.machine_manager.reconfig_priority = self.workers.reconfig_priority + 1
 
         self.scheduler_manager = SchedulerManager()
         yield self.scheduler_manager.setServiceParent(self)
@@ -171,7 +170,7 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         yield self.user_manager.setServiceParent(self)
 
         self.db = dbconnector.DBConnector(self.basedir)
-        yield self.db.setServiceParent(self)
+        yield self.db.set_master(self)
 
         self.wamp = wampconnector.WampConnector()
         yield self.wamp.setServiceParent(self)
@@ -181,9 +180,6 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
 
         self.data = dataconnector.DataConnector()
         yield self.data.setServiceParent(self)
-
-        self.graphql = graphql.GraphQLConnector()
-        yield self.graphql.setServiceParent(self)
 
         self.www = wwwservice.WWWService()
         yield self.www.setServiceParent(self)
@@ -260,8 +256,8 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
                 log.msg("Halting master.")
                 self.reactor.stop()
                 return
-            except Exception:
-                log.err(failure.Failure(), 'while starting BuildMaster')
+            except Exception as e:
+                log.err(e, 'while starting BuildMaster')
                 self.reactor.stop()
                 return
 
@@ -274,6 +270,8 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
                 # (message was already logged)
                 self.reactor.stop()
                 return
+
+            yield self.db.startService()
 
             yield self.mq.setup()
 
@@ -323,9 +321,8 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
             # send the statistics to buildbot.net, without waiting
             self.sendBuildbotNetUsageData()
             startup_succeed = True
-        except Exception:
-            f = failure.Failure()
-            log.err(f, 'while starting BuildMaster')
+        except Exception as e:
+            log.err(e, 'while starting BuildMaster')
             self.reactor.stop()
 
         finally:
@@ -375,6 +372,8 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
             self._master_initialized = False
         finally:
             yield self.initLock.release()
+            if self.db.running:
+                yield self.db.stopService()
 
     @defer.inlineCallbacks
     def reconfig(self):
@@ -392,7 +391,7 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         # longer on larger installations and may take a while.
         self.reconfig_notifier = task.LoopingCall(
             lambda: log.msg(
-                "reconfig is ongoing for " f"{self.reactor.seconds() - self.reconfig_active:.3f} s"
+                f"reconfig is ongoing for {self.reactor.seconds() - self.reconfig_active:.3f} s"
             )
         )
         self.reconfig_notifier.start(10, now=False)
@@ -436,8 +435,8 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
                 log.msg(msg)
             failed = True
 
-        except Exception:
-            log.err(failure.Failure(), 'during reconfig:')
+        except Exception as e:
+            log.err(e, 'during reconfig:')
             failed = True
 
         finally:
@@ -453,19 +452,23 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
 
         log.msg(f"{msg} (took {(self.reactor.seconds() - time_started):.3f} seconds)")
 
+    @defer.inlineCallbacks
     def reconfigServiceWithBuildbotConfig(self, new_config):
         if self.config.mq['type'] != new_config.mq['type']:
             raise config.ConfigErrors([
                 "Cannot change c['mq']['type'] after the master has started",
             ])
 
-        return super().reconfigServiceWithBuildbotConfig(new_config)
+        yield super().reconfigServiceWithBuildbotConfig(new_config)
+        # db must come later so that it has access to newly configured services
+        yield self.db.reconfigServiceWithBuildbotConfig(new_config)
 
     # informational methods
     def allSchedulers(self):
         return list(self.scheduler_manager)
 
     # state maintenance (private)
+    @defer.inlineCallbacks
     def getObjectId(self):
         """
         Return the object id for this master, for associating state with the
@@ -475,36 +478,25 @@ class BuildMaster(service.ReconfigurableServiceMixin, service.MasterService):
         """
         # try to get the cached value
         if self._object_id is not None:
-            return defer.succeed(self._object_id)
+            return self._object_id
 
         # failing that, get it from the DB; multiple calls to this function
         # at the same time will not hurt
 
-        d = self.db.state.getObjectId(self.name, "buildbot.master.BuildMaster")
+        id = yield self.db.state.getObjectId(self.name, "buildbot.master.BuildMaster")
+        self._object_id = id
+        return id
 
-        @d.addCallback
-        def keep(id):
-            self._object_id = id
-            return id
-
-        return d
-
+    @defer.inlineCallbacks
     def _getState(self, name, default=None):
         "private wrapper around C{self.db.state.getState}"
-        d = self.getObjectId()
+        objectid = self.getObjectId()
+        state = yield self.db.state.getState(objectid, name, default)
+        return state
 
-        @d.addCallback
-        def get(objectid):
-            return self.db.state.getState(objectid, name, default)
-
-        return d
-
+    @defer.inlineCallbacks
     def _setState(self, name, value):
         "private wrapper around C{self.db.state.setState}"
-        d = self.getObjectId()
-
-        @d.addCallback
-        def set(objectid):
-            return self.db.state.setState(objectid, name, value)
-
-        return d
+        objectid = yield self.getObjectId()
+        success = yield self.db.state.setState(objectid, name, value)
+        return success

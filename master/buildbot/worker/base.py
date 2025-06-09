@@ -13,8 +13,13 @@
 #
 # Portions Copyright Buildbot Team Members
 # Portions Copyright Canonical Ltd. 2009
+from __future__ import annotations
 
 import time
+from pathlib import PurePath
+from pathlib import PurePosixPath
+from pathlib import PureWindowsPath
+from typing import TYPE_CHECKING
 
 from twisted.internet import defer
 from twisted.python import log
@@ -30,6 +35,9 @@ from buildbot.util import bytes2unicode
 from buildbot.util import deferwaiter
 from buildbot.util import service
 
+if TYPE_CHECKING:
+    from twisted.internet.base import DelayedCall
+
 
 @implementer(IWorker)
 class AbstractWorker(service.BuildbotService):
@@ -43,10 +51,7 @@ class AbstractWorker(service.BuildbotService):
     running builds.  I am instantiated by the configuration file, and can be
     subclassed to add extra functionality."""
 
-    # reconfig workers after builders
-    reconfig_priority = 64
-
-    quarantine_timer = None
+    quarantine_timer: DelayedCall | None = None
     quarantine_timeout = quarantine_initial_timeout = 10
     quarantine_max_timeout = 60 * 60
     start_missing_on_startup = True
@@ -59,6 +64,8 @@ class AbstractWorker(service.BuildbotService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._deferwaiter = deferwaiter.DeferWaiter()
+
+        self.PathCls: type[PurePath] | None = None
 
     def checkConfig(
         self,
@@ -137,7 +144,7 @@ class AbstractWorker(service.BuildbotService):
         self.notify_on_missing = notify_on_missing
         for i in notify_on_missing:
             if not isinstance(i, str):
-                config.error(f'notify_on_missing arg {repr(i)} is not a string')
+                config.error(f'notify_on_missing arg {i!r} is not a string')
 
         self.missing_timeout = missing_timeout
         self.missing_timer = None
@@ -155,10 +162,10 @@ class AbstractWorker(service.BuildbotService):
         self._configured_builderid_list = None
 
     def __repr__(self):
-        return f"<{self.__class__.__name__} {repr(self.name)}>"
+        return f"<{self.__class__.__name__} {self.name!r}>"
 
     @property
-    def workername(self):
+    def workername(self) -> str | None:
         # workername is now an alias to twisted.Service's name
         return self.name
 
@@ -470,10 +477,15 @@ class AbstractWorker(service.BuildbotService):
 
         if self.worker_system == "nt":
             self.path_module = namedModule("ntpath")
+            # NOTE: See PurePath.__new__ which uses
+            # `PureWindowsPath if os.name == 'nt' else PurePosixPath`
+            self.path_cls = PureWindowsPath
         else:
             # most everything accepts / as separator, so posix should be a
             # reasonable fallback
             self.path_module = namedModule("posixpath")
+            self.path_cls = PurePosixPath
+
         log.msg("bot attached")
         self.messageReceivedFromWorker()
         self.stopMissingTimer()
@@ -586,7 +598,7 @@ class AbstractWorker(service.BuildbotService):
             if b:
                 d1 = self.attachBuilder(b)
                 dl.append(d1)
-        yield defer.DeferredList(dl)
+        yield defer.DeferredList(dl, consumeErrors=True)
 
     def attachBuilder(self, builder):
         return builder.attached(self, self.worker_commands)

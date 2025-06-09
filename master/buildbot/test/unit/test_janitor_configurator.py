@@ -72,9 +72,6 @@ class LogChunksJanitorTests(
         yield self.setup_test_build_step()
         self.patch(janitor, "now", lambda: datetime.datetime(year=2017, month=1, day=1))
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     @defer.inlineCallbacks
     def test_basic(self):
         self.setup_step(LogChunksJanitor(logHorizon=timedelta(weeks=1)))

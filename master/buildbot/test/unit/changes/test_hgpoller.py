@@ -12,6 +12,7 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
+from __future__ import annotations
 
 import os
 
@@ -24,7 +25,6 @@ from buildbot.test.runprocess import ExpectMasterShell
 from buildbot.test.runprocess import MasterRunProcessMixin
 from buildbot.test.util import changesource
 
-ENVIRON_2116_KEY = 'TEST_THAT_ENVIRONMENT_GETS_PASSED_TO_SUBPROCESSES'
 LINESEP_BYTES = os.linesep.encode("ascii")
 PATHSEP_BYTES = os.pathsep.encode("ascii")
 
@@ -33,8 +33,8 @@ class TestHgPollerBase(
     MasterRunProcessMixin, changesource.ChangeSourceMixin, TestReactorMixin, unittest.TestCase
 ):
     usetimestamps = True
-    branches = None
-    bookmarks = None
+    branches: list[str] | None = None
+    bookmarks: list[str] | None = None
 
     @defer.inlineCallbacks
     def setUp(self):
@@ -42,10 +42,6 @@ class TestHgPollerBase(
         self.setup_master_run_process()
         yield self.setUpChangeSource()
 
-        # To test that environment variables get propagated to subprocesses
-        # (See #2116)
-        os.environ[ENVIRON_2116_KEY] = 'TRUE'
-        yield self.setUpChangeSource()
         self.remote_repo = 'ssh://example.com/foo/baz'
         self.remote_hgweb = 'http://example.com/foo/baz/rev/{}'
         self.repo_ready = True
@@ -53,6 +49,14 @@ class TestHgPollerBase(
         def _isRepositoryReady():
             return self.repo_ready
 
+        self.create_hgpoller()
+        yield self.poller.setServiceParent(self.master)
+        self.poller._isRepositoryReady = _isRepositoryReady
+
+        yield self.master.startService()
+        self.addCleanup(self.master.stopService)
+
+    def create_hgpoller(self):
         self.poller = hgpoller.HgPoller(
             self.remote_repo,
             usetimestamps=self.usetimestamps,
@@ -61,15 +65,6 @@ class TestHgPollerBase(
             bookmarks=self.bookmarks,
             revlink=lambda branch, revision: self.remote_hgweb.format(revision),
         )
-        yield self.poller.setServiceParent(self.master)
-        self.poller._isRepositoryReady = _isRepositoryReady
-
-        yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
-        yield self.tearDownChangeSource()
 
     @defer.inlineCallbacks
     def check_current_rev(self, wished, branch='default'):
@@ -274,10 +269,6 @@ class TestHgPollerBookmarks(TestHgPollerBase):
 
 
 class TestHgPoller(TestHgPollerBase):
-    def tearDown(self):
-        del os.environ[ENVIRON_2116_KEY]
-        return self.tearDownChangeSource()
-
     def gpoFullcommandPattern(self, commandName, *expected_args):
         """Match if the command is commandName and arg list start as expected.
 
@@ -310,10 +301,6 @@ class TestHgPoller(TestHgPollerBase):
     @defer.inlineCallbacks
     def test_poll_initial(self):
         self.repo_ready = False
-        # Test that environment variables get propagated to subprocesses
-        # (See #2116)
-        expected_env = {ENVIRON_2116_KEY: 'TRUE'}
-        self.add_run_process_expect_env(expected_env)
         self.expect_commands(
             ExpectMasterShell(['hg', 'init', '/some/dir']),
             ExpectMasterShell(['hg', 'pull', '-b', 'default', 'ssh://example.com/foo/baz']).workdir(
@@ -460,3 +447,18 @@ class HgPollerNoTimestamp(TestHgPoller):
     """Test HgPoller() without parsing revision commit timestamp"""
 
     usetimestamps = False
+
+
+class HgPollerCategoryCallable(TestHgPoller):
+    """Test HgPoller() with callable category"""
+
+    def create_hgpoller(self):
+        self.poller = hgpoller.HgPoller(
+            self.remote_repo,
+            usetimestamps=self.usetimestamps,
+            workdir='/some/dir',
+            branches=self.branches,
+            bookmarks=self.bookmarks,
+            category=lambda _: 'category',
+            revlink=lambda branch, revision: self.remote_hgweb.format(revision),
+        )

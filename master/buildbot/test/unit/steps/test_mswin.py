@@ -38,9 +38,6 @@ class TestRobocopySimple(TestBuildStepMixin, TestReactorMixin, unittest.TestCase
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def _run_simple_test(
         self,
         source,

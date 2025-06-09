@@ -30,9 +30,10 @@ class TestResultsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = test_results.TestResultsEndpoint
     resourceTypeClass = test_results.TestResult
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Worker(id=47, name='linux'),
             fakedb.Buildset(id=20),
             fakedb.Builder(id=88, name='b1'),
@@ -78,9 +79,6 @@ class TestResultsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             ),
         ])
 
-    def tearDown(self):
-        self.tearDownEndpoint()
-
     @defer.inlineCallbacks
     def test_get_existing_results(self):
         results = yield self.callGet(('test_result_sets', 13, 'results'))
@@ -95,10 +93,23 @@ class TestResultsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
 
 class TestResult(TestReactorMixin, interfaces.InterfaceTests, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
         self.rtype = test_results.TestResult(self.master)
+        yield self.master.db.insert_test_data([
+            fakedb.Worker(id=47, name='linux'),
+            fakedb.Buildset(id=20),
+            fakedb.Builder(id=88, name='b1'),
+            fakedb.BuildRequest(id=41, buildsetid=20, builderid=88),
+            fakedb.Master(id=88),
+            fakedb.Build(
+                id=30, buildrequestid=41, number=7, masterid=88, builderid=88, workerid=47
+            ),
+            fakedb.Step(id=131, number=132, name='step132', buildid=30),
+            fakedb.TestResultSet(id=13, builderid=88, buildid=30, stepid=131),
+        ])
 
     def test_signature_add_test_results(self):
         @self.assertArgSpecMatches(
@@ -126,6 +137,7 @@ class TestResult(TestReactorMixin, interfaces.InterfaceTests, unittest.TestCase)
         results = yield self.master.db.test_results.getTestResults(
             builderid=88, test_result_setid=13
         )
+        results = sorted(results, key=lambda result: result.id)
         resultid = results[0].id
         self.assertEqual(
             results,

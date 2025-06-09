@@ -12,6 +12,7 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
+from __future__ import annotations
 
 import os
 import xml.dom.minidom
@@ -58,7 +59,7 @@ prefix_output_2 = b"""\
 """
 
 # this is the svn info output for a local repository, svn info --xml
-# file:///home/warner/stuff/Projects/Buildbot/trees/svnpoller/_trial_temp/test_vc/repositories/SVN-Repository  # noqa pylint: disable=line-too-long
+# file:///home/warner/stuff/Projects/Buildbot/trees/svnpoller/_trial_temp/test_vc/repositories/SVN-Repository
 prefix_output_3 = b"""\
 <?xml version="1.0"?>
 <info>
@@ -80,7 +81,7 @@ prefix_output_3 = b"""\
 </info>
 """
 
-# % svn info --xml file:///home/warner/stuff/Projects/Buildbot/trees/svnpoller/_trial_temp/test_vc/repositories/SVN-Repository/sample/trunk  # noqa pylint: disable=line-too-long
+# % svn info --xml file:///home/warner/stuff/Projects/Buildbot/trees/svnpoller/_trial_temp/test_vc/repositories/SVN-Repository/sample/trunk
 
 prefix_output_4 = b"""\
 <?xml version="1.0"?>
@@ -101,7 +102,7 @@ prefix_output_4 = b"""\
 </commit>
 </entry>
 </info>
-"""  # noqa pylint: disable=line-too-long
+"""
 
 
 # output from svn log on .../SVN-Repository/sample
@@ -110,7 +111,7 @@ sample_base = (
     "file:///usr/home/warner/stuff/Projects/Buildbot/trees/misc/"
     + "_trial_temp/test_vc/repositories/SVN-Repository/sample"
 )
-sample_logentries = [None] * 6
+sample_logentries: list[bytes | None] = [None] * 6
 
 sample_logentries[5] = b"""\
 <logentry
@@ -251,7 +252,7 @@ def split_file(path):
         return {"branch": 'branch', "path": '/'.join(pieces[1:])}
     if pieces[0] == "trunk":
         return {"path": '/'.join(pieces[1:])}
-    raise RuntimeError(f"there shouldn't be any files like {repr(path)}")
+    raise RuntimeError(f"there shouldn't be any files like {path!r}")
 
 
 class TestSVNPoller(
@@ -261,9 +262,6 @@ class TestSVNPoller(
         self.setup_test_reactor()
         self.setup_master_run_process()
         return self.setUpChangeSource()
-
-    def tearDown(self):
-        return self.tearDownChangeSource()
 
     @defer.inlineCallbacks
     def attachSVNPoller(self, *args, **kwargs):
@@ -503,8 +501,8 @@ class TestSVNPoller(
                     'comments': 'make_branch',
                     'files': [''],
                     'project': '',
-                    'properties': {},
-                    'repository': 'file:///usr/home/warner/stuff/Projects/Buildbot/trees/misc/_trial_temp/test_vc/repositories/SVN-Repository/sample',  # noqa pylint: disable=line-too-long
+                    'properties': None,
+                    'repository': 'file:///usr/home/warner/stuff/Projects/Buildbot/trees/misc/_trial_temp/test_vc/repositories/SVN-Repository/sample',
                     'revision': '2',
                     'revlink': '',
                     'src': 'svn',
@@ -530,8 +528,8 @@ class TestSVNPoller(
                     'comments': 'commit_on_branch',
                     'files': ['çmain.c'],
                     'project': '',
-                    'properties': {},
-                    'repository': 'file:///usr/home/warner/stuff/Projects/Buildbot/trees/misc/_trial_temp/test_vc/repositories/SVN-Repository/sample',  # noqa pylint: disable=line-too-long
+                    'properties': None,
+                    'repository': 'file:///usr/home/warner/stuff/Projects/Buildbot/trees/misc/_trial_temp/test_vc/repositories/SVN-Repository/sample',
                     'revision': '3',
                     'revlink': '',
                     'src': 'svn',
@@ -546,8 +544,8 @@ class TestSVNPoller(
                     'comments': 'revised_to_2',
                     'files': ['version.c'],
                     'project': '',
-                    'properties': {},
-                    'repository': 'file:///usr/home/warner/stuff/Projects/Buildbot/trees/misc/_trial_temp/test_vc/repositories/SVN-Repository/sample',  # noqa pylint: disable=line-too-long
+                    'properties': None,
+                    'repository': 'file:///usr/home/warner/stuff/Projects/Buildbot/trees/misc/_trial_temp/test_vc/repositories/SVN-Repository/sample',
                     'revision': '4',
                     'revlink': '',
                     'src': 'svn',
@@ -645,7 +643,7 @@ class TestSVNPoller(
         self.assertEqual(s.last_change, 33)
 
         s.last_change = 44
-        s.finished_ok(None)
+        s.finished_ok()
         with open(cachepath, encoding='utf-8') as f:
             self.assertEqual(f.read().strip(), '44')
 

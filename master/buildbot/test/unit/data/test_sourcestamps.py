@@ -25,9 +25,10 @@ class SourceStampEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = sourcestamps.SourceStampEndpoint
     resourceTypeClass = sourcestamps.SourceStamp
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.SourceStamp(id=13, branch='oak'),
             fakedb.Patch(
                 id=99,
@@ -39,9 +40,6 @@ class SourceStampEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             ),
             fakedb.SourceStamp(id=14, patchid=99, branch='poplar'),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get_existing(self):
@@ -80,9 +78,10 @@ class SourceStampsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = sourcestamps.SourceStampsEndpoint
     resourceTypeClass = sourcestamps.SourceStamp
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Buildset(id=30, reason="foo", submitted_at=1300305712, results=-1),
             fakedb.SourceStamp(id=13),
             fakedb.SourceStamp(id=14),
@@ -90,9 +89,6 @@ class SourceStampsEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.BuildsetSourceStamp(sourcestampid=13, buildsetid=30),
             fakedb.BuildsetSourceStamp(sourcestampid=14, buildsetid=30),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get(self):

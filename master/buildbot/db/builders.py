@@ -23,6 +23,7 @@ import sqlalchemy as sa
 from twisted.internet import defer
 
 from buildbot.db import base
+from buildbot.util.sautils import hash_columns
 from buildbot.warnings import warn_deprecated
 
 
@@ -57,7 +58,7 @@ class BuilderModel:
 class BuildersConnectorComponent(base.DBConnectorComponent):
     def findBuilderId(self, name, autoCreate=True):
         tbl = self.db.model.builders
-        name_hash = self.hashColumns(name)
+        name_hash = hash_columns(name)
         return self.findSomethingId(
             tbl=tbl,
             whereclause=(tbl.c.name_hash == name_hash),
@@ -149,6 +150,7 @@ class BuildersConnectorComponent(base.DBConnectorComponent):
         self,
         masterid: int | None = None,
         projectid: int | None = None,
+        workerid: int | None = None,
         _builderid: int | None = None,
     ) -> defer.Deferred[list[BuilderModel]]:
         def thd(conn) -> list[BuilderModel]:
@@ -156,6 +158,7 @@ class BuildersConnectorComponent(base.DBConnectorComponent):
             bm_tbl = self.db.model.builder_masters
             builders_tags_tbl = self.db.model.builders_tags
             tags_tbl = self.db.model.tags
+            configured_workers_tbl = self.db.model.configured_workers
 
             j = bldr_tbl.outerjoin(bm_tbl)
             # if we want to filter by masterid, we must join to builder_masters
@@ -164,6 +167,8 @@ class BuildersConnectorComponent(base.DBConnectorComponent):
             if masterid is not None:
                 limiting_bm_tbl = bm_tbl.alias('limiting_bm')
                 j = j.join(limiting_bm_tbl, onclause=bldr_tbl.c.id == limiting_bm_tbl.c.builderid)
+            if workerid is not None:
+                j = j.join(configured_workers_tbl)
             q = (
                 sa.select(
                     bldr_tbl.c.id,
@@ -182,6 +187,8 @@ class BuildersConnectorComponent(base.DBConnectorComponent):
                 q = q.where(limiting_bm_tbl.c.masterid == masterid)
             if projectid is not None:
                 q = q.where(bldr_tbl.c.projectid == projectid)
+            if workerid is not None:
+                q = q.where(configured_workers_tbl.c.workerid == workerid)
             if _builderid is not None:
                 q = q.where(bldr_tbl.c.id == _builderid)
 

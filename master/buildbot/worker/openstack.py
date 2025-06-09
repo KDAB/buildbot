@@ -224,7 +224,7 @@ class OpenStackLatentWorker(CompatibleLatentWorkerMixin, AbstractLatentWorker):
             image = nova.glance.get(source_uuid)
             if hasattr(image, 'OS-EXT-IMG-SIZE:size'):
                 size = getattr(image, 'OS-EXT-IMG-SIZE:size')
-                size_gb = int(math.ceil(size / 1024.0**3))
+                size_gb = math.ceil(size / 1024.0**3)
                 return size_gb
         elif source_type == 'volume':
             # Volumes are easy because they are already in GiB.
@@ -234,9 +234,7 @@ class OpenStackLatentWorker(CompatibleLatentWorkerMixin, AbstractLatentWorker):
             snap = nova.volume_snapshots.get(source_uuid)
             return snap.size
         else:
-            unknown_source = (
-                f"The source type '{source_type}' for UUID '{source_uuid}' is " "unknown"
-            )
+            unknown_source = f"The source type '{source_type}' for UUID '{source_uuid}' is unknown"
             raise ValueError(unknown_source)
         return None
 

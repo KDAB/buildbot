@@ -26,10 +26,11 @@ class TestTestResultSubmitter(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True)
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
 
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Worker(id=47, name='linux'),
             fakedb.Buildset(id=20),
             fakedb.Builder(id=88, name='b1'),
@@ -40,10 +41,6 @@ class TestTestResultSubmitter(TestReactorMixin, unittest.TestCase):
             ),
             fakedb.Step(id=131, number=132, name='step132', buildid=30),
         ])
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
 
     @defer.inlineCallbacks
     def test_complete_empty(self):
@@ -124,7 +121,7 @@ class TestTestResultSubmitter(TestReactorMixin, unittest.TestCase):
             list(results),
             [
                 {
-                    'test_resultid': 1002,
+                    'test_resultid': 1,
                     'builderid': 88,
                     'test_result_setid': setid,
                     'test_name': 'name1',

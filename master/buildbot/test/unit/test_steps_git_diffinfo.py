@@ -35,9 +35,6 @@ class TestDiffInfo(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_merge_base_failure(self):
         self.setup_step(gitdiffinfo.GitDiffInfo())
         self.expect_commands(

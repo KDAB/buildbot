@@ -15,14 +15,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from twisted.internet import defer
 from twisted.trial import unittest
 
 from buildbot.db import sourcestamps
 from buildbot.test import fakedb
-from buildbot.test.util import connector_component
-from buildbot.test.util import interfaces
+from buildbot.test.fake import fakemaster
+from buildbot.test.reactor import TestReactorMixin
 from buildbot.util import epoch2datetime
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from buildbot.test.fakedb import FakeDBConnector
 
 CREATED_AT = 927845299
 
@@ -31,43 +38,14 @@ def sourceStampKey(sourceStamp: sourcestamps.SourceStampModel):
     return (sourceStamp.repository, sourceStamp.branch, sourceStamp.created_at)
 
 
-class Tests(interfaces.InterfaceTests):
-    def test_signature_findSourceStampId(self):
-        @self.assertArgSpecMatches(self.db.sourcestamps.findSourceStampId)
-        def findSourceStampId(
-            self,
-            branch=None,
-            revision=None,
-            repository=None,
-            project=None,
-            codebase=None,
-            patch_body=None,
-            patch_level=None,
-            patch_author=None,
-            patch_comment=None,
-            patch_subdir=None,
-        ):
-            pass
+class Tests(TestReactorMixin, unittest.TestCase):
+    db: FakeDBConnector
 
-    def test_signature_getSourceStamp(self):
-        @self.assertArgSpecMatches(self.db.sourcestamps.getSourceStamp)
-        def getSourceStamp(self, key, no_cache=False):
-            pass
-
-    def test_signature_getSourceStamps(self):
-        @self.assertArgSpecMatches(self.db.sourcestamps.getSourceStamps)
-        def getSourceStamps(self):
-            pass
-
-    def test_signature_getSourceStampsForBuild(self):
-        @self.assertArgSpecMatches(self.db.sourcestamps.getSourceStampsForBuild)
-        def getSourceStampsForBuild(self, buildid):
-            pass
-
-    def test_signature_get_sourcestamps_for_buildset(self):
-        @self.assertArgSpecMatches(self.db.sourcestamps.get_sourcestamps_for_buildset)
-        def get_sourcestamps_for_buildset(self, buildsetid):
-            pass
+    @defer.inlineCallbacks
+    def setUp(self):
+        self.setup_test_reactor()
+        self.master = yield fakemaster.make_master(self, wantDb=True)
+        self.db = self.master.db
 
     @defer.inlineCallbacks
     def test_findSourceStampId_simple(self):
@@ -188,7 +166,7 @@ class Tests(interfaces.InterfaceTests):
 
     @defer.inlineCallbacks
     def test_getSourceStamp_simple(self):
-        yield self.insert_test_data([
+        yield self.db.insert_test_data([
             fakedb.SourceStamp(
                 id=234,
                 branch='br',
@@ -218,7 +196,7 @@ class Tests(interfaces.InterfaceTests):
     @defer.inlineCallbacks
     def test_getSourceStamp_simple_None(self):
         "check that NULL branch and revision are handled correctly"
-        yield self.insert_test_data([
+        yield self.db.insert_test_data([
             fakedb.SourceStamp(
                 id=234, branch=None, revision=None, repository='rep', codebase='cb', project='prj'
             ),
@@ -229,8 +207,8 @@ class Tests(interfaces.InterfaceTests):
         self.assertEqual((ssdict.branch, ssdict.revision), (None, None))
 
     @defer.inlineCallbacks
-    def test_getSourceStamp_patch(self):
-        yield self.insert_test_data([
+    def test_getSourceStamp_patch(self) -> Generator[defer.Deferred, None, None]:
+        yield self.db.insert_test_data([
             fakedb.Patch(
                 id=99,
                 patch_base64='aGVsbG8sIHdvcmxk',
@@ -241,7 +219,9 @@ class Tests(interfaces.InterfaceTests):
             ),
             fakedb.SourceStamp(id=234, patchid=99),
         ])
-        ssdict: sourcestamps.SourceStampModel = yield self.db.sourcestamps.getSourceStamp(234)
+        res = yield self.db.sourcestamps.getSourceStamp(234)
+        assert res is not None
+        ssdict = res
 
         self.assertIsInstance(ssdict, sourcestamps.SourceStampModel)
         self.assertIsInstance(ssdict.patch, sourcestamps.PatchModel)
@@ -259,7 +239,7 @@ class Tests(interfaces.InterfaceTests):
 
     @defer.inlineCallbacks
     def test_getSourceStamps(self):
-        yield self.insert_test_data([
+        yield self.db.insert_test_data([
             fakedb.Patch(
                 id=99,
                 patch_base64='aGVsbG8sIHdvcmxk',
@@ -335,7 +315,7 @@ class Tests(interfaces.InterfaceTests):
 
     @defer.inlineCallbacks
     def test_get_sourcestamps_for_buildset_one_codebase(self):
-        yield self.insert_test_data([
+        yield self.db.insert_test_data([
             fakedb.Master(id=88, name="bar"),
             fakedb.Worker(id=13, name="one"),
             fakedb.Builder(id=77, name="A"),
@@ -365,7 +345,7 @@ class Tests(interfaces.InterfaceTests):
 
     @defer.inlineCallbacks
     def test_get_sourcestamps_for_buildset_three_codebases(self):
-        yield self.insert_test_data([
+        yield self.db.insert_test_data([
             fakedb.Master(id=88, name="bar"),
             fakedb.Worker(id=13, name="one"),
             fakedb.Builder(id=77, name="A"),
@@ -419,7 +399,7 @@ class Tests(interfaces.InterfaceTests):
 
     @defer.inlineCallbacks
     def do_test_getSourceStampsForBuild(self, rows, buildid, expected):
-        yield self.insert_test_data(rows)
+        yield self.db.insert_test_data(rows)
 
         sourcestamps = yield self.db.sourcestamps.getSourceStampsForBuild(buildid)
 
@@ -527,37 +507,3 @@ class Tests(interfaces.InterfaceTests):
             ),
         ]
         return self.do_test_getSourceStampsForBuild(rows, 50, expected)
-
-
-class RealTests(Tests):
-    pass
-
-
-class TestFakeDB(unittest.TestCase, connector_component.FakeConnectorComponentMixin, Tests):
-    @defer.inlineCallbacks
-    def setUp(self):
-        yield self.setUpConnectorComponent()
-
-
-class TestRealDB(unittest.TestCase, connector_component.ConnectorComponentMixin, RealTests):
-    @defer.inlineCallbacks
-    def setUp(self):
-        yield self.setUpConnectorComponent(
-            table_names=[
-                'sourcestamps',
-                'patches',
-                "projects",
-                'masters',
-                'workers',
-                'buildsets',
-                'builders',
-                'buildrequests',
-                'buildset_sourcestamps',
-                'builds',
-            ]
-        )
-
-        self.db.sourcestamps = sourcestamps.SourceStampsConnectorComponent(self.db)
-
-    def tearDown(self):
-        return self.tearDownConnectorComponent()

@@ -32,13 +32,21 @@ class TestHttpStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixin,
     def setUp(self):
         self.setup_test_reactor()
         self.setup_reporter_test()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def createReporter(self, auth=("username", "passwd"), headers=None, **kwargs):
         self._http = yield fakehttpclientservice.HTTPClientService.getService(
-            self.master, self, "serv", auth=auth, headers=headers, debug=None, verify=None
+            self.master,
+            self,
+            "serv",
+            auth=auth,
+            headers=headers,
+            debug=None,
+            verify=None,
+            skipEncoding=False,
         )
 
         interpolated_auth = None
@@ -49,10 +57,6 @@ class TestHttpStatusPush(TestReactorMixin, unittest.TestCase, ReporterTestMixin,
 
         self.sp = HttpStatusPush("serv", auth=interpolated_auth, headers=headers, **kwargs)
         yield self.sp.setServiceParent(self.master)
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
 
     @defer.inlineCallbacks
     def test_basic(self):

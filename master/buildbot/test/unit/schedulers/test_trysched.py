@@ -16,11 +16,9 @@
 import json
 import os
 import shutil
-import sys
 from io import StringIO
 from unittest import mock
 
-import twisted
 from twisted.internet import defer
 from twisted.protocols import basic
 from twisted.trial import unittest
@@ -35,12 +33,10 @@ class TryBase(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
     OBJECTID = 26
     SCHEDULERID = 6
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpScheduler()
-
-    def tearDown(self):
-        self.tearDownScheduler()
+        yield self.setUpScheduler()
 
     def makeScheduler(self, **kwargs):
         return self.attachScheduler(
@@ -61,9 +57,10 @@ class TryBase(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_enabled_callback(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='tsched', builderNames=['a'], port='tcp:9999', userpass=[('fred', 'derf')]
         )
+        yield sched.configureService()
         expectedValue = not sched.enabled
         yield sched._enabledCallback(None, {'enabled': not sched.enabled})
         self.assertEqual(sched.enabled, expectedValue)
@@ -73,7 +70,7 @@ class TryBase(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_disabled_activate(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='tsched', builderNames=['a'], port='tcp:9999', userpass=[('fred', 'derf')]
         )
         yield sched._enabledCallback(None, {'enabled': not sched.enabled})
@@ -83,7 +80,7 @@ class TryBase(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_disabled_deactivate(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='tsched', builderNames=['a'], port='tcp:9999', userpass=[('fred', 'derf')]
         )
         yield sched._enabledCallback(None, {'enabled': not sched.enabled})
@@ -99,9 +96,6 @@ class JobdirService(dirs.DirsMixin, unittest.TestCase):
         self.curdir = os.path.join(self.jobdir, 'cur')
         self.tmpdir = os.path.join(self.jobdir, 'tmp')
         self.setUpDirs(self.jobdir, self.newdir, self.curdir, self.tmpdir)
-
-    def tearDown(self):
-        self.tearDownDirs()
 
     def test_messageReceived(self):
         # stub out svc.scheduler.handleJobFile and .jobdir
@@ -129,18 +123,19 @@ class Try_Jobdir(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
     OBJECTID = 23
     SCHEDULERID = 3
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpScheduler()
+        yield self.setUpScheduler()
         self.jobdir = None
 
     def tearDown(self):
-        self.tearDownScheduler()
         if self.jobdir:
             shutil.rmtree(self.jobdir)
 
     # tests
 
+    @defer.inlineCallbacks
     def setup_test_startService(self, jobdir, exp_jobdir):
         # set up jobdir
         self.jobdir = os.path.abspath('jobdir')
@@ -150,7 +145,7 @@ class Try_Jobdir(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
 
         # build scheduler
         kwargs = {"name": 'tsched', "builderNames": ['a'], "jobdir": self.jobdir}
-        sched = self.attachScheduler(
+        sched = yield self.attachScheduler(
             trysched.Try_Jobdir(**kwargs),
             self.OBJECTID,
             self.SCHEDULERID,
@@ -176,22 +171,25 @@ class Try_Jobdir(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
         self.assertEqual(1, self.sched.watcher.startService.call_count)
         self.assertEqual(1, self.sched.watcher.stopService.call_count)
 
+    @defer.inlineCallbacks
     def test_startService_reldir(self):
-        self.setup_test_startService('jobdir', os.path.abspath('basedir/jobdir'))
-        return self.do_test_startService()
+        yield self.setup_test_startService('jobdir', os.path.abspath('basedir/jobdir'))
+        yield self.do_test_startService()
 
+    @defer.inlineCallbacks
     def test_startService_reldir_subdir(self):
-        self.setup_test_startService('jobdir', os.path.abspath('basedir/jobdir/cur'))
-        return self.do_test_startService()
+        yield self.setup_test_startService('jobdir', os.path.abspath('basedir/jobdir/cur'))
+        yield self.do_test_startService()
 
+    @defer.inlineCallbacks
     def test_startService_absdir(self):
-        self.setup_test_startService(os.path.abspath('jobdir'), os.path.abspath('jobdir'))
-        return self.do_test_startService()
+        yield self.setup_test_startService(os.path.abspath('jobdir'), os.path.abspath('jobdir'))
+        yield self.do_test_startService()
 
     @defer.inlineCallbacks
     def do_test_startService_but_not_active(self, jobdir, exp_jobdir):
         """Same as do_test_startService, but the master wont activate this service"""
-        self.setup_test_startService('jobdir', os.path.abspath('basedir/jobdir'))
+        yield self.setup_test_startService('jobdir', os.path.abspath('basedir/jobdir'))
 
         self.setSchedulerToMaster(self.OTHER_MASTER_ID)
 
@@ -459,10 +457,13 @@ class Try_Jobdir(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
         self.assertEqual(parsedjob['branch'], None)
         self.assertEqual(parsedjob['baserev'], None)
 
+    @defer.inlineCallbacks
     def test_parseJob_v3_no_builders(self):
         sched = trysched.Try_Jobdir(
             name='tsched', builderNames=['buildera', 'builderb'], jobdir='foo'
         )
+        yield self.attachScheduler(sched, self.OBJECTID, self.SCHEDULERID)
+        yield self.master.startService()
         jobstr = self.makeNetstring(
             '3',
             'extid',
@@ -477,10 +478,13 @@ class Try_Jobdir(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
         parsedjob = sched.parseJob(StringIO(jobstr))
         self.assertEqual(parsedjob['builderNames'], [])
 
+    @defer.inlineCallbacks
     def test_parseJob_v3_no_properties(self):
         sched = trysched.Try_Jobdir(
             name='tsched', builderNames=['buildera', 'builderb'], jobdir='foo'
         )
+        yield self.attachScheduler(sched, self.OBJECTID, self.SCHEDULERID)
+        yield self.master.startService()
         jobstr = self.makeNetstring(
             '3',
             'extid',
@@ -709,14 +713,16 @@ class Try_Jobdir(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
 
     # handleJobFile
 
+    @defer.inlineCallbacks
     def call_handleJobFile(self, parseJob):
-        sched = self.attachScheduler(
+        sched = yield self.attachScheduler(
             trysched.Try_Jobdir(name='tsched', builderNames=['buildera', 'builderb'], jobdir='foo'),
             self.OBJECTID,
             self.SCHEDULERID,
             overrideBuildsetMethods=True,
             createBuilderDB=True,
         )
+        yield self.master.startService()
         fakefile = mock.Mock()
 
         def parseJob_(f):
@@ -724,7 +730,7 @@ class Try_Jobdir(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
             return parseJob(f)
 
         sched.parseJob = parseJob_
-        return defer.maybeDeferred(sched.handleJobFile, 'fakefile', fakefile)
+        yield sched.handleJobFile('fakefile', fakefile)
 
     def makeSampleParsedJob(self, **overrides):
         pj = {
@@ -785,11 +791,6 @@ class Try_Jobdir(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
 
         self.assertEqual(self.addBuildsetCalls, [])
         self.assertEqual(1, len(self.flushLoggedErrors(trysched.BadJobfile)))
-
-    if twisted.version.major <= 9 and sys.version_info[:2] >= (2, 7):
-        test_handleJobFile_exception.skip = (
-            "flushLoggedErrors does not work correctly on 9.0.0 and earlier with Python-2.7"
-        )
 
     @defer.inlineCallbacks
     def test_handleJobFile_bad_builders(self):
@@ -863,21 +864,22 @@ class Try_Jobdir(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
             ],
         )
 
+    @defer.inlineCallbacks
     def test_handleJobFile_with_invalid_try_properties(self):
-        d = self.call_handleJobFile(lambda f: self.makeSampleParsedJob(properties=['foo', 'bar']))
-        return self.assertFailure(d, AttributeError)
+        with self.assertRaises(AttributeError):
+            yield self.call_handleJobFile(
+                lambda f: self.makeSampleParsedJob(properties=['foo', 'bar'])
+            )
 
 
 class Try_Userpass_Perspective(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
     OBJECTID = 26
     SCHEDULERID = 6
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpScheduler()
-
-    def tearDown(self):
-        self.tearDownScheduler()
+        yield self.setUpScheduler()
 
     def makeScheduler(self, **kwargs):
         return self.attachScheduler(
@@ -890,7 +892,7 @@ class Try_Userpass_Perspective(scheduler.SchedulerMixin, TestReactorMixin, unitt
 
     @defer.inlineCallbacks
     def call_perspective_try(self, *args, **kwargs):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='tsched',
             builderNames=['a', 'b'],
             port='xxx',
@@ -903,7 +905,7 @@ class Try_Userpass_Perspective(scheduler.SchedulerMixin, TestReactorMixin, unitt
         def getBuildset(bsid):
             return {"bsid": bsid}
 
-        self.db.buildsets.getBuildset = getBuildset
+        self.master.db.buildsets.getBuildset = getBuildset
 
         rbss = yield persp.perspective_try(*args, **kwargs)
 
@@ -1035,7 +1037,7 @@ class Try_Userpass_Perspective(scheduler.SchedulerMixin, TestReactorMixin, unitt
 
     @defer.inlineCallbacks
     def test_getAvailableBuilderNames(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='tsched', builderNames=['a', 'b'], port='xxx', userpass=[('a', 'b')]
         )
         persp = trysched.Try_Userpass_Perspective(sched, 'a')
@@ -1048,22 +1050,21 @@ class Try_Userpass(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase
     OBJECTID = 25
     SCHEDULERID = 5
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpScheduler()
+        yield self.setUpScheduler()
 
-    def tearDown(self):
-        self.tearDownScheduler()
-
+    @defer.inlineCallbacks
     def makeScheduler(self, **kwargs):
-        sched = self.attachScheduler(
+        sched = yield self.attachScheduler(
             trysched.Try_Userpass(**kwargs), self.OBJECTID, self.SCHEDULERID
         )
         return sched
 
     @defer.inlineCallbacks
     def test_service(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='tsched', builderNames=['a'], port='tcp:9999', userpass=[('fred', 'derf')]
         )
         # patch out the pbmanager's 'register' command both to be sure
@@ -1088,7 +1089,7 @@ class Try_Userpass(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase
 
     @defer.inlineCallbacks
     def test_service_but_not_active(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='tsched', builderNames=['a'], port='tcp:9999', userpass=[('fred', 'derf')]
         )
 

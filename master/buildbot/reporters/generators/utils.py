@@ -13,6 +13,11 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import ClassVar
+
 from twisted.internet import defer
 from twisted.python import log
 
@@ -26,6 +31,9 @@ from buildbot.process.results import WARNINGS
 from buildbot.process.results import statusToString
 from buildbot.warnings import warn_deprecated
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 class BuildStatusGeneratorMixin(util.ComparableMixin):
     possible_modes = (
@@ -38,7 +46,7 @@ class BuildStatusGeneratorMixin(util.ComparableMixin):
         "cancelled",
     )
 
-    compare_attrs = [
+    compare_attrs: ClassVar[Sequence[str]] = [
         'mode',
         'tags',
         'builders',

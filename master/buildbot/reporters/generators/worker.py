@@ -13,6 +13,11 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import ClassVar
+
 from twisted.internet import defer
 from zope.interface import implementer
 
@@ -21,12 +26,15 @@ from buildbot import interfaces
 from buildbot import util
 from buildbot.reporters.message import MessageFormatterMissingWorker
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 ENCODING = 'utf-8'
 
 
 @implementer(interfaces.IReportGenerator)
 class WorkerMissingGenerator(util.ComparableMixin):
-    compare_attrs = ['workers', 'formatter']
+    compare_attrs: ClassVar[Sequence[str]] = ['workers', 'formatter']
 
     wanted_event_keys = [
         ('workers', None, 'missing'),

@@ -88,6 +88,20 @@ class BrDict(BuildRequestModel):
 
 
 class BuildRequestsConnectorComponent(base.DBConnectorComponent):
+    def _simple_sa_select_query(self):
+        reqs_tbl = self.db.model.buildrequests
+        claims_tbl = self.db.model.buildrequest_claims
+        builder_tbl = self.db.model.builders
+
+        from_clause = reqs_tbl.outerjoin(claims_tbl, reqs_tbl.c.id == claims_tbl.c.brid)
+        from_clause = from_clause.join(builder_tbl, reqs_tbl.c.builderid == builder_tbl.c.id)
+
+        return sa.select(
+            reqs_tbl,
+            claims_tbl,
+            builder_tbl.c.name.label('buildername'),
+        ).select_from(from_clause)
+
     def _saSelectQuery(self):
         reqs_tbl = self.db.model.buildrequests
         claims_tbl = self.db.model.buildrequest_claims
@@ -114,7 +128,7 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
     def getBuildRequest(self, brid) -> defer.Deferred[BuildRequestModel | None]:
         def thd(conn) -> BuildRequestModel | None:
             reqs_tbl = self.db.model.buildrequests
-            q = self._saSelectQuery()
+            q = self._simple_sa_select_query()
             q = q.where(reqs_tbl.c.id == brid)
             res = conn.execute(q)
             row = res.fetchone()
@@ -185,6 +199,10 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
         else:
             claimed_at = int(self.master.reactor.seconds())
 
+        yield self._claim_buildrequests_for_master(brids, claimed_at, self.db.master.masterid)
+
+    @defer.inlineCallbacks
+    def _claim_buildrequests_for_master(self, brids, claimed_at, masterid):
         def thd(conn):
             transaction = conn.begin()
             tbl = self.db.model.buildrequest_claims
@@ -193,10 +211,7 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
                 q = tbl.insert()
                 conn.execute(
                     q,
-                    [
-                        {"brid": id, "masterid": self.db.master.masterid, "claimed_at": claimed_at}
-                        for id in brids
-                    ],
+                    [{"brid": id, "masterid": masterid, "claimed_at": claimed_at} for id in brids],
                 )
             except (sa.exc.IntegrityError, sa.exc.ProgrammingError) as e:
                 transaction.rollback()
@@ -206,7 +221,12 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
 
         yield self.db.pool.do(thd)
 
-    def unclaimBuildRequests(self, brids) -> defer.Deferred[None]:
+    @defer.inlineCallbacks
+    def unclaimBuildRequests(self, brids):
+        yield self._unclaim_buildrequests_for_master(brids, self.db.master.masterid)
+
+    @defer.inlineCallbacks
+    def _unclaim_buildrequests_for_master(self, brids, masterid):
         def thd(conn):
             transaction = conn.begin()
             claims_tbl = self.db.model.buildrequest_claims
@@ -223,7 +243,7 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
                 try:
                     q = claims_tbl.delete().where(
                         claims_tbl.c.brid.in_(batch),
-                        claims_tbl.c.masterid == self.db.master.masterid,
+                        claims_tbl.c.masterid == masterid,
                     )
                     conn.execute(q)
                 except Exception:
@@ -232,7 +252,7 @@ class BuildRequestsConnectorComponent(base.DBConnectorComponent):
 
             transaction.commit()
 
-        return self.db.pool.do(thd)
+        yield self.db.pool.do(thd)
 
     @defer.inlineCallbacks
     def completeBuildRequests(self, brids, results, complete_at=None):

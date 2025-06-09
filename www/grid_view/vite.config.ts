@@ -1,7 +1,8 @@
-import {resolve} from "path";
-import {defineConfig} from "vite";
-import react from "@vitejs/plugin-react";
-import { ModuleFormat } from "rollup";
+import {resolve} from 'path';
+import {defineConfig} from 'vite';
+import checker from 'vite-plugin-checker';
+import react from '@vitejs/plugin-react';
+import {ModuleFormat} from 'rollup';
 
 const outDir = 'buildbot_grid_view/static';
 
@@ -10,10 +11,11 @@ export default defineConfig({
     react({
       babel: {
         parserOpts: {
-          plugins: ['decorators-legacy', 'classProperties']
-        }
-      }
+          plugins: ['decorators-legacy', 'classProperties'],
+        },
+      },
     }),
+    checker({typescript: true, eslint: {lintCommand: 'eslint', useFlatConfig: true}}),
   ],
   define: {
     'process.env.NODE_ENV': '"production"',
@@ -21,9 +23,9 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: "buildbotGridViewPlugin",
-      formats: ["umd"],
-      fileName: "scripts",
+      name: 'buildbotGridViewPlugin',
+      formats: ['umd'],
+      fileName: 'scripts',
     },
     rollupOptions: {
       external: [
@@ -42,16 +44,16 @@ export default defineConfig({
         assetFileNames: 'styles.css',
         entryFileNames: 'scripts.js',
         globals: {
-          axios: "axios",
-          "buildbot-data-js": "BuildbotDataJs",
-          "buildbot-plugin-support": "BuildbotPluginSupport",
-          "buildbot-ui": "BuildbotUi",
-          mobx: "mobx",
-          "mobx-react": "mobxReact",
-          react: "React",
-          moment: "moment",
-          "react-dom": "ReactDOM",
-          "react-router-dom": "ReactRouterDOM",
+          axios: 'axios',
+          'buildbot-data-js': 'BuildbotDataJs',
+          'buildbot-plugin-support': 'BuildbotPluginSupport',
+          'buildbot-ui': 'BuildbotUi',
+          mobx: 'mobx',
+          'mobx-react': 'mobxReact',
+          react: 'React',
+          moment: 'moment',
+          'react-dom': 'ReactDOM',
+          'react-router-dom': 'ReactRouterDOM',
         },
       },
     },
@@ -60,6 +62,13 @@ export default defineConfig({
     emptyOutDir: true,
   },
   test: {
-    environment: "jsdom"
+    environment: 'jsdom',
+    // required to fake nextTick: https://vitest.dev/guide/migration.html#timer-mocks-3925
+    pool: 'threads',
+    poolOptions: {
+      threads: {
+        singleThread: true,
+      },
+    }
   },
 });

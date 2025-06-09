@@ -32,21 +32,18 @@ class SchedulerEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = schedulers.SchedulerEndpoint
     resourceTypeClass = schedulers.Scheduler
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Master(id=22, active=0),
             fakedb.Master(id=33, active=1),
             fakedb.Scheduler(id=13, name='some:scheduler'),
-            fakedb.SchedulerMaster(schedulerid=13, masterid=None),
             fakedb.Scheduler(id=14, name='other:scheduler'),
             fakedb.SchedulerMaster(schedulerid=14, masterid=22),
             fakedb.Scheduler(id=15, name='another:scheduler'),
             fakedb.SchedulerMaster(schedulerid=15, masterid=33),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get_existing(self):
@@ -97,13 +94,13 @@ class SchedulersEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = schedulers.SchedulersEndpoint
     resourceTypeClass = schedulers.Scheduler
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Master(id=22, active=0),
             fakedb.Master(id=33, active=1),
             fakedb.Scheduler(id=13, name='some:scheduler'),
-            fakedb.SchedulerMaster(schedulerid=13, masterid=None),
             fakedb.Scheduler(id=14, name='other:scheduler'),
             fakedb.SchedulerMaster(schedulerid=14, masterid=22),
             fakedb.Scheduler(id=15, name='another:scheduler'),
@@ -111,9 +108,6 @@ class SchedulersEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.Scheduler(id=16, name='wholenother:scheduler'),
             fakedb.SchedulerMaster(schedulerid=16, masterid=33),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get(self):
@@ -141,9 +135,10 @@ class SchedulersEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
 
 class Scheduler(TestReactorMixin, interfaces.InterfaceTests, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
         self.rtype = schedulers.Scheduler(self.master)
 
     def test_signature_schedulerEnable(self):
@@ -171,7 +166,7 @@ class Scheduler(TestReactorMixin, interfaces.InterfaceTests, unittest.TestCase):
                         'active': False,
                         'last_active': epoch2datetime(SOMETIME),
                         'masterid': 22,
-                        'name': 'some:master',
+                        'name': 'master-22',
                     },
                     'name': 'some:scheduler',
                     'schedulerid': 13,
@@ -188,7 +183,7 @@ class Scheduler(TestReactorMixin, interfaces.InterfaceTests, unittest.TestCase):
                         'active': False,
                         'last_active': epoch2datetime(SOMETIME),
                         'masterid': 22,
-                        'name': 'some:master',
+                        'name': 'master-22',
                     },
                     'name': 'some:scheduler',
                     'schedulerid': 13,
@@ -259,5 +254,5 @@ class Scheduler(TestReactorMixin, interfaces.InterfaceTests, unittest.TestCase):
             fakedb.SchedulerMaster(schedulerid=14, masterid=22),
         ])
         yield self.rtype._masterDeactivated(22)
-        self.master.db.schedulers.assertSchedulerMaster(13, None)
-        self.master.db.schedulers.assertSchedulerMaster(14, None)
+        self.assertIsNone((yield self.master.db.schedulers.get_scheduler_master(13)))
+        self.assertIsNone((yield self.master.db.schedulers.get_scheduler_master(14)))

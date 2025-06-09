@@ -25,6 +25,8 @@ import sys
 import textwrap
 import time
 from typing import TYPE_CHECKING
+from typing import ClassVar
+from typing import overload
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
@@ -39,8 +41,11 @@ from buildbot.util.misc import deferredLocked
 from ._notifier import Notifier
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from typing import ClassVar
-    from typing import Sequence
+    from typing import TypeVar
+
+    _T = TypeVar('_T')
 
 
 def naturalSort(array):
@@ -163,7 +168,7 @@ class ComparableMixin:
         return hash(tuple(map(str, alist)))
 
     def _cmp_common(self, them):
-        if type(self) != type(them):
+        if type(self) is not type(them):
             return (False, None, None)
 
         if self.__class__ != them.__class__:
@@ -260,13 +265,29 @@ def none_or_str(x):
     return x
 
 
+@overload
+def unicode2bytes(x: str, encoding='utf-8', errors='strict') -> bytes: ...
+
+
+@overload
+def unicode2bytes(x: _T, encoding='utf-8', errors='strict') -> _T: ...
+
+
 def unicode2bytes(x, encoding='utf-8', errors='strict'):
     if isinstance(x, str):
         x = x.encode(encoding, errors)
     return x
 
 
-def bytes2unicode(x, encoding='utf-8', errors='strict'):
+@overload
+def bytes2unicode(x: None, encoding='utf-8', errors='strict') -> None: ...
+
+
+@overload
+def bytes2unicode(x: bytes | str, encoding='utf-8', errors='strict') -> str: ...
+
+
+def bytes2unicode(x: str | bytes | None, encoding='utf-8', errors='strict') -> str | None:
     if isinstance(x, (str, type(None))):
         return x
     return str(x, encoding, errors)
@@ -286,12 +307,12 @@ def toJson(obj):
 # is always false.
 
 
-class NotABranch:
+class _NotABranch:
     def __bool__(self):
         return False
 
 
-NotABranch = NotABranch()
+NotABranch = _NotABranch()
 
 # time-handling methods
 
@@ -306,7 +327,15 @@ def epoch2datetime(epoch):
     return None
 
 
-def datetime2epoch(dt):
+@overload
+def datetime2epoch(dt: datetime.datetime) -> int: ...
+
+
+@overload
+def datetime2epoch(dt: None) -> None: ...
+
+
+def datetime2epoch(dt: datetime.datetime | None) -> int | None:
     """Convert a non-naive datetime object to a UNIX epoch timestamp"""
     if dt is not None:
         return calendar.timegm(dt.utctimetuple())
@@ -445,10 +474,8 @@ def command_to_string(command):
 
     try:
         len(words)
-    except (AttributeError, TypeError):
+    except TypeError:
         # WithProperties and Property don't have __len__
-        # For old-style classes instances AttributeError raised,
-        # for new-style classes instances - TypeError.
         return None
 
     # flatten any nested lists
@@ -523,22 +550,22 @@ def dictionary_merge(a, b):
 
 
 __all__ = [
-    'naturalSort',
-    'now',
-    'formatInterval',
-    'ComparableMixin',
-    'safeTranslate',
-    'none_or_str',
-    'NotABranch',
-    'deferredLocked',
     'UTC',
-    'diffSets',
-    'makeList',
-    'in_reactor',
-    'string2boolean',
-    'check_functional_environment',
-    'human_readable_delta',
-    'rewrap',
+    'ComparableMixin',
+    'NotABranch',
     'Notifier',
+    'check_functional_environment',
+    'deferredLocked',
+    'diffSets',
+    'formatInterval',
     "giturlparse",
+    'human_readable_delta',
+    'in_reactor',
+    'makeList',
+    'naturalSort',
+    'none_or_str',
+    'now',
+    'rewrap',
+    'safeTranslate',
+    'string2boolean',
 ]

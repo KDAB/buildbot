@@ -95,9 +95,13 @@ Contact Information
 Maintainer/author: gary.poster@canonical.com
 """
 
+from __future__ import annotations
+
 # Work around Twisted bug.
 # See http://twistedmatrix.com/trac/ticket/3591
 import socket
+from typing import TYPE_CHECKING
+from typing import ClassVar
 
 import bzrlib.branch
 import bzrlib.errors
@@ -112,6 +116,9 @@ import twisted.python.log
 import twisted.spread.pb
 from twisted.internet import defer
 from twisted.python import failure
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 try:
     import buildbot.changes.base
@@ -198,7 +205,7 @@ if DEFINE_POLLER:
     SHORT = object()
 
     class BzrPoller(buildbot.changes.base.PollingChangeSource, buildbot.util.ComparableMixin):
-        compare_attrs = 'url'
+        compare_attrs: ClassVar[Sequence[str]] = 'url'
 
         def __init__(
             self,
@@ -405,7 +412,7 @@ def send_change(branch, old_revno, old_revid, new_revno, new_revid, hook):
     # if dry run, stop.
     if _is_true(config, DRYRUN_KEY):
         bzrlib.trace.note(
-            "bzr_buildbot DRY RUN " "(*not* sending changes to %s:%d on %s)", server, port, hook
+            "bzr_buildbot DRY RUN (*not* sending changes to %s:%d on %s)", server, port, hook
         )
         keys = sorted(change.keys())
         for k in keys:

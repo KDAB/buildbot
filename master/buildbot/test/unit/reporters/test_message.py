@@ -158,20 +158,24 @@ class TestMessageFormatting(unittest.TestCase):
 
 
 class MessageFormatterTestBase(TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
+    @defer.inlineCallbacks
     def setup_db(self, results1, results2, with_steps=False, extra_build_properties=None):
         if extra_build_properties is None:
             extra_build_properties = {}
 
-        self.db = self.master.db
-        self.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Master(id=92),
             fakedb.Worker(id=13, name='wrkr'),
             fakedb.Buildset(id=98, results=results1, reason="testReason1"),
             fakedb.Buildset(id=99, results=results2, reason="testReason2"),
+            fakedb.SourceStamp(id=1, branch='master', revision='1234abcd'),
+            fakedb.BuildsetSourceStamp(buildsetid=98, sourcestampid=1),
+            fakedb.BuildsetSourceStamp(buildsetid=99, sourcestampid=1),
             fakedb.Builder(id=80, name='Builder1'),
             fakedb.BuildRequest(id=11, buildsetid=98, builderid=80),
             fakedb.BuildRequest(id=12, buildsetid=99, builderid=80),
@@ -195,18 +199,18 @@ class MessageFormatterTestBase(TestReactorMixin, unittest.TestCase):
             ),
         ])
         for build_id in (20, 21):
-            self.db.insert_test_data([
+            yield self.master.db.insert_test_data([
                 fakedb.BuildProperty(buildid=build_id, name="workername", value="wrkr"),
                 fakedb.BuildProperty(buildid=build_id, name="reason", value="because"),
             ])
 
             for name, value in extra_build_properties.items():
-                self.db.insert_test_data([
+                yield self.master.db.insert_test_data([
                     fakedb.BuildProperty(buildid=build_id, name=name, value=value),
                 ])
 
         if with_steps:
-            self.db.insert_test_data([
+            yield self.master.db.insert_test_data([
                 fakedb.Step(id=151, buildid=21, number=1, results=SUCCESS, name='first step'),
                 fakedb.Step(id=152, buildid=21, number=2, results=results2, name='second step'),
                 fakedb.Step(id=153, buildid=21, number=3, results=SUCCESS, name='third step'),
@@ -225,7 +229,7 @@ class MessageFormatterTestBase(TestReactorMixin, unittest.TestCase):
         with_steps=False,
         extra_build_properties=None,
     ):
-        self.setup_db(
+        yield self.setup_db(
             lastresults,
             results,
             with_steps=with_steps,
@@ -258,7 +262,7 @@ class MessageFormatterTestBase(TestReactorMixin, unittest.TestCase):
         with_steps=False,
         extra_build_properties=None,
     ):
-        self.setup_db(
+        yield self.setup_db(
             lastresults,
             results,
             with_steps=with_steps,
@@ -290,6 +294,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
     def test_message_success_plain_no_steps(self):
         formatter = message.MessageFormatter()
         res = yield self.do_one_test(formatter, SUCCESS, SUCCESS)
+
         self.assertEqual(
             res,
             {
@@ -297,7 +302,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
                 'subject': '☺ Buildbot (Buildbot): Builder1 - test ((unknown revision))',
                 "extra_info": None,
                 'body': textwrap.dedent("""\
-                A passing build has been detected on builder Builder1 while building Buildbot.
+                A passing build has been detected on builder Builder1 while building proj.
 
                 Full details are available at:
                     http://localhost:8080/#/builders/80/builds/1
@@ -332,7 +337,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
                 'subject': '☺ Buildbot (Buildbot): Builder1 - test (abcd1234)',
                 "extra_info": None,
                 'body': textwrap.dedent("""\
-                A passing build has been detected on builder Builder1 while building Buildbot.
+                A passing build has been detected on builder Builder1 while building proj.
 
                 Full details are available at:
                     http://localhost:8080/#/builders/80/builds/1
@@ -373,7 +378,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
                 'body': textwrap.dedent("""\
                 <p>A passing build has been detected on builder
                 <a href="http://localhost:8080/#/builders/80/builds/1">Builder1</a>
-                while building Buildbot.</p>
+                while building proj.</p>
                 <p>Information:</p>
                 <ul>
                     <li>Build state: test</li>
@@ -410,7 +415,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
                 'body': textwrap.dedent("""\
                 <p>A passing build has been detected on builder
                 <a href="http://localhost:8080/#/builders/80/builds/1">Builder1</a>
-                while building Buildbot.</p>
+                while building proj.</p>
                 <p>Information:</p>
                 <ul>
                     <li>Build state: test</li>
@@ -441,7 +446,7 @@ class TestMessageFormatter(MessageFormatterTestBase):
                     )
                     </li>
 
-                </ul>"""),  # noqa pylint: disable=line-too-long
+                </ul>"""),
             },
         )
 

@@ -26,7 +26,7 @@ from buildbot.www import avatar
 
 class TestAvatar(avatar.AvatarBase):
     def getUserAvatar(self, email, username, size, defaultAvatarUrl):
-        user_avatar = f'{repr(email)} {repr(size)} {repr(defaultAvatarUrl)}'.encode()
+        user_avatar = f'{email!r} {size!r} {defaultAvatarUrl!r}'.encode()
         return defer.succeed((b"image/png", user_avatar))
 
 
@@ -36,7 +36,7 @@ class AvatarResource(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_default(self):
-        master = self.make_master(url='http://a/b/', auth=auth.NoAuth(), avatar_methods=[])
+        master = yield self.make_master(url='http://a/b/', auth=auth.NoAuth(), avatar_methods=[])
         rsrc = avatar.AvatarResource(master)
         rsrc.reconfigResource(master.config)
 
@@ -45,7 +45,7 @@ class AvatarResource(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_gravatar(self):
-        master = self.make_master(
+        master = yield self.make_master(
             url='http://a/b/', auth=auth.NoAuth(), avatar_methods=[avatar.AvatarGravatar()]
         )
         rsrc = avatar.AvatarResource(master)
@@ -62,36 +62,36 @@ class AvatarResource(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_avatar_call(self):
-        master = self.make_master(
+        master = yield self.make_master(
             url='http://a/b/', auth=auth.NoAuth(), avatar_methods=[TestAvatar()]
         )
         rsrc = avatar.AvatarResource(master)
         rsrc.reconfigResource(master.config)
 
         res = yield self.render_resource(rsrc, b'/?email=foo')
-        self.assertEqual(res, b"b'foo' 32 b'http://a/b/img/nobody.png'")
+        self.assertEqual(res, b"b'foo' 32 'http://a/b/img/nobody.png'")
 
     @defer.inlineCallbacks
     def test_custom_size(self):
-        master = self.make_master(
+        master = yield self.make_master(
             url='http://a/b/', auth=auth.NoAuth(), avatar_methods=[TestAvatar()]
         )
         rsrc = avatar.AvatarResource(master)
         rsrc.reconfigResource(master.config)
 
         res = yield self.render_resource(rsrc, b'/?email=foo&size=64')
-        self.assertEqual(res, b"b'foo' 64 b'http://a/b/img/nobody.png'")
+        self.assertEqual(res, b"b'foo' 64 'http://a/b/img/nobody.png'")
 
     @defer.inlineCallbacks
     def test_invalid_size(self):
-        master = self.make_master(
+        master = yield self.make_master(
             url='http://a/b/', auth=auth.NoAuth(), avatar_methods=[TestAvatar()]
         )
         rsrc = avatar.AvatarResource(master)
         rsrc.reconfigResource(master.config)
 
         res = yield self.render_resource(rsrc, b'/?email=foo&size=abcd')
-        self.assertEqual(res, b"b'foo' 32 b'http://a/b/img/nobody.png'")
+        self.assertEqual(res, b"b'foo' 32 'http://a/b/img/nobody.png'")
 
     @defer.inlineCallbacks
     def test_custom_not_found(self):
@@ -100,7 +100,7 @@ class AvatarResource(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
             def getUserAvatar(self, email, username, size, defaultAvatarUrl):
                 return defer.succeed(None)
 
-        master = self.make_master(
+        master = yield self.make_master(
             url=b'http://a/b/',
             auth=auth.NoAuth(),
             avatar_methods=[CustomAvatar(), avatar.AvatarGravatar()],
@@ -328,8 +328,7 @@ github_commit_search_reply = {
                 "git/trees{/sha}",
                 "statuses_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "statuses/{sha}",
-                "languages_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
-                "languages",
+                "languages_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/languages",
                 "stargazers_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "stargazers",
                 "contributors_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
@@ -353,18 +352,15 @@ github_commit_search_reply = {
                 "merges_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/merges",
                 "archive_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "{archive_format}{/ref}",
-                "downloads_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
-                "downloads",
+                "downloads_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/downloads",
                 "issues_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "issues{/number}",
-                "pulls_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
-                "pulls{/number}",
+                "pulls_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/pulls{/number}",
                 "milestones_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "milestones{/number}",
                 "notifications_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "notifications{?since,all,participating}",
-                "labels_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
-                "labels{/name}",
+                "labels_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/labels{/name}",
                 "releases_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "releases{/id}",
                 "deployments_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
@@ -477,8 +473,7 @@ github_commit_search_no_user_reply = {
                 "git/trees{/sha}",
                 "statuses_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "statuses/{sha}",
-                "languages_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
-                "languages",
+                "languages_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/languages",
                 "stargazers_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "stargazers",
                 "contributors_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
@@ -502,18 +497,15 @@ github_commit_search_no_user_reply = {
                 "merges_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/merges",
                 "archive_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "{archive_format}{/ref}",
-                "downloads_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
-                "downloads",
+                "downloads_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/downloads",
                 "issues_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "issues{/number}",
-                "pulls_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
-                "pulls{/number}",
+                "pulls_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/pulls{/number}",
                 "milestones_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "milestones{/number}",
                 "notifications_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "notifications{?since,all,participating}",
-                "labels_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
-                "labels{/name}",
+                "labels_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/labels{/name}",
                 "releases_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
                 "releases{/id}",
                 "deployments_url": "https://api.github.com/repos/defunkt-org/defunkt-repo/"
@@ -532,7 +524,7 @@ class GitHubAvatar(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
     def setUp(self):
         self.setup_test_reactor()
 
-        master = self.make_master(
+        master = yield self.make_master(
             url='http://a/b/',
             auth=auth.NoAuth(),
             avatar_methods=[avatar.AvatarGitHub(token="abcd")],
@@ -551,13 +543,10 @@ class GitHubAvatar(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
             avatar.AvatarGitHub.DEFAULT_GITHUB_API_URL,
             headers=headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def test_username(self):
@@ -641,8 +630,7 @@ class GitHubAvatar(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
             headers={'Accept': 'application/vnd.github.v3+json'},
         )
         commit_search_endpoint = (
-            '/search/commits?'
-            'per_page=1&q=author-email%3Adefunkt%40defunkt.com&sort=committer-date'
+            '/search/commits?per_page=1&q=author-email%3Adefunkt%40defunkt.com&sort=committer-date'
         )
         self._http.expect(
             'get',
@@ -667,8 +655,7 @@ class GitHubAvatar(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
             headers={'Accept': 'application/vnd.github.v3+json'},
         )
         commit_search_endpoint = (
-            '/search/commits?'
-            'per_page=1&q=author-email%3Adefunkt%40defunkt.com&sort=committer-date'
+            '/search/commits?per_page=1&q=author-email%3Adefunkt%40defunkt.com&sort=committer-date'
         )
         self._http.expect(
             'get',
@@ -691,8 +678,7 @@ class GitHubAvatar(TestReactorMixin, www.WwwTestMixin, unittest.TestCase):
             headers={'Accept': 'application/vnd.github.v3+json'},
         )
         commit_search_endpoint = (
-            '/search/commits?'
-            'per_page=1&q=author-email%3Anotfound%40defunkt.com&sort=committer-date'
+            '/search/commits?per_page=1&q=author-email%3Anotfound%40defunkt.com&sort=committer-date'
         )
         self._http.expect(
             'get',
@@ -735,7 +721,7 @@ class GitHubAvatarBasicAuth(TestReactorMixin, www.WwwTestMixin, unittest.TestCas
         self.setup_test_reactor()
 
         avatar_method = avatar.AvatarGitHub(client_id="oauth_id", client_secret="oauth_secret")
-        master = self.make_master(
+        master = yield self.make_master(
             url='http://a/b/', auth=auth.NoAuth(), avatar_methods=[avatar_method]
         )
 
@@ -753,13 +739,10 @@ class GitHubAvatarBasicAuth(TestReactorMixin, www.WwwTestMixin, unittest.TestCas
             avatar.AvatarGitHub.DEFAULT_GITHUB_API_URL,
             headers=headers,
             debug=False,
-            verify=False,
+            verify=True,
         )
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     def test_incomplete_credentials(self):
         with self.assertRaises(config.ConfigErrors):

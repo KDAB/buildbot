@@ -13,6 +13,8 @@
 #
 # Copyright Buildbot Team Members
 
+from pathlib import PureWindowsPath
+
 from parameterized import parameterized
 from twisted.internet import defer
 from twisted.internet import error
@@ -122,10 +124,7 @@ class TestSVN(sourcesteps.SourceStepMixin, TestReactorMixin, unittest.TestCase):
 
     def setUp(self):
         self.setup_test_reactor()
-        return self.setUpSourceStep()
-
-    def tearDown(self):
-        return self.tearDownSourceStep()
+        return self.setup_test_build_step()
 
     def patch_workerVersionIsOlderThan(self, result):
         self.patch(svn.SVN, 'workerVersionIsOlderThan', lambda x, y, z: result)
@@ -536,6 +535,7 @@ class TestSVN(sourcesteps.SourceStepMixin, TestReactorMixin, unittest.TestCase):
             )
         )
         self.build.path_module = namedModule("ntpath")
+        self.build.path_cls = PureWindowsPath
         self.expect_commands(
             ExpectShell(workdir='wkdir', command=['svn', '--version']).exit(0),
             ExpectStat(file=r'wkdir\.buildbot-patched', log_environ=True).exit(1),

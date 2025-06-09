@@ -8,7 +8,6 @@ label_mapping:
   latest: l
   PYTHON: py
   TESTS: t
-  DB_TYPE: db
   WORKER_PYTHON: wp
 env:
   global:
@@ -25,6 +24,8 @@ matrix:
     # ruff, docs first as they're more likely to find issues
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=ruff
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=docs
+    - env: PYTHON=3.9 TESTS=mypy
+    - env: PYTHON=3.9 TESTS=prettier
 
     # add js tests in separate job. Start it early because it is quite long
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=js_build NUM_CPU=2 MEMORY_SIZE=1G
@@ -36,14 +37,13 @@ matrix:
 
     # include "ci" string into the name of the status that is eventually submitted to Github, so
     # that the codecov.io service would wait until this build is finished before creating report.
-    - env: PYTHON=3.9 TREQ=22.2.0 TWISTED=21.2.0 SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
-    - env: PYTHON=3.9 TREQ=22.2.0 TWISTED=22.4.0 SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
+    - env: PYTHON=3.9 TREQ=22.2.0 TWISTED=24.7.0 SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=1.4.52 NUM_CPU=2 TESTS=trial
-    - env: PYTHON=3.8 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=ci/coverage
-    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
+    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=ci/coverage
     - env: PYTHON=3.10 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
     - env: PYTHON=3.11 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
     - env: PYTHON=3.12 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
+    - env: PYTHON=3.13 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=trial
 
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest NUM_CPU=2 TESTS=dev_virtualenv
 
@@ -51,19 +51,19 @@ matrix:
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=interop WORKER_PYTHON=3.9
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=interop WORKER_PYTHON=3.8
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=interop WORKER_PYTHON=3.7
-    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=interop WORKER_PYTHON=3.6
-    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=interop WORKER_PYTHON=3.5
 
-    # Worker tests on python and twisted package combinations.
+    # Worker tests on older python and twisted package combinations.
+    - env: PYTHON=3.7 TREQ=22.2.0 TWISTED=21.2.0 SQLALCHEMY=latest TESTS=trial_worker
+    - env: PYTHON=3.8 TREQ=22.2.0 TWISTED=21.2.0 SQLALCHEMY=latest TESTS=trial_worker
     - env: PYTHON=3.9 TREQ=22.2.0 TWISTED=21.2.0 SQLALCHEMY=latest TESTS=trial_worker
 
     # Configuration when SQLite database is persistent between running tests
     # (by default in other tests in-memory SQLite database is used which is
     # recreated for each test).
     # Helps to detect issues with incorrect database setup/cleanup in tests.
-    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=trial BUILDBOT_TEST_DB_URL=sqlite:////tmp/test_db{TEST_ID}.sqlite DB_TYPE=sqlite
-    # Configuration that runs tests with real MySQL database (TODO does not work yet with our docker image)
-    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=trial BUILDBOT_TEST_DB_URL=mysql+mysqldb://travis@127.0.0.1/bbtest{TEST_ID} DB_TYPE=mysql
+    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=trial BUILDBOT_TEST_DB_URL=sqlite:////scratch/test_db{TEST_ID}.sqlite
+    # Configuration that runs tests with real MySQL database
+    - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=trial BUILDBOT_TEST_DB_URL=mysql+mysqldb://travis@127.0.0.1/bbtest{TEST_ID}
     - env: PYTHON=3.9 TWISTED=latest SQLALCHEMY=latest TESTS=trial BUILDBOT_TEST_DB_URL=mysql+mysqldb://travis@127.0.0.1/bbtest{TEST_ID}?storage_engine=InnoDB
 
     # Configuration that runs tests with real PostgreSQL database with pg8000 and psycopg2 drivers
@@ -95,22 +95,28 @@ install:
     cmd: |
       set -e
       rm -rf /tmp/bbworkervenv
-      python$PYTHON -m venv /tmp/bbworkervenv
-      /tmp/bbworkervenv/bin/pip install -e worker
+      python$WORKER_PYTHON -m venv /tmp/bbworkervenv
+      /tmp/bbworkervenv/bin/pip install -r requirements-pip.txt
+      /tmp/bbworkervenv/bin/pip install -r requirements-ciworker.txt
   - title: pip installs for backward compat
     cmd: |
       # pip installs for backward compat
+      set -e
+      pkg_ver=""
       if [ ! -z "$TREQ" ]; then
-        /tmp/bbvenv/bin/pip install treq==$TREQ
+        pkg_ver="${pkg_ver} treq==$TREQ"
       fi
-      if [ $TWISTED = trunk ]; then
-          /tmp/bbvenv/bin/pip install git+https://github.com/twisted/twisted
+      if [ "$TWISTED" = "trunk" ]; then
+        pkg_ver="${pkg_ver} git+https://github.com/twisted/twisted"
+      elif [ ! -z "$TWISTED" -a "$TWISTED" != "latest" ]; then
+        pkg_ver="${pkg_ver} Twisted==$TWISTED"
       fi
-      if [ $TWISTED != latest -a  $TWISTED != trunk ]; then
-        /tmp/bbvenv/bin/pip install Twisted==$TWISTED
+      if [ ! -z "$SQLALCHEMY" -a "$SQLALCHEMY" != "latest" ]; then
+        pkg_ver="${pkg_ver} sqlalchemy==$SQLALCHEMY"
       fi
-      if [ $SQLALCHEMY != latest ]; then
-        /tmp/bbvenv/bin/pip install sqlalchemy==$SQLALCHEMY
+
+      if [ ! -z "$pkg_ver" ]; then
+        /tmp/bbvenv/bin/python -m pip install ${pkg_ver}
       fi
   - step: !ShellCommand
         command: "/tmp/bbvenv/bin/pip check"
@@ -173,6 +179,23 @@ script:
       export PATH=/tmp/bbvenv/bin/:$PATH
       ruff check `git ls-files |grep '.py$'` && \
       ruff format --check `git ls-files |grep '.py$'`
+
+  - title: prettier
+    condition: TESTS == "prettier"
+    cmd:  |
+      export PATH=/tmp/bbvenv/bin/:$PATH
+      make frontend_yarn_install
+      for subdir in www/base www/console_view www/grid_view www/waterfall_view www/wsgi_dashboards www/data-module www/ui; do \
+        cd $$subdir; \
+        $(YARN) run prettier -w src *.ts *.js --check; \
+        cd - > /dev/null; \
+      done
+
+  - title: mypy
+    condition: TESTS == "mypy"
+    cmd:  |
+      export PATH=/tmp/bbvenv/bin/:$PATH
+      make mypy
 
   # Build documentation
   - title: docs

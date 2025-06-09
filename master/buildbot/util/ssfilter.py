@@ -13,10 +13,17 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
+from typing import ClassVar
 
 from buildbot.util import ComparableMixin
 from buildbot.util import NotABranch
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def extract_filter_values(values, filter_name):
@@ -34,7 +41,7 @@ def extract_filter_values(values, filter_name):
 def extract_filter_values_branch(values, filter_name):
     if not isinstance(values, (list, str, type(None))):
         raise ValueError(
-            f"Values of filter {filter_name} must be list of strings, " "a string or None"
+            f"Values of filter {filter_name} must be list of strings, a string or None"
         )
     if isinstance(values, (str, type(None))):
         values = [values]
@@ -48,7 +55,7 @@ def extract_filter_values_branch(values, filter_name):
 def extract_filter_values_regex(values, filter_name):
     if not isinstance(values, (list, str, re.Pattern)):
         raise ValueError(
-            f"Values of filter {filter_name} must be list of strings, " "a string or regex"
+            f"Values of filter {filter_name} must be list of strings, a string or regex"
         )
     if isinstance(values, (str, re.Pattern)):
         values = [values]
@@ -72,7 +79,7 @@ def extract_filter_values_dict_regex(values, filter_name):
 
 
 class _FilterExactMatch(ComparableMixin):
-    compare_attrs = ('prop', 'values')
+    compare_attrs: ClassVar[Sequence[str]] = ('prop', 'values')
 
     def __init__(self, prop, values):
         self.prop = prop
@@ -86,7 +93,7 @@ class _FilterExactMatch(ComparableMixin):
 
 
 class _FilterExactMatchInverse(ComparableMixin):
-    compare_attrs = ('prop', 'values')
+    compare_attrs: ClassVar[Sequence[str]] = ('prop', 'values')
 
     def __init__(self, prop, values):
         self.prop = prop
@@ -100,7 +107,7 @@ class _FilterExactMatchInverse(ComparableMixin):
 
 
 class _FilterRegex(ComparableMixin):
-    compare_attrs = ('prop', 'regexes')
+    compare_attrs: ClassVar[Sequence[str]] = ('prop', 'regexes')
 
     def __init__(self, prop, regexes):
         self.prop = prop
@@ -124,7 +131,7 @@ class _FilterRegex(ComparableMixin):
 
 
 class _FilterRegexInverse(ComparableMixin):
-    compare_attrs = ('prop', 'regexes')
+    compare_attrs: ClassVar[Sequence[str]] = ('prop', 'regexes')
 
     def __init__(self, prop, regexes):
         self.prop = prop
@@ -211,7 +218,7 @@ def _create_property_filters(eq, not_eq, regex, not_regex, arg_prefix):
 
 
 class SourceStampFilter(ComparableMixin):
-    compare_attrs = (
+    compare_attrs: ClassVar[Sequence[str]] = (
         'filter_fn',
         'filters',
     )

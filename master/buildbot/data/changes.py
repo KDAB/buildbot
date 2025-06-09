@@ -16,8 +16,11 @@
 from __future__ import annotations
 
 import copy
-import json
 from typing import TYPE_CHECKING
+from typing import Any
+from typing import Callable
+from typing import Literal
+from typing import TypedDict
 
 from twisted.internet import defer
 from twisted.python import log
@@ -31,14 +34,41 @@ from buildbot.util import datetime2epoch
 from buildbot.util import epoch2datetime
 
 if TYPE_CHECKING:
+    from buildbot.data.sourcestamps import SourceStampData
     from buildbot.db.changes import ChangeModel
+    from buildbot.util.twisted import InlineCallbacksType
+
+
+class ChangeData(TypedDict):
+    changeid: int
+    author: str
+    committer: str | None
+    comments: str
+    branch: str | None
+    revision: str | None
+    revlink: str | None
+    when_timestamp: int
+    category: str | None
+    parent_changeids: list[int]
+    repository: str
+    codebase: str
+    project: str
+
+    files: list[str]
+    sourcestamp: SourceStampData
+    properties: dict[str, tuple[Any, Literal["Change"]]]
 
 
 class FixerMixin:
     @defer.inlineCallbacks
-    def _fixChange(self, model: ChangeModel, is_graphql: bool):
+    def _fixChange(self, model: ChangeModel) -> InlineCallbacksType[ChangeData]:
         # TODO: make these mods in the DB API
-        data = {
+        sskey = ('sourcestamps', str(model.sourcestampid))
+        assert hasattr(self, "master"), "FixerMixin requires a master attribute"
+        assert isinstance(self, base.Endpoint)
+        sourcestamp = yield self.master.data.get(sskey)
+
+        return {
             'changeid': model.changeid,
             'author': model.author,
             'committer': model.committer,
@@ -53,22 +83,9 @@ class FixerMixin:
             'codebase': model.codebase,
             'project': model.project,
             'files': model.files,
+            'sourcestamp': sourcestamp,
+            'properties': model.properties,
         }
-        if is_graphql:
-            data['sourcestampid'] = model.sourcestampid
-        else:
-            sskey = ('sourcestamps', str(model.sourcestampid))
-            data['sourcestamp'] = yield self.master.data.get(sskey)
-
-        if is_graphql:
-            data['properties'] = [
-                {'name': k, 'source': v[1], 'value': json.dumps(v[0])}
-                for k, v in model.properties.items()
-            ]
-        else:
-            data['properties'] = model.properties
-
-        return data
 
     fieldMapping = {
         'author': 'changes.author',
@@ -89,26 +106,26 @@ class FixerMixin:
 
 class ChangeEndpoint(FixerMixin, base.Endpoint):
     kind = base.EndpointKind.SINGLE
-    pathPatterns = """
-        /changes/n:changeid
-    """
+    pathPatterns = [
+        "/changes/n:changeid",
+    ]
 
     @defer.inlineCallbacks
     def get(self, resultSpec, kwargs):
         change = yield self.master.db.changes.getChange(kwargs['changeid'])
         if change is None:
             return None
-        return (yield self._fixChange(change, is_graphql='graphql' in kwargs))
+        return (yield self._fixChange(change))
 
 
 class ChangesEndpoint(FixerMixin, base.BuildNestingMixin, base.Endpoint):
     kind = base.EndpointKind.COLLECTION
-    pathPatterns = """
-        /changes
-        /builders/n:builderid/builds/n:build_number/changes
-        /builds/n:buildid/changes
-        /sourcestamps/n:ssid/changes
-    """
+    pathPatterns = [
+        "/changes",
+        "/builders/n:builderid/builds/n:build_number/changes",
+        "/builds/n:buildid/changes",
+        "/sourcestamps/n:ssid/changes",
+    ]
     rootLinkName = 'changes'
 
     @defer.inlineCallbacks
@@ -132,7 +149,7 @@ class ChangesEndpoint(FixerMixin, base.BuildNestingMixin, base.Endpoint):
                 changes = yield self.master.db.changes.getChanges(resultSpec=resultSpec)
         results = []
         for ch in changes:
-            results.append((yield self._fixChange(ch, is_graphql='graphql' in kwargs)))
+            results.append((yield self._fixChange(ch)))
         return results
 
 
@@ -140,11 +157,9 @@ class Change(base.ResourceType):
     name = "change"
     plural = "changes"
     endpoints = [ChangeEndpoint, ChangesEndpoint]
-    eventPathPatterns = """
-        /changes/:changeid
-    """
-    keyField = "changeid"
-    subresources = ["Build", "Property"]
+    eventPathPatterns = [
+        "/changes/:changeid",
+    ]
 
     class EntityType(types.Entity):
         changeid = types.Integer()
@@ -164,26 +179,27 @@ class Change(base.ResourceType):
         codebase = types.String()
         sourcestamp = sourcestamps.SourceStamp.entityType
 
-    entityType = EntityType(name, 'Change')
+    entityType = EntityType(name)
 
     @base.updateMethod
     @defer.inlineCallbacks
     def addChange(
         self,
-        files=None,
-        comments=None,
-        author=None,
-        committer=None,
-        revision=None,
-        when_timestamp=None,
-        branch=None,
-        category=None,
-        revlink='',
-        properties=None,
-        repository='',
-        codebase=None,
-        project='',
-        src=None,
+        files: list[str] | None = None,
+        comments: str | None = None,
+        author: str | None = None,
+        committer: str | None = None,
+        revision: str | None = None,
+        when_timestamp: int | None = None,
+        branch: str | None = None,
+        category: str | Callable | None = None,
+        revlink: str | None = '',
+        properties: dict[str, Any] | None = None,
+        repository: str = '',
+        codebase: str | None = None,
+        project: str = '',
+        src: str | None = None,
+        _test_changeid: int | None = None,
     ):
         metrics.MetricCountEvent.log("added_changes", 1)
 
@@ -257,6 +273,7 @@ class Change(base.ResourceType):
             codebase=codebase,
             project=project,
             uid=uid,
+            _test_changeid=_test_changeid,
         )
 
         # get the change and munge the result for the notification

@@ -15,18 +15,19 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 import weakref
 from unittest import mock
 
 from twisted.internet import defer
 from twisted.internet import reactor
 
-from buildbot import config
-from buildbot.data.graphql import GraphQLConnector
+from buildbot.config.master import DBConfig as MasterDBConfig
+from buildbot.config.master import MasterConfig
 from buildbot.secrets.manager import SecretManager
 from buildbot.test import fakedb
 from buildbot.test.fake import bworkermanager
-from buildbot.test.fake import endpoint
 from buildbot.test.fake import fakedata
 from buildbot.test.fake import fakemq
 from buildbot.test.fake import msgmanager
@@ -34,7 +35,9 @@ from buildbot.test.fake import pbmanager
 from buildbot.test.fake.botmaster import FakeBotMaster
 from buildbot.test.fake.machine import FakeMachineManager
 from buildbot.test.fake.secrets import FakeSecretStorage
+from buildbot.test.util.db import resolve_test_db_url
 from buildbot.util import service
+from buildbot.util.twisted import async_to_deferred
 
 
 class FakeCache:
@@ -86,16 +89,24 @@ class FakeMaster(service.MasterService):
     - Non-caching implementation for C{self.caches}
     """
 
-    def __init__(self, reactor, master_id=fakedb.FakeBuildRequestsComponent.MASTER_ID):
+    buildbotURL: str
+    db: fakedb.FakeDBConnector
+    mq: fakemq.FakeMQConnector
+    data: fakedata.FakeDataConnector
+    www: mock.Mock
+    _test_want_db: bool = False
+    _test_did_shutdown: bool = False
+
+    def __init__(self, reactor, basedir='basedir', master_id=fakedb.FakeDBConnector.MASTER_ID):
         super().__init__()
         self._master_id = master_id
         self.reactor = reactor
         self.objectids = {}
-        self.config = config.master.MasterConfig()
+        self.config = MasterConfig()
         self.caches = FakeCaches()
         self.pbmanager = pbmanager.FakePBManager()
         self.initLock = defer.DeferredLock()
-        self.basedir = 'basedir'
+        self.basedir = basedir
         self.botmaster = FakeBotMaster()
         self.botmaster.setServiceParent(self)
         self.name = 'fake:/master'
@@ -128,11 +139,27 @@ class FakeMaster(service.MasterService):
     def subscribeToBuildRequests(self, callback):
         pass
 
+    @defer.inlineCallbacks
+    def stopService(self):
+        yield super().stopService()
+        yield self.test_shutdown()
+
+    @defer.inlineCallbacks
+    def test_shutdown(self):
+        if self._test_did_shutdown:
+            return
+        self._test_did_shutdown = True
+        if self._test_want_db:
+            yield self.db._shutdown()
+        if os.path.isdir(self.basedir):
+            shutil.rmtree(self.basedir)
+
 
 # Leave this alias, in case we want to add more behavior later
 
 
-def make_master(
+@async_to_deferred
+async def make_master(
     testcase,
     wantMq=False,
     wantDb=False,
@@ -141,8 +168,14 @@ def make_master(
     wantGraphql=False,
     with_secrets: dict | None = None,
     url=None,
+    db_url=None,
+    sqlite_memory=True,
+    auto_upgrade=True,
+    auto_shutdown=True,
+    check_version=True,
+    auto_clean=True,
     **kwargs,
-):
+) -> FakeMaster:
     if wantRealReactor:
         _reactor = reactor
     else:
@@ -158,27 +191,36 @@ def make_master(
     if wantMq:
         assert testcase is not None, "need testcase for wantMq"
         master.mq = fakemq.FakeMQConnector(testcase)
-        master.mq.setServiceParent(master)
+        await master.mq.setServiceParent(master)
     if wantDb:
         assert testcase is not None, "need testcase for wantDb"
-        master.db = fakedb.FakeDBConnector(testcase, reactor=_reactor)
-        master.db.setServiceParent(master)
+        master.db = fakedb.FakeDBConnector(
+            master.basedir,
+            testcase,
+            auto_upgrade=auto_upgrade,
+            check_version=check_version,
+            auto_clean=auto_clean,
+        )
+        master._test_want_db = True
+
+        if auto_shutdown:
+            # Add before setup so that failed database setup would still be closed and wouldn't
+            # affect further tests
+            testcase.addCleanup(master.test_shutdown)
+
+        master.db.configured_db_config = MasterDBConfig(resolve_test_db_url(db_url, sqlite_memory))
+        if not os.path.exists(master.basedir):
+            os.makedirs(master.basedir)
+        await master.db.set_master(master)
+        await master.db.setup()
+
     if wantData:
         master.data = fakedata.FakeDataConnector(master, testcase)
-    if wantGraphql:
-        master.graphql = GraphQLConnector()
-        master.graphql.setServiceParent(master)
-        master.graphql.data = master.data.realConnector
-        master.data._scanModule(endpoint)
-        master.config.www = {'graphql': {"debug": True}}
-        try:
-            master.graphql.reconfigServiceWithBuildbotConfig(master.config)
-        except ImportError:
-            pass
+
     if with_secrets is not None:
         secret_service = SecretManager()
         secret_service.services = [FakeSecretStorage(secretdict=with_secrets)]
         # This should be awaited, but no other call to `setServiceParent` are awaited here
-        secret_service.setServiceParent(master)
+        await secret_service.setServiceParent(master)
 
     return master

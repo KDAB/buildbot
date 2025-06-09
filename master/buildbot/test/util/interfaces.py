@@ -12,10 +12,11 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
-
+from __future__ import annotations
 
 import inspect
 from collections import OrderedDict
+from typing import Callable
 
 import zope.interface.interface
 from zope.interface.interface import Attribute
@@ -23,6 +24,7 @@ from zope.interface.interface import Attribute
 
 class InterfaceTests:
     # assertions
+    assertEqual: Callable[..., None]
 
     def assertArgSpecMatches(self, actualMethod, *fakeMethods):
         """Usage::
@@ -95,10 +97,7 @@ class InterfaceTests:
         for interface in zope.interface.implementedBy(cls):
             for attr, template_argspec in interface.namesAndDescriptions():
                 if not hasattr(cls, attr):
-                    msg = (
-                        f"Expected: {repr(cls)}; to implement: {attr} as specified in "
-                        f"{repr(interface)}"
-                    )
+                    msg = f"Expected: {cls!r}; to implement: {attr} as specified in {interface!r}"
                     self.fail(msg)
                 actual_argspec = getattr(cls, attr)
                 if isinstance(template_argspec, Attribute):

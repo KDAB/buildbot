@@ -1,40 +1,58 @@
 @import '../../styles/colors.scss';
 
-.bb-logviewer-text-wrapper {
-  height: 100%;
-}
-
 .bb-logviewer-text-area {
   padding-left: 0.5em;
   background-color: #000;
   color: $bb-color-log-white;
   .padding {
     // zebra pattern
-    background: repeating-linear-gradient(-45deg,rgb(10, 10, 10),rgb(40, 40, 40) 7%, rgb(10,10,10) 10%)
+    background: repeating-linear-gradient(
+      -45deg,
+      rgb(10, 10, 10),
+      rgb(40, 40, 40) 7%,
+      rgb(10, 10, 10) 10%
+    );
   }
-  .log_o, .ansi_white, .ansi30 {
+  .log_o,
+  .ansi_white {
     color: $bb-color-log-white;
   }
-  .log_e, .ansi_red, .ansi31 {
+  // note: As log output window is always black and text always has to be visible, background and
+  // foreground text color ansi classes are reverted: ansi30 refers to white (whereas by SGR code 30
+  // is actually a black display) and ansi40 refers to black (whereas by SGR code 40 is actually a
+  // 40 black background).
+  .ansi30 {
+    color: $bb-color-log-white;
+  }
+  .log_e,
+  .ansi_red,
+  .ansi31 {
     color: #c91b00;
   }
-  .ansi_green, .ansi32 {
+  .ansi_green,
+  .ansi32 {
     color: #00c200;
   }
-  .ansi_yellow, .ansi33 {
+  .ansi_yellow,
+  .ansi33 {
     color: #c7c400;
   }
-  .ansi_blue, .ansi34 {
+  .ansi_blue,
+  .ansi34 {
     color: #0225c7;
   }
-  .ansi_magenta, .ansi35 {
+  .ansi_magenta,
+  .ansi35 {
     color: #ca30c7;
   }
-  .log_h, .ansi_cyan, .ansi36 {
+  .log_h,
+  .ansi_cyan,
+  .ansi36 {
     color: #00c5c7;
   }
   // bright colors
   .ansi1 {
+    font-weight: bold;
     &.ansi30 {
       color: #ffffff;
     }
@@ -57,10 +75,56 @@
       color: #60fdff;
     }
   }
+  .ansi40 {
+    background-color: #000000;
+  }
+  .ansi41 {
+    background-color: #c91b00;
+  }
+  .ansi42 {
+    background-color: #00c200;
+  }
+  .ansi43 {
+    background-color: #c7c400;
+  }
+  .ansi44 {
+    background-color: #0225c7;
+  }
+  .ansi45 {
+    background-color: #ca30c7;
+  }
+  .ansi46 {
+    background-color: #00c5c7;
+  }
+  // bright colors
+  .ansi1 {
+    font-weight: bold;
+    &.ansi40 {
+      background-color: #ffffff;
+    }
+    &.ansi41 {
+      background-color: #ff6e67;
+    }
+    &.ansi42 {
+      background-color: #5ffa68;
+    }
+    &.ansi43 {
+      background-color: #fffc67;
+    }
+    &.ansi44 {
+      background-color: #6871ff;
+    }
+    &.ansi45 {
+      background-color: #f075f0;
+    }
+    &.ansi47 {
+      background-color: #60fdff;
+    }
+  }
 }
 
 .bb-logviewer-text-row {
-  font-family: "Monaco", monospace;
+  font-family: 'Monaco', monospace;
 }
 
 .bb-logviewer-text-download-log {

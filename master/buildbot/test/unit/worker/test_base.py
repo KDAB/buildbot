@@ -13,6 +13,7 @@
 #
 # Copyright Buildbot Team Members
 
+from pathlib import PurePath
 from unittest import mock
 
 from parameterized import parameterized
@@ -68,6 +69,12 @@ class WorkerInterfaceTests(interfaces.InterfaceTests):
         self.assertTrue(hasattr(self.wrk, 'path_module'))
 
     @defer.inlineCallbacks
+    def test_attr_path_cls(self):
+        yield self.callAttached()
+        path_cls = self.wrk.path_cls
+        self.assertTrue(issubclass(path_cls, PurePath))
+
+    @defer.inlineCallbacks
     def test_attr_worker_system(self):
         yield self.callAttached()
         self.assertTrue(hasattr(self.wrk, 'worker_system'))
@@ -120,20 +127,22 @@ class RealWorkerItfc(TestReactorMixin, unittest.TestCase, WorkerInterfaceTests):
 
     @defer.inlineCallbacks
     def callAttached(self):
-        self.master = fakemaster.make_master(self, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantData=True)
         yield self.master.workers.disownServiceParent()
         self.workers = bworkermanager.FakeWorkerManager()
         yield self.workers.setServiceParent(self.master)
         self.master.workers = self.workers
         yield self.wrk.setServiceParent(self.master.workers)
+        yield self.master.startService()
         self.conn = fakeprotocol.FakeConnection(self.wrk)
         yield self.wrk.attached(self.conn)
 
 
 class FakeWorkerItfc(TestReactorMixin, unittest.TestCase, WorkerInterfaceTests):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self)
+        self.master = yield fakemaster.make_master(self)
         self.wrk = worker.FakeWorker(self.master)
 
     def callAttached(self):
@@ -146,7 +155,7 @@ class TestAbstractWorker(logging.LoggingMixin, TestReactorMixin, unittest.TestCa
     def setUp(self):
         self.setup_test_reactor()
         self.setUpLogging()
-        self.master = fakemaster.make_master(self, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantDb=True, wantData=True)
         self.botmaster = self.master.botmaster
         yield self.master.workers.disownServiceParent()
         self.workers = self.master.workers = bworkermanager.FakeWorkerManager()
@@ -316,9 +325,10 @@ class TestAbstractWorker(logging.LoggingMixin, TestReactorMixin, unittest.TestCa
 
         # we create a fake builder, and associate to the master
         self.botmaster.builders['bot'] = [FakeBuilder()]
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
             fakedb.Builder(id=1, name='builder'),
-            fakedb.BuilderMaster(builderid=1, masterid=824),
+            fakedb.BuilderMaster(builderid=1, masterid=fakedb.FakeDBConnector.MASTER_ID),
         ])
         # on reconfig, the db should see the builder configured for this worker
         yield old.reconfigServiceWithSibling(new)
@@ -481,7 +491,7 @@ class TestAbstractWorker(logging.LoggingMixin, TestReactorMixin, unittest.TestCa
     @defer.inlineCallbacks
     def test_startService_paused_true(self):
         """Test that paused state is restored on a buildbot restart"""
-        self.master.db.insert_test_data([fakedb.Worker(id=9292, name='bot', paused=1)])
+        yield self.master.db.insert_test_data([fakedb.Worker(id=9292, name='bot', paused=1)])
 
         worker = yield self.createWorker()
 
@@ -493,7 +503,7 @@ class TestAbstractWorker(logging.LoggingMixin, TestReactorMixin, unittest.TestCa
     @defer.inlineCallbacks
     def test_startService_graceful_true(self):
         """Test that graceful state is NOT restored on a buildbot restart"""
-        self.master.db.insert_test_data([fakedb.Worker(id=9292, name='bot', graceful=1)])
+        yield self.master.db.insert_test_data([fakedb.Worker(id=9292, name='bot', graceful=1)])
 
         worker = yield self.createWorker()
 
@@ -515,7 +525,7 @@ class TestAbstractWorker(logging.LoggingMixin, TestReactorMixin, unittest.TestCa
 
     @defer.inlineCallbacks
     def test_startService_getWorkerInfo_fromDb(self):
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Worker(
                 id=9292,
                 name='bot',
@@ -596,7 +606,7 @@ class TestAbstractWorker(logging.LoggingMixin, TestReactorMixin, unittest.TestCa
     @defer.inlineCallbacks
     def test_attached_workerInfoUpdates(self):
         # put in stale info:
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Worker(
                 name='bot',
                 info={
@@ -683,7 +693,9 @@ class TestAbstractWorker(logging.LoggingMixin, TestReactorMixin, unittest.TestCa
         self.assertNotEqual(worker.missing_timer, None)
         yield self.reactor.advance(1)
         self.assertEqual(worker.missing_timer, None)
-        self.assertEqual(len(self.master.data.updates.missingWorkers), 1)
+        self.assertEqual(
+            [key for key, _ in self.master.mq.productions], [('workers', '1', 'missing')]
+        )
 
     @defer.inlineCallbacks
     def test_missing_timer_stopped(self):
@@ -692,7 +704,7 @@ class TestAbstractWorker(logging.LoggingMixin, TestReactorMixin, unittest.TestCa
         self.assertNotEqual(worker.missing_timer, None)
         yield worker.stopService()
         self.assertEqual(worker.missing_timer, None)
-        self.assertEqual(len(self.master.data.updates.missingWorkers), 0)
+        self.assertEqual([key for key, _ in self.master.mq.productions], [])
 
     @defer.inlineCallbacks
     def test_worker_actions_stop(self):
@@ -916,7 +928,7 @@ class TestAbstractLatentWorker(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantDb=True, wantData=True)
         self.botmaster = self.master.botmaster
         yield self.master.workers.disownServiceParent()
         self.workers = self.master.workers = bworkermanager.FakeWorkerManager()

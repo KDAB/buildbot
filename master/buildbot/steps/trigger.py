@@ -145,10 +145,10 @@ class Trigger(BuildStep):
         # this allow to quickly find schedulers instance by name
         schedulers = self.master.scheduler_manager.namedServices
         if name not in schedulers:
-            raise ValueError(f"unknown triggered scheduler: {repr(name)}")
+            raise ValueError(f"unknown triggered scheduler: {name!r}")
         sch = schedulers[name]
         if not ITriggerableScheduler.providedBy(sch):
-            raise ValueError(f"triggered scheduler is not ITriggerableScheduler: {repr(name)}")
+            raise ValueError(f"triggered scheduler is not ITriggerableScheduler: {name!r}")
         return sch
 
     # This customization endpoint allows users to dynamically select which
@@ -239,8 +239,7 @@ class Trigger(BuildStep):
                         num = build.number
                         url = getURLForBuild(self.master, builderid, num)
                         yield self.addURL(
-                            f'{statusToString(build.results)}: '
-                            f'{builderNames[builderid]} #{num}',
+                            f'{statusToString(build.results)}: {builderNames[builderid]} #{num}',
                             url,
                         )
 
@@ -330,7 +329,7 @@ class Trigger(BuildStep):
         self.triggeredNames = triggeredNames
 
         if self.waitForFinish:
-            self.waitForFinishDeferred = defer.DeferredList(dl, consumeErrors=1)
+            self.waitForFinishDeferred = defer.DeferredList(dl, consumeErrors=True)
             try:
                 rclist = yield self.waitForFinishDeferred
             except defer.CancelledError:

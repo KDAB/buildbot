@@ -20,28 +20,36 @@ feature.
 urllib supports http_proxy already. urllib is blocking and thus everything is done from a thread.
 """
 
+from __future__ import annotations
+
 import hashlib
 import inspect
 import json
 import os
 import platform
 import socket
+from typing import TYPE_CHECKING
+from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+from sqlalchemy.engine.url import make_url
 from twisted.internet import threads
-from twisted.python import log
+from twisted.logger import Logger
 
 from buildbot.process.buildstep import _BuildStepFactory
 from buildbot.util import unicode2bytes
 from buildbot.www.config import get_environment_versions
+
+if TYPE_CHECKING:
+    from buildbot.master import BuildMaster
 
 # This can't change! or we will need to make sure we are compatible with all
 # released version of buildbot >=0.9.0
 PHONE_HOME_URL = "https://events.buildbot.net/events/phone_home"
 
 
-def linux_distribution():
+def linux_distribution() -> tuple[str, str]:
     os_release = "/etc/os-release"
     meta_data = {}
     if os.path.exists(os_release):
@@ -63,31 +71,31 @@ def linux_distribution():
     return linux_id, linux_version
 
 
-def get_distro():
+def get_distro() -> str:
     system = platform.system()
     if system == "Linux":
-        dist = linux_distribution()
-        return f"{dist[0]}:{dist[1]}"
+        linux_dist = linux_distribution()
+        return f"{linux_dist[0]}:{linux_dist[1]}"
     elif system == "Windows":
-        dist = platform.win32_ver()
-        return f"{dist[0]}:{dist[1]}"
+        win_dist: Any = platform.win32_ver()
+        return f"{win_dist[0]}:{win_dist[1]}"
     elif system == "Java":
-        dist = platform.java_ver()
-        return f"{dist[0]}:{dist[1]}"
+        java_dist: Any = platform.java_ver()
+        return f"{java_dist[0]}:{java_dist[1]}"
     elif system == "Darwin":
-        dist = platform.mac_ver()
-        return f"{dist[0]}"
+        mac_dist: Any = platform.mac_ver()
+        return f"{mac_dist[0]}"
     # else:
     return ":".join(platform.uname()[0:1])
 
 
-def getName(obj):
+def getName(obj: Any) -> str:
     """This method finds the first parent class which is within the buildbot namespace
     it prepends the name with as many ">" as the class is subclassed
     """
 
     # elastic search does not like '.' in dict keys, so we replace by /
-    def sanitize(name):
+    def sanitize(name: str) -> str:
         return name.replace(".", "/")
 
     if isinstance(obj, _BuildStepFactory):
@@ -95,7 +103,7 @@ def getName(obj):
     else:
         klass = type(obj)
     name = ""
-    klasses = (klass,) + inspect.getmro(klass)
+    klasses = (klass, *inspect.getmro(klass))
     for klass in klasses:
         if hasattr(klass, "__module__") and klass.__module__.startswith("buildbot."):
             return sanitize(name + klass.__module__ + "." + klass.__name__)
@@ -104,17 +112,16 @@ def getName(obj):
     return sanitize(type(obj).__name__)
 
 
-def countPlugins(plugins_uses, lst):
-    if isinstance(lst, dict):
-        lst = lst.values()
-    for i in lst:
+def countPlugins(plugins_uses: dict[str, int], lst: dict[str, Any] | list[Any]) -> None:
+    items: list[Any] = list(lst.values()) if isinstance(lst, dict) else lst
+    for i in items:
         name = getName(i)
         plugins_uses.setdefault(name, 0)
         plugins_uses[name] += 1
 
 
-def basicData(master):
-    plugins_uses = {}
+def basicData(master: BuildMaster) -> dict[str, Any]:
+    plugins_uses: dict[str, int] = {}
     countPlugins(plugins_uses, master.config.workers)
     countPlugins(plugins_uses, master.config.builders)
     countPlugins(plugins_uses, master.config.schedulers)
@@ -127,14 +134,19 @@ def basicData(master):
     # to get as much as possible an unique id
     # we hash it to not leak private information about the installation such as hostnames and domain
     # names
+    assert master.name is not None
     hashInput = (
         master.name  # master name contains hostname + master basepath
         + socket.getfqdn()  # we add the fqdn to account for people
         # call their buildbot host 'buildbot'
         # and install it in /var/lib/buildbot
     )
-    hashInput = unicode2bytes(hashInput)
-    installid = hashlib.sha1(hashInput).hexdigest()
+    installid = hashlib.sha1(unicode2bytes(hashInput)).hexdigest()
+    assert master.db.configured_db_config is not None
+    db_config = master.db.configured_db_config
+    assert isinstance(db_config.db_url, str)
+    db_url = make_url(db_config.db_url)
+
     return {
         'installid': installid,
         'versions': dict(get_environment_versions()),
@@ -150,13 +162,13 @@ def basicData(master):
             'distro': get_distro(),
         },
         'plugins': plugins_uses,
-        'db': master.config.db['db_url'].split("://")[0],
+        'db': db_url.drivername,
         'mq': master.config.mq['type'],
         'www_plugins': list(master.config.www['plugins'].keys()),
     }
 
 
-def fullData(master):
+def fullData(master: BuildMaster) -> dict[str, list[list[str]]]:
     """
     Send the actual configuration of the builders, how the steps are agenced.
     Note that full data will never send actual detail of what command is run, name of servers,
@@ -172,7 +184,7 @@ def fullData(master):
     return {'builders': builders}
 
 
-def computeUsageData(master):
+def computeUsageData(master: BuildMaster) -> dict[str, Any] | None:
     if master.config.buildbotNetUsageData is None:
         return None
     data = basicData(master)
@@ -186,14 +198,14 @@ def computeUsageData(master):
     return data
 
 
-def _sendWithUrlib(url, data):
-    data = json.dumps(data).encode()
-    clen = len(data)
+def _sendWithUrlib(url: str, data: dict[str, Any]) -> bytes | None:
+    encoded_data = json.dumps(data).encode()
+    clen = len(encoded_data)
     req = urllib_request.Request(
-        url, data, {'Content-Type': 'application/json', 'Content-Length': clen}
+        url, encoded_data, {'Content-Type': 'application/json', 'Content-Length': str(clen)}
     )
     try:
-        f = urllib_request.urlopen(req)  # noqa pylint: disable=consider-using-with
+        f = urllib_request.urlopen(req)
     except urllib_error.URLError:
         return None
     res = f.read()
@@ -201,7 +213,7 @@ def _sendWithUrlib(url, data):
     return res
 
 
-def _sendWithRequests(url, data):
+def _sendWithRequests(url: str, data: dict[str, Any]) -> str | None:
     try:
         import requests  # pylint: disable=import-outside-toplevel
     except ImportError:
@@ -210,26 +222,27 @@ def _sendWithRequests(url, data):
     return r.text
 
 
-def _sendBuildbotNetUsageData(data):
-    log.msg(f"buildbotNetUsageData: sending {data}")
+def _sendBuildbotNetUsageData(data: dict[str, Any]) -> None:
+    logger = Logger()
+    logger.info("sending {data}", data=data)
     # first try with requests, as this is the most stable http library
-    res = _sendWithRequests(PHONE_HOME_URL, data)
+    res: str | bytes | None = _sendWithRequests(PHONE_HOME_URL, data)
     # then we try with stdlib, which not always work with https
     if res is None:
         res = _sendWithUrlib(PHONE_HOME_URL, data)
     # at last stage
     if res is None:
-        log.msg(
-            "buildbotNetUsageData: Could not send using https, "
+        logger.warn(
+            "Could not send using https, "
             "please `pip install 'requests[security]'` for proper SSL implementation`"
         )
         data['buggySSL'] = True
         res = _sendWithUrlib(PHONE_HOME_URL.replace("https://", "http://"), data)
 
-    log.msg("buildbotNetUsageData: buildbot.net said:", res)
+    logger.info("buildbot.net said: {res}", res=res)
 
 
-def sendBuildbotNetUsageData(master):
+def sendBuildbotNetUsageData(master: BuildMaster) -> None:
     if master.config.buildbotNetUsageData is None:
         return
     data = computeUsageData(master)

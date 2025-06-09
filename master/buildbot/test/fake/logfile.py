@@ -17,6 +17,7 @@ from twisted.internet import defer
 
 from buildbot import util
 from buildbot.util import lineboundaries
+from buildbot.util.twisted import async_to_deferred
 
 
 class FakeLogFile:
@@ -27,9 +28,8 @@ class FakeLogFile:
         self.stderr = ''
         self.lbfs = {}
         self.finished = False
-        self._finish_waiters = []
         self._had_errors = False
-        self.subPoint = util.subscription.SubscriptionPoint(f"{repr(name)} log")
+        self.subPoint = util.subscription.SubscriptionPoint(f"{name!r} log")
 
     def getName(self):
         return self.name
@@ -97,42 +97,28 @@ class FakeLogFile:
         self._on_whole_lines('e', text)
         return defer.succeed(None)
 
-    def isFinished(self):
-        return self.finished
+    def had_errors(self):
+        return self._had_errors
 
-    def waitUntilFinished(self):
-        d = defer.Deferred()
-        if self.finished:
-            d.succeed(None)
-        else:
-            self._finish_waiters.append(d)
-        return d
-
-    def flushFakeLogfile(self):
+    def flush(self):
         for stream, lbf in self.lbfs.items():
             lines = lbf.flush()
             if lines is not None:
                 self.subPoint.deliver(stream, lines)
+        return defer.succeed(None)
 
-    def had_errors(self):
-        return self._had_errors
-
-    @defer.inlineCallbacks
-    def finish(self):
+    @async_to_deferred
+    async def finish(self) -> None:
         assert not self.finished
 
-        self.flushFakeLogfile()
+        await self.flush()
         self.finished = True
 
         # notify subscribers *after* finishing the log
         self.subPoint.deliver(None, None)
 
-        yield self.subPoint.waitForDeliveriesToFinish()
+        await self.subPoint.waitForDeliveriesToFinish()
         self._had_errors = len(self.subPoint.pop_exceptions()) > 0
-
-        # notify those waiting for finish
-        for d in self._finish_waiters:
-            d.callback(None)
 
     def fakeData(self, header='', stdout='', stderr=''):
         if header:

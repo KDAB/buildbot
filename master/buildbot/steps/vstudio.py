@@ -15,6 +15,7 @@
 
 # Visual studio steps
 
+from __future__ import annotations
 
 import re
 
@@ -74,16 +75,12 @@ class VisualStudio(buildstep.ShellMixin, buildstep.BuildStep):
     description = "compiling"
     descriptionDone = "compile"
 
-    progressMetrics = buildstep.BuildStep.progressMetrics + (
-        'projects',
-        'files',
-        'warnings',
-    )
+    progressMetrics = (*buildstep.BuildStep.progressMetrics, "projects", "files", "warnings")
 
     logobserver = None
 
-    installdir = None
-    default_installdir = None
+    installdir: str | None = None
+    default_installdir: str | None = None
 
     # One of build, clean or rebuild
     mode = "rebuild"
@@ -92,9 +89,9 @@ class VisualStudio(buildstep.ShellMixin, buildstep.BuildStep):
     config = None
     useenv = False
     project = None
-    PATH = []
-    INCLUDE = []
-    LIB = []
+    PATH: list[str] = []
+    INCLUDE: list[str] = []
+    LIB: list[str] = []
 
     renderables = ['projectfile', 'config', 'project', 'mode']
 
@@ -201,7 +198,7 @@ class VisualStudio(buildstep.ShellMixin, buildstep.BuildStep):
             return {"step": results.statusToString(self.results)}
 
         description = (
-            f'compile {self.logobserver.nbProjects} projects {self.logobserver.nbFiles} ' 'files'
+            f'compile {self.logobserver.nbProjects} projects {self.logobserver.nbFiles} files'
         )
 
         if self.logobserver.nbWarnings > 0:

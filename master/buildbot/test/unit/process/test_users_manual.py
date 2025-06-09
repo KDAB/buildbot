@@ -33,8 +33,9 @@ class ManualUsersMixin:
     user managers located in process.users.manual.
     """
 
+    @defer.inlineCallbacks
     def setUpManualUsers(self):
-        self.master = fakemaster.make_master(self, wantDb=True)
+        self.master = yield fakemaster.make_master(self, wantDb=True)
 
 
 class TestUsersBase(unittest.TestCase):
@@ -134,8 +135,8 @@ class TestCommandlineUserManagerPerspective(TestReactorMixin, unittest.TestCase,
         yield self.call_perspective_commandline(
             'add', None, None, None, [{'identifier': 'h@c', 'git': 'hi <h@c>'}]
         )
-        yield self.call_perspective_commandline('remove', None, None, ['x'], None)
-        res = yield self.master.db.users.getUser('x')
+        yield self.call_perspective_commandline('remove', None, None, ['h@c'], None)
+        res = yield self.master.db.users.getUser(1)
         self.assertEqual(res, None)
 
     @defer.inlineCallbacks
@@ -252,13 +253,15 @@ class TestCommandlineUserManager(TestReactorMixin, unittest.TestCase, ManualUser
         )
         yield self.manual_component.setServiceParent(self.master)
 
+    @defer.inlineCallbacks
     def test_no_userpass(self):
-        d = defer.maybeDeferred(manual.CommandlineUserManager)
-        return self.assertFailure(d, AssertionError)
+        with self.assertRaises(AssertionError):
+            yield defer.maybeDeferred(manual.CommandlineUserManager)
 
+    @defer.inlineCallbacks
     def test_no_port(self):
-        d = defer.maybeDeferred(manual.CommandlineUserManager, username="x", passwd="y")
-        return self.assertFailure(d, AssertionError)
+        with self.assertRaises(AssertionError):
+            yield manual.CommandlineUserManager(username="x", passwd="y")
 
     @defer.inlineCallbacks
     def test_service(self):

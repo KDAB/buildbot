@@ -20,22 +20,25 @@ import itertools
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
+from twisted.internet import defer
 
+from buildbot.util import service
 from buildbot.util import unicode2bytes
+from buildbot.util.sautils import hash_columns
 
 if TYPE_CHECKING:
     from buildbot.db.connector import DBConnector
 
 
-class DBConnectorComponent:
+class DBConnectorComponent(service.AsyncService):
     # A fixed component of the DBConnector, handling one particular aspect of
     # the database.  Instances of subclasses are assigned to attributes of the
     # DBConnector object, so that they are available at e.g.,
     # C{master.db.model} or C{master.db.changes}.  This parent class takes care
     # of the necessary backlinks and other housekeeping.
 
-    connector = None
-    data2db = {}
+    connector: DBConnector | None = None
+    data2db: dict[str, str] = {}
 
     def __init__(self, connector: DBConnector):
         self.db = connector
@@ -46,11 +49,7 @@ class DBConnectorComponent:
             if isinstance(o, CachedMethod):
                 setattr(self, method, o.get_cached_method(self))
 
-    @property
-    def master(self):
-        return self.db.master
-
-    _isCheckLengthNecessary = None
+    _isCheckLengthNecessary: bool | None = None
 
     def checkLength(self, col, value):
         if not self._isCheckLengthNecessary:
@@ -78,10 +77,12 @@ class DBConnectorComponent:
         return value
 
     # returns a Deferred that returns a value
+    @defer.inlineCallbacks
     def findSomethingId(self, tbl, whereclause, insert_values, _race_hook=None, autoCreate=True):
-        d = self.findOrCreateSomethingId(tbl, whereclause, insert_values, _race_hook, autoCreate)
-        d.addCallback(lambda pair: pair[0])
-        return d
+        pair = yield self.findOrCreateSomethingId(
+            tbl, whereclause, insert_values, _race_hook, autoCreate
+        )
+        return pair[0]
 
     def findOrCreateSomethingId(
         self, tbl, whereclause, insert_values, _race_hook=None, autoCreate=True
@@ -127,14 +128,7 @@ class DBConnectorComponent:
         return self.db.pool.do(thd)
 
     def hashColumns(self, *args):
-        def encode(x):
-            if x is None:
-                return b'\xf5'
-            elif isinstance(x, str):
-                return x.encode('utf-8')
-            return str(x).encode('utf-8')
-
-        return hashlib.sha1(b'\0'.join(map(encode, args))).hexdigest()
+        return hash_columns(*args)
 
     def doBatch(self, batch, batch_n=500):
         iterator = iter(batch)

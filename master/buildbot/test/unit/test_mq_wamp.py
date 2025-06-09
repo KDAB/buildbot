@@ -127,16 +127,18 @@ class WampMQ(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self)
+        self.master = yield fakemaster.make_master(self)
         self.master.wamp = FakeWampConnector()
         self.mq = wamp.WampMQ()
         yield self.mq.setServiceParent(self.master)
         yield self.mq.startService()
 
-    @defer.inlineCallbacks
-    def tearDown(self):
-        if self.mq.running:
-            yield self.mq.stopService()
+        @defer.inlineCallbacks
+        def cleanup():
+            if self.mq.running:
+                yield self.mq.stopService()
+
+        self.addCleanup(cleanup)
 
     @defer.inlineCallbacks
     def test_startConsuming_basic(self):
@@ -251,18 +253,18 @@ class WampMQReal(TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         if "WAMP_ROUTER_URL" not in os.environ:
             raise unittest.SkipTest(self.HOW_TO_RUN)
-        self.master = fakemaster.make_master(self)
+        self.master = yield fakemaster.make_master(self)
         self.mq = wamp.WampMQ()
         yield self.mq.setServiceParent(self.master)
         self.connector = self.master.wamp = connector.WampConnector()
         yield self.connector.setServiceParent(self.master)
+
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
+
         config = FakeConfig()
         config.mq['router_url'] = os.environ["WAMP_ROUTER_URL"]
         yield self.connector.reconfigServiceWithBuildbotConfig(config)
-
-    def tearDown(self):
-        return self.master.stopService()
 
     @defer.inlineCallbacks
     def test_forward_data(self):

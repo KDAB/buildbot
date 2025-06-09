@@ -30,6 +30,7 @@ from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.runprocess import ExpectMasterShell
 from buildbot.test.runprocess import MasterRunProcessMixin
 from buildbot.test.util import changesource
+from buildbot.test.util.state import StateTestMixin
 from buildbot.util import datetime2epoch
 
 
@@ -90,19 +91,18 @@ class TestGerritHelpers(unittest.TestCase):
 
 
 class TestGerritChangeSource(
-    MasterRunProcessMixin, changesource.ChangeSourceMixin, TestReactorMixin, unittest.TestCase
+    MasterRunProcessMixin,
+    changesource.ChangeSourceMixin,
+    StateTestMixin,
+    TestReactorMixin,
+    unittest.TestCase,
 ):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
         self.setup_master_run_process()
         self._got_events = []
-        return self.setUpChangeSource()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        if self.master.running:
-            yield self.master.stopService()
-        yield self.tearDownChangeSource()
+        yield self.setUpChangeSource()
 
     @defer.inlineCallbacks
     def create_gerrit(self, host, user, *args, **kwargs):
@@ -522,14 +522,14 @@ class TestGerritChangeSource(
 
         self.reactor.expect_spawn("ssh", self.somehost_someuser_ssh_args)
 
-        yield self.master.startService()
+        yield self.startChangeSource()
         s.activate()
 
         self.reactor.process_send_stderr(0, b"test stderr\n")
         self.reactor.process_send_stdout(0, b'{"type":"dropped-output", "eventCreatedOn": 123}\n')
 
         self.reactor.expect_process_signalProcess(0, "KILL")
-        d = self.master.stopService()
+        d = self.stopChangeSource()
         self.reactor.process_done(0, None)
         yield d
 
@@ -539,7 +539,7 @@ class TestGerritChangeSource(
 
         self.reactor.expect_spawn("ssh", self.somehost_someuser_ssh_args)
 
-        yield self.master.startService()
+        yield self.startChangeSource()
         s.activate()
 
         pid = 0
@@ -560,6 +560,8 @@ class TestGerritChangeSource(
             self.reactor.process_done(pid, None)
             pid += 1
             self.reactor.advance(0.05)
+
+        yield self.stopChangeSource()
 
     def _build_messages_to_bytes(self, timestamps):
         messages = [
@@ -619,7 +621,7 @@ class TestGerritChangeSource(
             processing_delay_s=1,
         )
 
-        yield self.master.startService()
+        yield self.startChangeSource()
         s.activate()
 
         # Poll after timeout
@@ -676,12 +678,12 @@ class TestGerritChangeSource(
 
         self.assertTrue(s._is_synchronized)
 
-        d = self.master.stopService()
+        d = self.stopChangeSource()
         self.reactor.process_done(1, None)
         yield d
 
-        self.master.db.state.assertState(s._oid, last_event_ts=start_time + 42)
-        self.master.db.state.assertState(
+        yield self.assert_state(s._oid, last_event_ts=start_time + 42)
+        yield self.assert_state(
             s._oid, last_event_hashes=['f075e0927cab81dabee661a5aa3c65d502103a71']
         )
 
@@ -720,7 +722,7 @@ class TestGerritChangeSource(
             content=b"",
         )
 
-        yield self.master.startService()
+        yield self.startChangeSource()
         s.activate()
 
         self.reactor.advance(2)
@@ -771,6 +773,9 @@ class TestGerritChangeSource(
         # This is what triggers process startup above
         self.reactor.process_done(0, None)
 
+        # Stream should not be made primary until there are messages flowing
+        self.assertFalse(s._is_synchronized)
+
         self.reactor.advance(2)
 
         # Poll after messages below
@@ -801,12 +806,12 @@ class TestGerritChangeSource(
 
         self.assertTrue(s._is_synchronized)
 
-        d = self.master.stopService()
+        d = self.stopChangeSource()
         self.reactor.process_done(1, None)
         yield d
 
-        self.master.db.state.assertState(s._oid, last_event_ts=start_time + 42)
-        self.master.db.state.assertState(
+        yield self.assert_state(s._oid, last_event_ts=start_time + 42)
+        yield self.assert_state(
             s._oid, last_event_hashes=["f075e0927cab81dabee661a5aa3c65d502103a71"]
         )
         self.assert_events_received([
@@ -843,7 +848,7 @@ class TestGerritChangeSource(
             content=b"",
         )
 
-        yield self.master.startService()
+        yield self.startChangeSource()
         s.activate()
 
         self.reactor.advance(2)
@@ -914,11 +919,11 @@ class TestGerritChangeSource(
 
         self.assertTrue(s._is_synchronized)
 
-        d = self.master.stopService()
+        d = self.stopChangeSource()
         self.reactor.process_done(0, None)
         yield d
 
-        self.master.db.state.assertState(s._oid, last_event_ts=start_time + 257)
+        yield self.assert_state(s._oid, last_event_ts=start_time + 257)
         self.assert_events_received([
             {'eventCreatedOn': start_time + 1, 'type': 'patchset-created'},
             {'eventCreatedOn': start_time + 2, 'type': 'patchset-created'},
@@ -1030,7 +1035,9 @@ class TestGerritChangeSource(
         self.assert_all_commands_ran()
 
 
-class TestGerritEventLogPoller(changesource.ChangeSourceMixin, TestReactorMixin, unittest.TestCase):
+class TestGerritEventLogPoller(
+    changesource.ChangeSourceMixin, StateTestMixin, TestReactorMixin, unittest.TestCase
+):
     NOW_TIMESTAMP = 1479302598
     EVENT_TIMESTAMP = 1479302599
     NOW_FORMATTED = '2016-11-16 13:23:18'
@@ -1042,11 +1049,7 @@ class TestGerritEventLogPoller(changesource.ChangeSourceMixin, TestReactorMixin,
         self.setup_test_reactor()
         yield self.setUpChangeSource()
         yield self.master.startService()
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
-        yield self.tearDownChangeSource()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def newChangeSource(self, **kwargs):
@@ -1081,7 +1084,7 @@ class TestGerritEventLogPoller(changesource.ChangeSourceMixin, TestReactorMixin,
 
     @defer.inlineCallbacks
     def test_lineReceived_patchset_created(self):
-        self.master.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Object(
                 id=self.OBJECTID,
                 name='GerritEventLogPoller:gerrit',
@@ -1132,7 +1135,7 @@ class TestGerritEventLogPoller(changesource.ChangeSourceMixin, TestReactorMixin,
             if k in ('files', 'properties'):
                 continue
             self.assertEqual(expected_change[k], v)
-        self.master.db.state.assertState(self.OBJECTID, last_event_ts=self.EVENT_TIMESTAMP)
+        yield self.assert_state(self.OBJECTID, last_event_ts=self.EVENT_TIMESTAMP)
 
         self.assertEqual(set(c['files']), {'/COMMIT_MSG', 'file1'})
 
@@ -1167,7 +1170,7 @@ class TestGerritEventLogPoller(changesource.ChangeSourceMixin, TestReactorMixin,
         )
 
         yield self.changesource._connector.poll()
-        self.master.db.state.assertState(self.OBJECTID, last_event_ts=self.EVENT_TIMESTAMP + 1)
+        yield self.assert_state(self.OBJECTID, last_event_ts=self.EVENT_TIMESTAMP + 1)
 
     change_revision_dict = {
         '/COMMIT_MSG': {'status': 'A', 'lines_inserted': 9, 'size_delta': 1, 'size': 1},

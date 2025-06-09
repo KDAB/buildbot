@@ -13,7 +13,7 @@
 #
 # Copyright Buildbot Team Members
 
-from twisted.internet import task
+from twisted.internet import defer
 from twisted.trial import unittest
 
 from buildbot.process import properties
@@ -21,32 +21,30 @@ from buildbot.schedulers import timed
 from buildbot.test import fakedb
 from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.util import scheduler
+from buildbot.test.util.state import StateTestMixin
 
 
-class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.TestCase):
+class NightlyTriggerable(
+    scheduler.SchedulerMixin, TestReactorMixin, StateTestMixin, unittest.TestCase
+):
     SCHEDULERID = 327
     OBJECTID = 1327
 
+    @defer.inlineCallbacks
     def makeScheduler(self, firstBuildDuration=0, **kwargs):
-        sched = self.attachScheduler(
+        sched = yield self.attachScheduler(
             timed.NightlyTriggerable(**kwargs),
             self.OBJECTID,
             self.SCHEDULERID,
             overrideBuildsetMethods=True,
             createBuilderDB=True,
         )
-
-        # add a Clock to help checking timing issues
-        self.clock = sched._reactor = task.Clock()
-
         return sched
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.setUpScheduler()
-
-    def tearDown(self):
-        self.tearDownScheduler()
+        yield self.setUpScheduler()
 
     # utilities
 
@@ -79,37 +77,46 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
 
     # tests
 
+    @defer.inlineCallbacks
     def test_constructor_no_reason(self):
-        sched = self.makeScheduler(name='test', builderNames=['test'])
+        sched = yield self.makeScheduler(name='test', builderNames=['test'])
+        yield sched.configureService()
         self.assertEqual(
             sched.reason, "The NightlyTriggerable scheduler named 'test' triggered this build"
         )
 
+    @defer.inlineCallbacks
     def test_constructor_reason(self):
-        sched = self.makeScheduler(name='test', builderNames=['test'], reason="hourlytriggerable")
+        sched = yield self.makeScheduler(
+            name='test', builderNames=['test'], reason="hourlytriggerable"
+        )
+        yield sched.configureService()
         self.assertEqual(sched.reason, "hourlytriggerable")
 
+    @defer.inlineCallbacks
     def test_constructor_month(self):
-        sched = self.makeScheduler(name='test', builderNames=['test'], month='1')
+        sched = yield self.makeScheduler(name='test', builderNames=['test'], month='1')
+        yield sched.configureService()
         self.assertEqual(sched.month, "1")
 
+    @defer.inlineCallbacks
     def test_timer_noBuilds(self):
-        sched = self.makeScheduler(name='test', builderNames=['test'], minute=[5])
+        yield self.makeScheduler(name='test', builderNames=['test'], minute=[5])
+        yield self.master.startService()
 
-        sched.activate()
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertEqual(self.addBuildsetCalls, [])
 
+    @defer.inlineCallbacks
     def test_timer_oneTrigger(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
             codebases={'cb': {'repository': 'annoying'}},
         )
-
-        sched.activate()
+        yield self.master.startService()
 
         sched.trigger(
             False,
@@ -125,7 +132,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             set_props=None,
         )
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertBuildsetAdded(
             sourcestamps=[
@@ -139,15 +146,16 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             ]
         )
 
+    @defer.inlineCallbacks
     def test_timer_twoTriggers(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
             codebases={'cb': {'repository': 'annoying'}},
         )
 
-        sched.activate()
+        yield self.master.startService()
 
         sched.trigger(
             False,
@@ -176,7 +184,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             set_props=None,
         )
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertBuildsetAdded(
             sourcestamps=[
@@ -191,15 +199,16 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             ]
         )
 
+    @defer.inlineCallbacks
     def test_timer_oneTrigger_then_noBuild(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
             codebases={'cb': {'repository': 'annoying'}},
         )
 
-        sched.activate()
+        yield self.master.startService()
 
         sched.trigger(
             False,
@@ -215,7 +224,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             set_props=None,
         )
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertBuildsetAdded(
             sourcestamps=[
@@ -229,20 +238,21 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             ]
         )
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         # no trigger, so the second did not build
         self.assertNoBuildsetAdded()
 
+    @defer.inlineCallbacks
     def test_timer_oneTriggers_then_oneTrigger(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
             codebases={'cb': {'repository': 'annoying'}},
         )
 
-        sched.activate()
+        yield self.master.startService()
 
         sched.trigger(
             False,
@@ -258,7 +268,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             set_props=None,
         )
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertBuildsetAdded(
             sourcestamps=[
@@ -286,7 +296,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             set_props=None,
         )
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertBuildsetAdded(
             sourcestamps=[
@@ -300,8 +310,9 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             ]
         )
 
+    @defer.inlineCallbacks
     def test_savedTrigger(self):
-        sched = self.makeScheduler(
+        yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
@@ -313,16 +324,16 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             '"branch": "br", "revision": "myrev"} ], {}, null, null ]'
         )
 
-        self.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Object(id=self.SCHEDULERID, name='test', class_name='NightlyTriggerable'),
             fakedb.ObjectState(
                 objectid=self.SCHEDULERID, name='lastTrigger', value_json=value_json
             ),
         ])
 
-        sched.activate()
+        yield self.master.startService()
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertBuildsetAdded(
             sourcestamps=[
@@ -336,8 +347,9 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             ]
         )
 
+    @defer.inlineCallbacks
     def test_savedTrigger_dict(self):
-        sched = self.makeScheduler(
+        yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
@@ -348,16 +360,16 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             '[ { "cb": {"codebase": "cb", "project": "p", "repository": "r", '
             '"branch": "br", "revision": "myrev"} }, {}, null, null ]'
         )
-        self.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Object(id=self.SCHEDULERID, name='test', class_name='NightlyTriggerable'),
             fakedb.ObjectState(
                 objectid=self.SCHEDULERID, name='lastTrigger', value_json=value_json
             ),
         ])
 
-        sched.activate()
+        yield self.master.startService()
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertBuildsetAdded(
             sourcestamps=[
@@ -371,18 +383,19 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             ]
         )
 
+    @defer.inlineCallbacks
     def test_saveTrigger(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
             codebases={'cb': {'repository': 'annoying'}},
         )
-        self.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Object(id=self.SCHEDULERID, name='test', class_name='NightlyTriggerable'),
         ])
 
-        sched.activate()
+        yield self.master.startService()
 
         _, d = sched.trigger(
             False,
@@ -398,40 +411,38 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             set_props=None,
         )
 
-        @d.addCallback
-        def cb(_):
-            self.db.state.assertState(
-                self.SCHEDULERID,
-                lastTrigger=[
-                    [
-                        {
-                            "codebase": 'cb',
-                            "revision": 'myrev',
-                            "branch": 'br',
-                            "project": 'p',
-                            "repository": 'r',
-                        },
-                    ],
-                    {},
-                    None,
-                    None,
+        yield d
+        yield self.assert_state(
+            self.SCHEDULERID,
+            lastTrigger=[
+                [
+                    {
+                        "codebase": 'cb',
+                        "revision": 'myrev',
+                        "branch": 'br',
+                        "project": 'p',
+                        "repository": 'r',
+                    },
                 ],
-            )
+                {},
+                None,
+                None,
+            ],
+        )
 
-        return d
-
+    @defer.inlineCallbacks
     def test_saveTrigger_noTrigger(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
             codebases={'cb': {'repository': 'annoying'}},
         )
-        self.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Object(id=self.SCHEDULERID, name='test', class_name='NightlyTriggerable'),
         ])
 
-        sched.activate()
+        yield self.master.startService()
 
         _, d = sched.trigger(
             False,
@@ -447,26 +458,24 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             set_props=None,
         )
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
-        @d.addCallback
-        def cb(_):
-            self.db.state.assertState(self.SCHEDULERID, lastTrigger=None)
+        yield d
+        yield self.assert_state(self.SCHEDULERID, lastTrigger=None)
 
-        return d
-
+    @defer.inlineCallbacks
     def test_triggerProperties(self):
-        sched = self.makeScheduler(
+        sched = yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
             codebases={'cb': {'repository': 'annoying'}},
         )
-        self.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Object(id=self.SCHEDULERID, name='test', class_name='NightlyTriggerable'),
         ])
 
-        sched.activate()
+        yield self.master.startService()
 
         sched.trigger(
             False,
@@ -482,7 +491,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             properties.Properties(testprop='test'),
         )
 
-        self.db.state.assertState(
+        yield self.assert_state(
             self.SCHEDULERID,
             lastTrigger=[
                 [
@@ -500,7 +509,7 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             ],
         )
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertBuildsetAdded(
             properties={"testprop": ('test', 'TEST')},
@@ -515,8 +524,9 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             ],
         )
 
+    @defer.inlineCallbacks
     def test_savedProperties(self):
-        sched = self.makeScheduler(
+        yield self.makeScheduler(
             name='test',
             builderNames=['test'],
             minute=[5],
@@ -528,16 +538,16 @@ class NightlyTriggerable(scheduler.SchedulerMixin, TestReactorMixin, unittest.Te
             '"branch": "br", "revision": "myrev"} ], '
             '{"testprop": ["test", "TEST"]}, null, null ]'
         )
-        self.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Object(id=self.SCHEDULERID, name='test', class_name='NightlyTriggerable'),
             fakedb.ObjectState(
                 objectid=self.SCHEDULERID, name='lastTrigger', value_json=value_json
             ),
         ])
 
-        sched.activate()
+        yield self.master.startService()
 
-        self.clock.advance(60 * 60)  # Run for 1h
+        self.reactor.advance(60 * 60)  # Run for 1h
 
         self.assertBuildsetAdded(
             properties={'testprop': ('test', 'TEST')},

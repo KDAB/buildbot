@@ -5,7 +5,7 @@
   Copyright Buildbot Team Members
 */
 
-import {IDataAccessor} from "../DataAccessor";
+import {IDataAccessor} from '../DataAccessor';
 
 export interface IAnyDataDescriptor {
   restArrayField: string;
@@ -13,5 +13,5 @@ export interface IAnyDataDescriptor {
 
 export interface IDataDescriptor<T> extends IAnyDataDescriptor {
   fieldId: string;
-  parse(accessor: IDataAccessor, endpoint: string, object: any): T;
+  parse(accessor: IDataAccessor, object: any): T;
 }

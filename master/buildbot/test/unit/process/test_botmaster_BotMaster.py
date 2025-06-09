@@ -21,6 +21,7 @@ from twisted.trial import unittest
 from buildbot import config
 from buildbot.process import factory
 from buildbot.process.botmaster import BotMaster
+from buildbot.process.buildrequest import BuildRequest
 from buildbot.process.results import CANCELLED
 from buildbot.process.results import RETRY
 from buildbot.test.fake import fakemaster
@@ -31,7 +32,7 @@ class TestCleanShutdown(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantData=True)
         self.botmaster = BotMaster()
         yield self.botmaster.setServiceParent(self.master)
         self.botmaster.startService()
@@ -46,8 +47,8 @@ class TestCleanShutdown(TestReactorMixin, unittest.TestCase):
         self.fake_builder = builder = mock.Mock()
         self.build_deferred = defer.Deferred()
 
-        request = mock.Mock()
-        request.waitedFor = waitedFor
+        request = mock.Mock(spec=BuildRequest)
+        request.waited_for = waitedFor
         build = mock.Mock()
         build.stopBuild = self.stopFakeBuild
         build.waitUntilFinished.return_value = self.build_deferred
@@ -153,22 +154,25 @@ class TestBotMaster(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantData=True)
         self.master.mq = self.master.mq
         self.master.botmaster.disownServiceParent()
         self.botmaster = BotMaster()
         yield self.botmaster.setServiceParent(self.master)
         self.new_config = mock.Mock()
         self.botmaster.startService()
-
-    def tearDown(self):
-        return self.botmaster.stopService()
+        self.addCleanup(self.botmaster.stopService)
 
     @defer.inlineCallbacks
     def test_reconfigServiceWithBuildbotConfig(self):
         # check that reconfigServiceBuilders is called.
         self.patch(
             self.botmaster, 'reconfigProjects', mock.Mock(side_effect=lambda c: defer.succeed(None))
+        )
+        self.patch(
+            self.botmaster,
+            'reconfig_codebases',
+            mock.Mock(side_effect=lambda c: defer.succeed(None)),
         )
         self.patch(
             self.botmaster,
@@ -182,6 +186,7 @@ class TestBotMaster(TestReactorMixin, unittest.TestCase):
 
         self.botmaster.reconfigServiceBuilders.assert_called_with(new_config)
         self.botmaster.reconfigProjects.assert_called_with(new_config)
+        self.botmaster.reconfig_codebases.assert_called_with(new_config)
         self.assertTrue(self.botmaster.maybeStartBuildsForAllBuilders.called)
 
     @defer.inlineCallbacks

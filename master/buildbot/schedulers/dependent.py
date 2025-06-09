@@ -13,6 +13,10 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import ClassVar
 
 from twisted.internet import defer
 
@@ -23,15 +27,16 @@ from buildbot.process.results import SUCCESS
 from buildbot.process.results import WARNINGS
 from buildbot.schedulers import base
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
-class Dependent(base.BaseScheduler):
-    compare_attrs = ('upstream_name',)
+
+class Dependent(base.ReconfigurableBaseScheduler):
+    compare_attrs: ClassVar[Sequence[str]] = ('upstream_name',)
+    upstream_name: str | None = None
 
     def __init__(self, name, upstream, builderNames, **kwargs):
-        super().__init__(name, builderNames, **kwargs)
-        if not interfaces.IScheduler.providedBy(upstream):
-            config.error("upstream must be another Scheduler instance")
-        self.upstream_name = upstream.name
+        super().__init__(name=name, upstream=upstream, builderNames=builderNames, **kwargs)
         self._buildset_new_consumer = None
         self._buildset_complete_consumer = None
         self._cached_upstream_bsids = None
@@ -40,6 +45,16 @@ class Dependent(base.BaseScheduler):
         # subscription into the DB before registering that the buildset is
         # complete.
         self._subscription_lock = defer.DeferredLock()
+
+    def checkConfig(self, upstream, builderNames, **kwargs):
+        if not interfaces.IScheduler.providedBy(upstream):
+            config.error("upstream must be another Scheduler instance")
+        super().checkConfig(builderNames=builderNames, **kwargs)
+
+    @defer.inlineCallbacks
+    def reconfigService(self, upstream, builderNames, **kwargs):
+        yield super().reconfigService(builderNames=builderNames, **kwargs)
+        self.upstream_name = upstream.name
 
     @defer.inlineCallbacks
     def activate(self):

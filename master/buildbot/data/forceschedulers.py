@@ -37,9 +37,9 @@ def forceScheduler2Data(sched):
 
 class ForceSchedulerEndpoint(base.Endpoint):
     kind = base.EndpointKind.SINGLE
-    pathPatterns = """
-        /forceschedulers/i:schedulername
-    """
+    pathPatterns = [
+        "/forceschedulers/i:schedulername",
+    ]
 
     def findForceScheduler(self, schedulername):
         # eventually this may be db backed. This is why the API is async
@@ -71,10 +71,10 @@ class ForceSchedulerEndpoint(base.Endpoint):
 
 class ForceSchedulersEndpoint(base.Endpoint):
     kind = base.EndpointKind.COLLECTION
-    pathPatterns = """
-        /forceschedulers
-        /builders/:builderid/forceschedulers
-    """
+    pathPatterns = [
+        "/forceschedulers",
+        "/builders/:builderid/forceschedulers",
+    ]
     rootLinkName = 'forceschedulers'
 
     @defer.inlineCallbacks
@@ -96,7 +96,6 @@ class ForceScheduler(base.ResourceType):
     name = "forcescheduler"
     plural = "forceschedulers"
     endpoints = [ForceSchedulerEndpoint, ForceSchedulersEndpoint]
-    keyField = "name"
 
     class EntityType(types.Entity):
         name = types.Identifier(50)
@@ -106,4 +105,4 @@ class ForceScheduler(base.ResourceType):
         enabled = types.Boolean()
         all_fields = types.List(of=types.JsonObject())
 
-    entityType = EntityType(name, 'Forcescheduler')
+    entityType = EntityType(name)

@@ -16,6 +16,7 @@
 import os
 import sys
 from io import StringIO
+from typing import TYPE_CHECKING
 
 from twisted.python import log
 from twisted.trial.unittest import TestCase
@@ -23,42 +24,32 @@ from twisted.trial.unittest import TestCase
 import buildbot
 from buildbot.process.buildstep import BuildStep
 
-
-class PatcherMixin:
-    """
-    Mix this in to get a few special-cased patching methods
-    """
-
-    def patch_os_uname(self, replacement):
-        # twisted's 'patch' doesn't handle the case where an attribute
-        # doesn't exist..
-        if hasattr(os, 'uname'):
-            self.patch(os, 'uname', replacement)
-        else:
-
-            def cleanup():
-                del os.uname
-
-            self.addCleanup(cleanup)
-            os.uname = replacement
+if TYPE_CHECKING:
+    from twisted.trial import unittest
 
 
-class StdoutAssertionsMixin:
+if TYPE_CHECKING:
+    _StdoutAssertionsMixinBase = unittest.TestCase
+else:
+    _StdoutAssertionsMixinBase = object
+
+
+class StdoutAssertionsMixin(_StdoutAssertionsMixinBase):
     """
     Mix this in to be able to assert on stdout during the test
     """
 
-    def setUpStdoutAssertions(self):
+    def setUpStdoutAssertions(self) -> None:
         self.stdout = StringIO()
         self.patch(sys, 'stdout', self.stdout)
 
-    def assertWasQuiet(self):
+    def assertWasQuiet(self) -> None:
         self.assertEqual(self.stdout.getvalue(), '')
 
-    def assertInStdout(self, exp):
+    def assertInStdout(self, exp: str) -> None:
         self.assertIn(exp, self.stdout.getvalue())
 
-    def getStdout(self):
+    def getStdout(self) -> str:
         return self.stdout.getvalue().strip()
 
 

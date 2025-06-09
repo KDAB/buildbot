@@ -36,8 +36,8 @@ def get_config_parameter(p):
 
 
 fake_ldap = types.ModuleType('ldap3')
-fake_ldap.SEARCH_SCOPE_WHOLE_SUBTREE = 2
-fake_ldap.get_config_parameter = get_config_parameter
+fake_ldap.SEARCH_SCOPE_WHOLE_SUBTREE = 2  # type: ignore[attr-defined]
+fake_ldap.get_config_parameter = get_config_parameter  # type: ignore[attr-defined]
 
 
 class FakeLdap:
@@ -188,7 +188,7 @@ class LdapAvatar(CommonTestCase, TestReactorMixin, WwwTestMixin):
         CommonTestCase.setUp(self)
         self.setup_test_reactor()
 
-        master = self.make_master(url='http://a/b/', avatar_methods=[self.userInfoProvider])
+        master = yield self.make_master(url='http://a/b/', avatar_methods=[self.userInfoProvider])
 
         self.rsrc = avatar.AvatarResource(master)
         self.rsrc.reconfigResource(master.config)

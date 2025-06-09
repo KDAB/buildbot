@@ -94,20 +94,18 @@ class AsyncMultiService(unittest.TestCase):
         self.assertTrue(d.called)
 
 
-class ClusteredBuildbotService(unittest.TestCase, TestReactorMixin):
+class ClusteredBuildbotService(TestReactorMixin, unittest.TestCase):
     SVC_NAME = 'myName'
     SVC_ID = 20
 
     class DummyService(service.ClusteredBuildbotService):
         pass
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantDb=True, wantData=True)
         self.svc = self.makeService()
-
-    def tearDown(self):
-        pass
 
     def makeService(self, attach_to_master=True, name=SVC_NAME, serviceid=SVC_ID):
         svc = self.DummyService(name=name)

@@ -32,9 +32,6 @@ class RealConfigs(dirs.DirsMixin, unittest.TestCase):
         self.basedir = os.path.abspath('basedir')
         self.filename = os.path.abspath("test.cfg")
 
-    def tearDown(self):
-        self.tearDownDirs()
-
     def test_sample_config(self):
         filename = util.sibpath(runner.__file__, 'sample.cfg')
         with assertNotProducesWarnings(DeprecatedApiWarning):
@@ -97,4 +94,4 @@ c['www'] = dict(port=8010,
 c['db'] = {
     'db_url' : "sqlite:///state.sqlite",
 }
-"""  # noqa pylint: disable=line-too-long
+"""

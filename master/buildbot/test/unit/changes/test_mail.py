@@ -52,11 +52,6 @@ class TestMaildirSource(
         self.assertFalse(os.path.exists(os.path.join(self.maildir, "new", "newmsg")))
         self.assertTrue(os.path.exists(os.path.join(self.maildir, "cur", "newmsg")))
 
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.tearDownDirs()
-        yield self.tearDownChangeSource()
-
     # tests
 
     def test_describe(self):
@@ -91,7 +86,7 @@ class TestMaildirSource(
                     'comments': None,
                     'files': None,
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': '',
                     'revision': None,
                     'revlink': '',
@@ -129,7 +124,7 @@ class TestMaildirSource(
                     'comments': None,
                     'files': None,
                     'project': '',
-                    'properties': {},
+                    'properties': None,
                     'repository': '',
                     'revision': None,
                     'revlink': '',

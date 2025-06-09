@@ -25,6 +25,7 @@ from buildbot.data import resultspec
 from buildbot.util import bytes2unicode
 from buildbot.util import pathmatch
 from buildbot.util import service
+from buildbot.warnings import warn_deprecated
 
 
 class Updates:
@@ -43,6 +44,9 @@ class DataConnector(service.AsyncService):
         'buildbot.data.builders',
         'buildbot.data.builds',
         'buildbot.data.buildrequests',
+        'buildbot.data.codebases',
+        'buildbot.data.codebase_commits',
+        'buildbot.data.codebase_branches',
         'buildbot.data.workers',
         'buildbot.data.steps',
         'buildbot.data.logs',
@@ -77,8 +81,6 @@ class DataConnector(service.AsyncService):
             if inspect.isclass(obj) and issubclass(obj, base.ResourceType):
                 rtype = obj(self.master)
                 setattr(self.rtypes, rtype.name, rtype)
-                setattr(self.plural_rtypes, rtype.plural, rtype)
-                self.graphql_rtypes[rtype.entityType.toGraphQLTypeName()] = rtype
                 # put its update methods into our 'updates' attribute
                 for name in dir(rtype):
                     o = getattr(rtype, name)
@@ -90,7 +92,13 @@ class DataConnector(service.AsyncService):
                     # don't use inherited values for these parameters
                     clsdict = ep.__class__.__dict__
                     pathPatterns = clsdict.get('pathPatterns', '')
-                    pathPatterns = pathPatterns.split()
+                    if isinstance(pathPatterns, str):
+                        pathPatterns = pathPatterns.split()
+                        warn_deprecated(
+                            '4.3.0',
+                            'Endpoint.pathPatterns as a multiline string is deprecated. Use pathPatterns as a '
+                            'list of strings instead.',
+                        )
                     pathPatterns = [tuple(pp.split('/')[1:]) for pp in pathPatterns]
                     for pp in pathPatterns:
                         # special-case the root
@@ -103,9 +111,7 @@ class DataConnector(service.AsyncService):
 
     def _setup(self):
         self.updates = Updates()
-        self.graphql_rtypes = {}
         self.rtypes = RTypes()
-        self.plural_rtypes = RTypes()
         for moduleName in self.submodules:
             module = reflect.namedModule(moduleName)
             self._scanModule(module)
@@ -120,20 +126,6 @@ class DataConnector(service.AsyncService):
 
     def getResourceType(self, name):
         return getattr(self.rtypes, name, None)
-
-    def getEndPointForResourceName(self, name):
-        rtype = getattr(self.rtypes, name, None)
-        rtype_plural = getattr(self.plural_rtypes, name, None)
-        if rtype is not None:
-            return rtype.getDefaultEndpoint()
-        elif rtype_plural is not None:
-            return rtype_plural.getCollectionEndpoint()
-        return None
-
-    def getResourceTypeForGraphQlType(self, type):
-        if type not in self.graphql_rtypes:
-            raise RuntimeError(f"Can't get rtype for {type}: {self.graphql_rtypes.keys()}")
-        return self.graphql_rtypes.get(type)
 
     def get(self, path, filters=None, fields=None, order=None, limit=None, offset=None):
         resultSpec = resultspec.ResultSpec(
@@ -154,8 +146,10 @@ class DataConnector(service.AsyncService):
         return endpoint.control(action, args, kwargs)
 
     def produceEvent(self, rtype, msg, event):
-        # warning, this is temporary api, until all code is migrated to data
-        # api
+        warn_deprecated(
+            '4.3.0',
+            'DataConnector.produceEvent is deprecated, use data API update methods',
+        )
         rsrc = self.getResourceType(rtype)
         return rsrc.produceEvent(msg, event)
 

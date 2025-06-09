@@ -5,14 +5,12 @@
   Copyright Buildbot Team Members
 */
 
-
-import {action, makeObservable, observable} from "mobx";
-import {BaseClass} from "./BaseClass";
-import {IDataDescriptor} from "./DataDescriptor";
-import {IDataAccessor} from "../DataAccessor";
-import {RequestQuery} from "../DataQuery";
-import {TestResult, testResultDescriptor} from "./TestResult";
-
+import {action, makeObservable, observable} from 'mobx';
+import {BaseClass} from './BaseClass';
+import {IDataDescriptor} from './DataDescriptor';
+import {IDataAccessor} from '../DataAccessor';
+import {RequestQuery} from '../DataQuery';
+import {TestResult, testResultDescriptor} from './TestResult';
 
 export class TestResultSet extends BaseClass {
   @observable test_result_setid!: number;
@@ -22,12 +20,12 @@ export class TestResultSet extends BaseClass {
   @observable description!: string;
   @observable category!: string;
   @observable value_unit!: string;
-  @observable tests_passed!: number|null;
-  @observable tests_failed!: number|null;
+  @observable tests_passed!: number | null;
+  @observable tests_failed!: number | null;
   @observable complete!: boolean;
 
-  constructor(accessor: IDataAccessor, endpoint: string, object: any) {
-    super(accessor, endpoint, String(object.stepid));
+  constructor(accessor: IDataAccessor, object: any) {
+    super(accessor, 'test_result_sets', String(object.test_result_setid));
     this.update(object);
     makeObservable(this);
   }
@@ -57,24 +55,24 @@ export class TestResultSet extends BaseClass {
       tests_passed: this.tests_passed,
       tests_failed: this.tests_failed,
       complete: this.complete,
-    }
+    };
   }
 
   getResults(query: RequestQuery = {}) {
-    return this.get<TestResult>("results", query, testResultDescriptor);
+    return this.get<TestResult>('results', query, testResultDescriptor);
   }
 
   static getAll(accessor: IDataAccessor, query: RequestQuery = {}) {
-    return accessor.get<TestResultSet>("test_result_sets", query, testResultSetDescriptor);
+    return accessor.get<TestResultSet>('test_result_sets', query, testResultSetDescriptor);
   }
 }
 
 export class TestResultSetDescriptor implements IDataDescriptor<TestResultSet> {
-  restArrayField = "test_result_sets";
-  fieldId: string = "test_result_setid";
+  restArrayField = 'test_result_sets';
+  fieldId: string = 'test_result_setid';
 
-  parse(accessor: IDataAccessor, endpoint: string, object: any) {
-    return new TestResultSet(accessor, endpoint, object);
+  parse(accessor: IDataAccessor, object: any) {
+    return new TestResultSet(accessor, object);
   }
 }
 

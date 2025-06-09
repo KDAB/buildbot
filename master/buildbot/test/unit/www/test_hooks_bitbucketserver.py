@@ -706,16 +706,18 @@ def _prepare_request(payload, headers=None, change_dict=None):
     return request
 
 
-class TestChangeHookConfiguredWithGitChange(unittest.TestCase, TestReactorMixin):
+class TestChangeHookConfiguredWithGitChange(TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
+        master = yield fakeMasterForHooks(self)
         self.change_hook = change_hook.ChangeHookResource(
             dialects={
                 'bitbucketserver': {
                     'bitbucket_property_whitelist': ["bitbucket.*"],
                 }
             },
-            master=fakeMasterForHooks(self),
+            master=master,
         )
 
     def assertDictSubset(self, expected_dict, response_dict):
@@ -919,4 +921,4 @@ class TestChangeHookConfiguredWithGitChange(unittest.TestCase, TestReactorMixin)
         request.received_headers[b'Content-Type'] = b'invalid/content'
         yield request.test_render(self.change_hook)
         self.assertEqual(len(self.change_hook.master.data.updates.changesAdded), 0)
-        self.assertEqual(request.written, b"Unknown content type: invalid/content")
+        self.assertEqual(request.written, b"Unknown content type: 'invalid/content'")

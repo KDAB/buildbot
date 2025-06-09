@@ -27,9 +27,6 @@ class TestRpmLint(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_success(self):
         self.setup_step(rpmlint.RpmLint())
         self.expect_commands(ExpectShell(workdir='wkdir', command=['rpmlint', '-i', '.']).exit(0))

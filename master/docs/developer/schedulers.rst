@@ -14,24 +14,26 @@ Each scheduler has a unique name, and within a Buildbot cluster, can be active o
 If a scheduler is configured on multiple masters, it will be inactive on all but one master.
 This provides a form of non-revertive failover for schedulers: if an active scheduler's master fails, an inactive instance of that scheduler on another master will become active.
 
-API Stability
--------------
-
-Until Buildbot reaches version 1.0.0, API stability is not guaranteed.
-The instructions in this document may change incompatibly until that time.
-
 Implementing A Scheduler
 ------------------------
 
-A scheduler is a subclass of :py:class:`~buildbot.schedulers.base.BaseScheduler`.
+A scheduler is a subclass of :py:class:`~buildbot.schedulers.base.ReconfigurableBaseScheduler`.
 
-The constructor's arguments form the scheduler's configuration.
+It is also a :class:`BuildbotService` and has the lifecycle described in its documentation.
+
 The first two arguments, ``name`` and ``builderNames``, are positional.
-The remaining arguments are keyword arguments, and the subclass's constructor should accept ``**kwargs`` to pass them to the parent class, along with the positional arguments. ::
+The remaining arguments are keyword arguments, and the subclass's ``checkConfig`` and
+``reconfigService`` should accept ``**kwargs`` to pass them to the parent class, along with the
+positional arguments. Note that the ``name`` argument is handled internally and not passed
+to ``checkConfig`` and ``reconfigService``::
 
-    class MyScheduler(base.BaseScheduler):
-        def __init__(self, name, builderNames, arg1=None, arg2=None, **kwargs):
-            super().__init__(name, builderNames, **kwargs)
+    class MyScheduler(base.ReconfigurableBaseScheduler):
+        def checkService(self, builderNames, arg1=None, arg2=None, **kwargs):
+            super().checkService(name, **kwargs)
+
+        @defer.inlineCallbacks
+        def reconfigService(self, builderNames, arg1=None, arg2=None, **kwargs):
+            yield super().reconfigService(name, **kwargs)
             self.arg1 = arg1
             self.arg2 = arg2
 
@@ -63,19 +65,16 @@ When the configuration for a scheduler changes, Buildbot deactivates, stops and 
 Buildbot determines whether a scheduler has changed by subclassing :py:class:`~buildbot.util.ComparableMixin`.
 See the documentation for class for an explanation of the ``compare_attrs`` attribute.
 
-.. note::
-
-    In a future version, schedulers will be converted to handle reconfiguration as reconfigurable services, and will no longer require ``compare_attrs`` to be set.
-
 Becoming Active and Inactive
 ----------------------------
 
 An inactive scheduler should not do anything that might interfere with an active scheduler of the same name.
 
-Simple schedulers can consult the :py:attr:`~buildbot.schedulers.base.BaseScheduler.active` attribute to determine whether the scheduler is active.
+Simple schedulers can consult the :py:attr:`~buildbot.schedulers.base.ReconfigurableBaseScheduler.active` attribute to determine whether the scheduler is active.
 
 Most schedulers, however, will implement the ``activate`` method to begin any processing expected of an active scheduler.
-That may involve calling :py:meth:`~buildbot.schedulers.base.BaseScheduler.startConsumingChanges`, beginning a ``LoopingCall``, or subscribing to messages.
+That may involve calling :py:meth:`~buildbot.schedulers.base.ReconfigurableBaseScheduler.startConsumingChanges`,
+beginning a ``LoopingCall``, or subscribing to messages.
 
 Any processing begun by the ``activate`` method, or by an active scheduler, should be stopped by the ``deactivate`` method.
 The ``deactivate`` method's Deferred should not fire until such processing has completely stopped.
@@ -84,7 +83,10 @@ Schedulers must up-call the parent class's ``activate`` and ``deactivate`` metho
 Keeping State
 -------------
 
-The :py:class:`~buildbot.schedulers.base.BaseScheduler` class provides :py:meth:`~buildbot.schedulers.base.BaseScheduler.getState` and :py:meth:`~buildbot.schedulers.base.BaseScheduler.setState` methods to get and set state values for the scheduler.
+The :py:class:`~buildbot.schedulers.base.BaseScheduler` class provides
+:py:meth:`~buildbot.schedulers.base.ReconfigurableBaseScheduler.getState` and
+:py:meth:`~buildbot.schedulers.base.ReconfigurableBaseScheduler.setState` methods to get and set
+state values for the scheduler.
 Active scheduler instances should use these functions to store persistent scheduler state, such that if they fail or become inactive, other instances can pick up where they left off.
 A scheduler can cache its state locally, only calling ``getState`` when it first becomes active.
 However, it is best to keep the state as up-to-date as possible, by calling ``setState`` any time the state changes.

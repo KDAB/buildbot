@@ -44,9 +44,11 @@ class TestGitLabStatusPush(
         # repository must be in the form http://gitlab/<owner>/<project>
         self.reporter_test_repo = 'http://gitlab/buildbot/buildbot'
 
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
+
         self._http = yield fakehttpclientservice.HTTPClientService.getService(
             self.master,
             self,
@@ -67,9 +69,6 @@ class TestGitLabStatusPush(
         builder.name = "Builder0"
         builder.setup_properties = setup_properties
         self.master.botmaster.getBuilderById = mock.Mock(return_value=builder)
-
-    def tearDown(self):
-        return self.master.stopService()
 
     @defer.inlineCallbacks
     def test_buildrequest(self):

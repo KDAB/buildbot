@@ -33,22 +33,19 @@ class ChangeSourceEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = changesources.ChangeSourceEndpoint
     resourceTypeClass = changesources.ChangeSource
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
+        yield self.setUpEndpoint()
 
-        self.db.insert_test_data([
+        yield self.master.db.insert_test_data([
             fakedb.Master(id=22, active=0),
             fakedb.Master(id=33, active=1),
             fakedb.ChangeSource(id=13, name='some:changesource'),
-            fakedb.ChangeSourceMaster(changesourceid=13, masterid=None),
             fakedb.ChangeSource(id=14, name='other:changesource'),
             fakedb.ChangeSourceMaster(changesourceid=14, masterid=22),
             fakedb.ChangeSource(id=15, name='another:changesource'),
             fakedb.ChangeSourceMaster(changesourceid=15, masterid=33),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get_existing(self):
@@ -100,13 +97,13 @@ class ChangeSourcesEndpoint(endpoint.EndpointMixin, unittest.TestCase):
     endpointClass = changesources.ChangeSourcesEndpoint
     resourceTypeClass = changesources.ChangeSource
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-        self.db.insert_test_data([
+        yield self.setUpEndpoint()
+        yield self.master.db.insert_test_data([
             fakedb.Master(id=22, active=0),
             fakedb.Master(id=33, active=1),
             fakedb.ChangeSource(id=13, name='some:changesource'),
-            fakedb.ChangeSourceMaster(changesourceid=13, masterid=None),
             fakedb.ChangeSource(id=14, name='other:changesource'),
             fakedb.ChangeSourceMaster(changesourceid=14, masterid=22),
             fakedb.ChangeSource(id=15, name='another:changesource'),
@@ -114,9 +111,6 @@ class ChangeSourcesEndpoint(endpoint.EndpointMixin, unittest.TestCase):
             fakedb.ChangeSource(id=16, name='wholenother:changesource'),
             fakedb.ChangeSourceMaster(changesourceid=16, masterid=33),
         ])
-
-    def tearDown(self):
-        self.tearDownEndpoint()
 
     @defer.inlineCallbacks
     def test_get(self):
@@ -144,9 +138,10 @@ class ChangeSourcesEndpoint(endpoint.EndpointMixin, unittest.TestCase):
 
 
 class ChangeSource(TestReactorMixin, interfaces.InterfaceTests, unittest.TestCase):
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantDb=True, wantData=True)
         self.rtype = changesources.ChangeSource(self.master)
 
     def test_signature_findChangeSourceId(self):
@@ -211,5 +206,5 @@ class ChangeSource(TestReactorMixin, interfaces.InterfaceTests, unittest.TestCas
             fakedb.ChangeSourceMaster(changesourceid=14, masterid=22),
         ])
         yield self.rtype._masterDeactivated(22)
-        self.master.db.changesources.assertChangeSourceMaster(13, None)
-        self.master.db.changesources.assertChangeSourceMaster(14, None)
+        self.assertIsNone((yield self.master.db.changesources.get_change_source_master(13)))
+        self.assertIsNone((yield self.master.db.changesources.get_change_source_master(14)))

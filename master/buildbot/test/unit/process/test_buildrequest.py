@@ -31,7 +31,7 @@ class TestBuildRequestCollapser(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True)
         self.master.botmaster = mock.Mock(name='botmaster')
         self.master.botmaster.builders = {}
         self.builders = {}
@@ -53,15 +53,12 @@ class TestBuildRequestCollapser(TestReactorMixin, unittest.TestCase):
 
         return bldr
 
-    def tearDown(self):
-        pass
-
     @defer.inlineCallbacks
-    def do_request_collapse(self, rows, brids, exp):
-        yield self.master.db.insert_test_data(rows)
+    def do_request_collapse(self, brids, exp):
         brCollapser = buildrequest.BuildRequestCollapser(self.master, brids)
         self.assertEqual(exp, sorted((yield brCollapser.collapse())))
 
+    @defer.inlineCallbacks
     def test_collapseRequests_no_other_request(self):
         def collapseRequests_fn(master, builder, brdict1, brdict2):
             # Allow all requests
@@ -72,7 +69,7 @@ class TestBuildRequestCollapser(TestReactorMixin, unittest.TestCase):
         self.bldr.getCollapseRequestsFn = lambda: collapseRequests_fn
         rows = [
             fakedb.Builder(id=77, name='A'),
-            fakedb.SourceStamp(id=234, codebase='A'),
+            fakedb.SourceStamp(id=234, revision='r234', repository='repo', codebase='A'),
             fakedb.Change(changeid=14, codebase='A', sourcestampid=234),
             fakedb.Buildset(id=30, reason='foo', submitted_at=1300305712, results=-1),
             fakedb.BuildsetSourceStamp(sourcestampid=234, buildsetid=30),
@@ -80,19 +77,19 @@ class TestBuildRequestCollapser(TestReactorMixin, unittest.TestCase):
                 id=19, buildsetid=30, builderid=77, priority=13, submitted_at=1300305712, results=-1
             ),
         ]
-        return self.do_request_collapse(rows, [19], [])
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([19], [])
 
     BASE_ROWS = [
+        fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
         fakedb.Builder(id=77, name='A'),
-        fakedb.SourceStamp(id=234, codebase='C'),
+        fakedb.SourceStamp(id=234, revision=None, repository='repo', codebase='C'),
         fakedb.Buildset(id=30, reason='foo', submitted_at=1300305712, results=-1),
         fakedb.BuildsetSourceStamp(sourcestampid=234, buildsetid=30),
-        fakedb.SourceStamp(id=235, codebase='C'),
         fakedb.Buildset(id=31, reason='foo', submitted_at=1300305712, results=-1),
-        fakedb.BuildsetSourceStamp(sourcestampid=235, buildsetid=31),
-        fakedb.SourceStamp(id=236, codebase='C'),
+        fakedb.BuildsetSourceStamp(sourcestampid=234, buildsetid=31),
         fakedb.Buildset(id=32, reason='foo', submitted_at=1300305712, results=-1),
-        fakedb.BuildsetSourceStamp(sourcestampid=236, buildsetid=32),
+        fakedb.BuildsetSourceStamp(sourcestampid=234, buildsetid=32),
         fakedb.BuildRequest(
             id=19, buildsetid=30, builderid=77, priority=13, submitted_at=1300305712, results=-1
         ),
@@ -104,29 +101,35 @@ class TestBuildRequestCollapser(TestReactorMixin, unittest.TestCase):
         ),
     ]
 
+    @defer.inlineCallbacks
     def test_collapseRequests_no_collapse(self):
         def collapseRequests_fn(master, builder, brdict1, brdict2):
             # Fail all collapse attempts
             return False
 
         self.bldr.getCollapseRequestsFn = lambda: collapseRequests_fn
-        return self.do_request_collapse(self.BASE_ROWS, [21], [])
+        yield self.master.db.insert_test_data(self.BASE_ROWS)
+        yield self.do_request_collapse([21], [])
 
+    @defer.inlineCallbacks
     def test_collapseRequests_collapse_all(self):
         def collapseRequests_fn(master, builder, brdict1, brdict2):
             # collapse all attempts
             return True
 
         self.bldr.getCollapseRequestsFn = lambda: collapseRequests_fn
-        return self.do_request_collapse(self.BASE_ROWS, [21], [19, 20])
+        yield self.master.db.insert_test_data(self.BASE_ROWS)
+        yield self.do_request_collapse([21], [19, 20])
 
+    @defer.inlineCallbacks
     def test_collapseRequests_collapse_all_duplicates(self):
         def collapseRequests_fn(master, builder, brdict1, brdict2):
             # collapse all attempts
             return True
 
         self.bldr.getCollapseRequestsFn = lambda: collapseRequests_fn
-        return self.do_request_collapse(self.BASE_ROWS, [21, 21], [19, 20])
+        yield self.master.db.insert_test_data(self.BASE_ROWS)
+        yield self.do_request_collapse([21, 21], [19, 20])
 
     # As documented:
     # Sourcestamps are compatible if all of the below conditions are met:
@@ -142,24 +145,10 @@ class TestBuildRequestCollapser(TestReactorMixin, unittest.TestCase):
         bsid,
         changeid,
         ssid,
-        codebase,
-        branch=None,
-        project=None,
-        repository=None,
         patchid=None,
-        revision=None,
         bs_properties=None,
     ):
         rows = [
-            fakedb.SourceStamp(
-                id=ssid,
-                codebase=codebase,
-                branch=branch,
-                project=project,
-                repository=repository,
-                patchid=patchid,
-                revision=revision,
-            ),
             fakedb.Buildset(id=bsid, reason='foo', submitted_at=1300305712, results=-1),
             fakedb.BuildsetSourceStamp(sourcestampid=ssid, buildsetid=bsid),
             fakedb.BuildRequest(
@@ -208,37 +197,46 @@ class TestBuildRequestCollapser(TestReactorMixin, unittest.TestCase):
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_with_codebases(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222, codebase='A'),
+            fakedb.SourceStamp(id=223, codebase='C'),
             fakedb.Builder(id=77, name='A'),
         ]
-        rows += self.makeBuildRequestRows(22, 122, None, 222, 'A')
-        rows += self.makeBuildRequestRows(21, 121, None, 221, 'C')
-        rows += self.makeBuildRequestRows(19, 119, None, 210, 'C')
-        rows += self.makeBuildRequestRows(20, 120, None, 220, 'C')
+        rows += self.makeBuildRequestRows(22, 122, None, 222)
+        rows += self.makeBuildRequestRows(21, 121, None, 223)
+        rows += self.makeBuildRequestRows(19, 119, None, 223)
+        rows += self.makeBuildRequestRows(20, 120, None, 223)
         self.bldr.getCollapseRequestsFn = lambda: Builder._defaultCollapseRequestFn
-        yield self.do_request_collapse(rows, [22], [])
-        yield self.do_request_collapse(rows, [21], [19, 20])
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([22], [])
+        yield self.do_request_collapse([21], [19, 20])
 
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_does_not_collapse_older(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222),
             fakedb.Builder(id=77, name='A'),
         ]
-        rows += self.makeBuildRequestRows(21, 121, None, 221, 'C')
-        rows += self.makeBuildRequestRows(19, 119, None, 210, 'C')
-        rows += self.makeBuildRequestRows(20, 120, None, 220, 'C')
+        rows += self.makeBuildRequestRows(21, 121, None, 222)
+        rows += self.makeBuildRequestRows(19, 119, None, 222)
+        rows += self.makeBuildRequestRows(20, 120, None, 222)
         self.bldr.getCollapseRequestsFn = lambda: Builder._defaultCollapseRequestFn
-        yield self.do_request_collapse(rows, [19], [])
-        yield self.do_request_collapse(rows, [20], [19])
-        yield self.do_request_collapse(rows, [21], [20])
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([19], [])
+        yield self.do_request_collapse([20], [19])
+        yield self.do_request_collapse([21], [20])
 
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_does_not_collapse_concurrent_claims(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222),
             fakedb.Builder(id=77, name='A'),
         ]
-        rows += self.makeBuildRequestRows(21, 121, None, 221, 'C')
-        rows += self.makeBuildRequestRows(19, 119, None, 210, 'C')
-        rows += self.makeBuildRequestRows(20, 120, None, 220, 'C')
+        rows += self.makeBuildRequestRows(21, 121, None, 222)
+        rows += self.makeBuildRequestRows(19, 119, None, 222)
+        rows += self.makeBuildRequestRows(20, 120, None, 222)
 
         claimed = []
 
@@ -251,116 +249,162 @@ class TestBuildRequestCollapser(TestReactorMixin, unittest.TestCase):
             return res
 
         self.bldr.getCollapseRequestsFn = lambda: collapse_fn
-        yield self.do_request_collapse(rows, [21], [19])
+
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([21], [19])
 
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_does_not_collapse_scheduler_props(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222),
             fakedb.Builder(id=77, name='A'),
         ]
         rows += self.makeBuildRequestRows(
-            21, 121, None, 221, 'C', bs_properties={'prop': ('value', 'Scheduler')}
+            21, 121, None, 222, bs_properties={'prop': ('value', 'Scheduler')}
         )
         rows += self.makeBuildRequestRows(
-            20, 120, None, 220, 'C', bs_properties={'prop': ('value', 'Other source')}
+            20, 120, None, 222, bs_properties={'prop': ('value', 'Other source')}
         )
         rows += self.makeBuildRequestRows(
-            19, 119, None, 219, 'C', bs_properties={'prop': ('value2', 'Scheduler')}
+            19, 119, None, 222, bs_properties={'prop': ('value2', 'Scheduler')}
         )
         rows += self.makeBuildRequestRows(
-            18, 118, None, 218, 'C', bs_properties={'prop': ('value', 'Scheduler')}
+            18, 118, None, 222, bs_properties={'prop': ('value', 'Scheduler')}
         )
         rows += self.makeBuildRequestRows(
-            17, 117, None, 217, 'C', bs_properties={'prop': ('value3', 'Other source')}
+            17, 117, None, 222, bs_properties={'prop': ('value3', 'Other source')}
         )
-        rows += self.makeBuildRequestRows(16, 116, None, 216, 'C')
+        rows += self.makeBuildRequestRows(16, 116, None, 222)
 
         self.bldr.getCollapseRequestsFn = lambda: Builder._defaultCollapseRequestFn
+
+        yield self.master.db.insert_test_data(rows)
         # only the same property coming from a scheduler is matched
-        yield self.do_request_collapse(rows, [21], [18])
+        yield self.do_request_collapse([21], [18])
         # only takes into account properties coming from scheduler
-        yield self.do_request_collapse(rows, [20], [16, 17])
+        yield self.do_request_collapse([20], [16, 17])
 
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_with_codebases_branches(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222, codebase='A', branch='br1'),
+            fakedb.SourceStamp(id=223, codebase='C', branch='br2'),
+            fakedb.SourceStamp(id=224, codebase='C', branch='br3'),
             fakedb.Builder(id=77, name='A'),
         ]
-        rows += self.makeBuildRequestRows(22, 122, None, 222, 'A', 'br1')
-        rows += self.makeBuildRequestRows(21, 121, None, 221, 'C', 'br2')
-        rows += self.makeBuildRequestRows(19, 119, None, 210, 'C', 'br2')
-        rows += self.makeBuildRequestRows(20, 120, None, 220, 'C', 'br3')
+        rows += self.makeBuildRequestRows(22, 122, None, 222)
+        rows += self.makeBuildRequestRows(21, 121, None, 223)
+        rows += self.makeBuildRequestRows(19, 119, None, 223)
+        rows += self.makeBuildRequestRows(20, 120, None, 224)
         self.bldr.getCollapseRequestsFn = lambda: Builder._defaultCollapseRequestFn
-        yield self.do_request_collapse(rows, [22], [])
-        yield self.do_request_collapse(rows, [21], [19])
+
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([22], [])
+        yield self.do_request_collapse([21], [19])
 
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_with_codebases_repository(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222, codebase='A', repository='repo1'),
+            fakedb.SourceStamp(id=223, codebase='C', repository='repo2'),
+            fakedb.SourceStamp(id=224, codebase='C', repository='repo3'),
             fakedb.Builder(id=77, name='A'),
         ]
-        rows += self.makeBuildRequestRows(22, 122, None, 222, 'A', None, 'p1')
-        rows += self.makeBuildRequestRows(21, 121, None, 221, 'C', None, 'p2')
-        rows += self.makeBuildRequestRows(19, 119, None, 210, 'C', None, 'p2')
-        rows += self.makeBuildRequestRows(20, 120, None, 220, 'C', None, 'p3')
+        rows += self.makeBuildRequestRows(22, 122, None, 222)
+        rows += self.makeBuildRequestRows(21, 121, None, 223)
+        rows += self.makeBuildRequestRows(19, 119, None, 223)
+        rows += self.makeBuildRequestRows(20, 120, None, 224)
         self.bldr.getCollapseRequestsFn = lambda: Builder._defaultCollapseRequestFn
-        yield self.do_request_collapse(rows, [22], [])
-        yield self.do_request_collapse(rows, [21], [19])
+
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([22], [])
+        yield self.do_request_collapse([21], [19])
 
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_with_codebases_projects(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222, codebase='A', project='proj1'),
+            fakedb.SourceStamp(id=223, codebase='C', project='proj2'),
+            fakedb.SourceStamp(id=224, codebase='C', project='proj3'),
             fakedb.Builder(id=77, name='A'),
         ]
-        rows += self.makeBuildRequestRows(22, 122, None, 222, 'A', None, None, 'project1')
-        rows += self.makeBuildRequestRows(21, 121, None, 221, 'C', None, None, 'project2')
-        rows += self.makeBuildRequestRows(19, 119, None, 210, 'C', None, None, 'project2')
-        rows += self.makeBuildRequestRows(20, 120, None, 220, 'C', None, None, 'project3')
+        rows += self.makeBuildRequestRows(22, 122, None, 222)
+        rows += self.makeBuildRequestRows(21, 121, None, 223)
+        rows += self.makeBuildRequestRows(19, 119, None, 223)
+        rows += self.makeBuildRequestRows(20, 120, None, 224)
         self.bldr.getCollapseRequestsFn = lambda: Builder._defaultCollapseRequestFn
-        yield self.do_request_collapse(rows, [22], [])
-        yield self.do_request_collapse(rows, [21], [19])
+
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([22], [])
+        yield self.do_request_collapse([21], [19])
 
     # * Neither source stamp has a patch (e.g., from a try scheduler)
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_with_a_patch(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222, codebase='A'),
+            fakedb.SourceStamp(id=223, codebase='C'),
+            fakedb.Patch(
+                id=123,
+                patch_base64='aGVsbG8sIHdvcmxk',
+                patch_author='bar',
+                patch_comment='foo',
+                subdir='/foo',
+                patchlevel=3,
+            ),
+            fakedb.SourceStamp(id=224, codebase='C', patchid=123),
             fakedb.Builder(id=77, name='A'),
         ]
-        rows += self.makeBuildRequestRows(22, 122, None, 222, 'A')
-        rows += self.makeBuildRequestRows(21, 121, None, 221, 'C')
-        rows += self.makeBuildRequestRows(19, 119, None, 210, 'C', patchid=123)
-        rows += self.makeBuildRequestRows(20, 120, None, 220, 'C')
+        rows += self.makeBuildRequestRows(22, 122, None, 222)
+        rows += self.makeBuildRequestRows(21, 121, None, 223)
+        rows += self.makeBuildRequestRows(19, 119, None, 224)
+        rows += self.makeBuildRequestRows(20, 120, None, 223)
         self.bldr.getCollapseRequestsFn = lambda: Builder._defaultCollapseRequestFn
-        yield self.do_request_collapse(rows, [22], [])
-        yield self.do_request_collapse(rows, [21], [20])
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([22], [])
+        yield self.do_request_collapse([21], [20])
 
     # * Either both source stamps are associated with changes..
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_with_changes(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222, codebase='A'),
+            fakedb.SourceStamp(id=223, codebase='C'),
             fakedb.Builder(id=77, name='A'),
         ]
-        rows += self.makeBuildRequestRows(22, 122, None, 222, 'A')
-        rows += self.makeBuildRequestRows(21, 121, 123, 221, 'C')
-        rows += self.makeBuildRequestRows(19, 119, None, 210, 'C')
-        rows += self.makeBuildRequestRows(20, 120, 124, 220, 'C')
+        rows += self.makeBuildRequestRows(22, 122, None, 222)
+        rows += self.makeBuildRequestRows(21, 121, 123, 223)
+        rows += self.makeBuildRequestRows(19, 119, None, 223)
+        rows += self.makeBuildRequestRows(20, 120, 124, 223)
         self.bldr.getCollapseRequestsFn = lambda: Builder._defaultCollapseRequestFn
-        yield self.do_request_collapse(rows, [22], [])
-        yield self.do_request_collapse(rows, [21], [20])
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([22], [])
+        yield self.do_request_collapse([21], [19, 20])
 
     # * ... or neither are associated with changes but they have matching revisions.
     @defer.inlineCallbacks
     def test_collapseRequests_collapse_default_with_non_matching_revision(self):
         rows = [
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.SourceStamp(id=222, codebase='A'),
+            fakedb.SourceStamp(id=223, codebase='C'),
+            fakedb.SourceStamp(id=224, codebase='C', revision='abcd1234'),
             fakedb.Builder(id=77, name='A'),
         ]
-        rows += self.makeBuildRequestRows(22, 122, None, 222, 'A')
-        rows += self.makeBuildRequestRows(21, 121, None, 221, 'C')
-        rows += self.makeBuildRequestRows(19, 119, None, 210, 'C', revision='abcd1234')
-        rows += self.makeBuildRequestRows(20, 120, None, 220, 'C')
+        rows += self.makeBuildRequestRows(22, 122, None, 222)
+        rows += self.makeBuildRequestRows(21, 121, None, 223)
+        rows += self.makeBuildRequestRows(19, 119, None, 224)
+        rows += self.makeBuildRequestRows(20, 120, None, 223)
         self.bldr.getCollapseRequestsFn = lambda: Builder._defaultCollapseRequestFn
-        yield self.do_request_collapse(rows, [22], [])
-        yield self.do_request_collapse(rows, [21], [20])
+        yield self.master.db.insert_test_data(rows)
+        yield self.do_request_collapse([22], [])
+        yield self.do_request_collapse([21], [20])
 
 
 class TestSourceStamp(unittest.TestCase):
@@ -465,8 +509,9 @@ class TestBuildRequest(TestReactorMixin, unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_fromBrdict(self):
-        master = fakemaster.make_master(self, wantData=True, wantDb=True)
-        master.db.insert_test_data([
+        master = yield fakemaster.make_master(self, wantData=True, wantDb=True)
+        yield master.db.insert_test_data([
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
             fakedb.Builder(id=77, name='bldr'),
             fakedb.SourceStamp(
                 id=234,
@@ -503,58 +548,33 @@ class TestBuildRequest(TestReactorMixin, unittest.TestCase):
 
         self.assertEqual(br.properties.getProperty('x'), 1)
         self.assertEqual(br.properties.getProperty('y'), 2)
-        self.assertEqual(br.submittedAt, 1200000000)
+        self.assertEqual(br.submitted_at, 1200000000)
         self.assertEqual(br.buildername, 'bldr')
         self.assertEqual(br.priority, 13)
         self.assertEqual(br.id, 288)
         self.assertEqual(br.bsid, 539)
 
     @defer.inlineCallbacks
-    def test_fromBrdict_submittedAt_NULL(self):
-        master = fakemaster.make_master(self, wantData=True, wantDb=True)
-        master.db.insert_test_data([
-            fakedb.Builder(id=77, name='bldr'),
-            fakedb.SourceStamp(
-                id=234,
-                branch='trunk',
-                revision='9284',
-                repository='svn://...',
-                project='world-domination',
-            ),
+    def test_fromBrdict_no_sourcestamps(self):
+        master = yield fakemaster.make_master(self, wantData=True, wantDb=True)
+        yield master.db.insert_test_data([
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
+            fakedb.Builder(id=78, name='not important'),
             fakedb.Buildset(id=539, reason='triggered'),
-            fakedb.BuildsetSourceStamp(buildsetid=539, sourcestampid=234),
-            fakedb.BuildRequest(
-                id=288, buildsetid=539, builderid=77, priority=13, submitted_at=None
-            ),
+            # buildset has no sourcestamps
+            fakedb.BuildRequest(id=288, buildsetid=539, builderid=78, priority=0),
         ])
         # use getBuildRequest to minimize the risk from changes to the format
         # of the brdict
         brdict = yield master.db.buildrequests.getBuildRequest(288)
-        br = yield buildrequest.BuildRequest.fromBrdict(master, brdict)
-
-        # remaining fields assumed to be checked in test_fromBrdict
-        self.assertEqual(br.submittedAt, None)
-
-    def test_fromBrdict_no_sourcestamps(self):
-        master = fakemaster.make_master(self, wantData=True, wantDb=True)
-        master.db.insert_test_data([
-            fakedb.Builder(id=78, name='not important'),
-            fakedb.Buildset(id=539, reason='triggered'),
-            # buildset has no sourcestamps
-            fakedb.BuildRequest(
-                id=288, buildsetid=539, builderid=78, priority=0, submitted_at=None
-            ),
-        ])
-        # use getBuildRequest to minimize the risk from changes to the format
-        # of the brdict
-        d = master.db.buildrequests.getBuildRequest(288)
-        d.addCallback(lambda brdict: buildrequest.BuildRequest.fromBrdict(master, brdict))
-        return self.assertFailure(d, AssertionError)
+        with self.assertRaises(AssertionError):
+            yield buildrequest.BuildRequest.fromBrdict(master, brdict)
 
     @defer.inlineCallbacks
     def test_fromBrdict_multiple_sourcestamps(self):
-        master = fakemaster.make_master(self, wantData=True, wantDb=True)
-        master.db.insert_test_data([
+        master = yield fakemaster.make_master(self, wantData=True, wantDb=True)
+        yield master.db.insert_test_data([
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
             fakedb.Builder(id=77, name='bldr'),
             fakedb.SourceStamp(
                 id=234,
@@ -607,7 +627,7 @@ class TestBuildRequest(TestReactorMixin, unittest.TestCase):
 
         self.assertEqual(br.properties.getProperty('x'), 1)
         self.assertEqual(br.properties.getProperty('y'), 2)
-        self.assertEqual(br.submittedAt, 1200000000)
+        self.assertEqual(br.submitted_at, 1200000000)
         self.assertEqual(br.buildername, 'bldr')
         self.assertEqual(br.priority, 13)
         self.assertEqual(br.id, 288)
@@ -628,8 +648,9 @@ class TestBuildRequest(TestReactorMixin, unittest.TestCase):
         Source2 has rev 9201 and contains changes 14 and 16 from repository svn://b
         """
         brs = []  # list of buildrequests
-        master = fakemaster.make_master(self, wantData=True, wantDb=True)
-        master.db.insert_test_data([
+        master = yield fakemaster.make_master(self, wantData=True, wantDb=True)
+        yield master.db.insert_test_data([
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
             fakedb.Builder(id=77, name='bldr'),
             fakedb.SourceStamp(
                 id=234,
@@ -743,8 +764,9 @@ class TestBuildRequest(TestReactorMixin, unittest.TestCase):
         Merge cannot be performed and raises error:
           Merging requests requires both requests to have the same codebases
         """
-        master = fakemaster.make_master(self, wantData=True, wantDb=True)
-        master.db.insert_test_data([
+        master = yield fakemaster.make_master(self, wantData=True, wantDb=True)
+        yield master.db.insert_test_data([
+            fakedb.Master(id=fakedb.FakeDBConnector.MASTER_ID),
             fakedb.Builder(id=77, name='bldr'),
             fakedb.SourceStamp(
                 id=238,

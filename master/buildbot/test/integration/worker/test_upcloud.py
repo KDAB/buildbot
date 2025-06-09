@@ -34,7 +34,7 @@ from buildbot.worker.upcloud import UpcloudLatentWorker
 # export BBTEST_UPCLOUD_CREDS=username:password
 
 # following environment variable can be used to stress concurrent worker startup
-NUM_CONCURRENT = int(os.environ.get("BUILDBOT_TEST_NUM_CONCURRENT_BUILD", 1))
+NUM_CONCURRENT = int(os.environ.get("BUILDBOT_TEST_NUM_CONCURRENT_BUILD", "1"))
 
 
 class UpcloudMaster(RunMasterBase):
@@ -118,7 +118,7 @@ buidbot ALL=(ALL) NOPASSWD:ALL
 EOF
 sudo -H -u buildbot bash -c "buildbot-worker create-worker /buildworker {masterFQDN} upcloud{i} pass"
 sudo -H -u buildbot bash -c "buildbot-worker start /buildworker"
-"""  # noqa pylint: disable=line-too-long
+"""
         }
         c['workers'].append(
             UpcloudLatentWorker(

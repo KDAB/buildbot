@@ -23,68 +23,29 @@ from twisted.trial import unittest
 
 from buildbot.db import buildsets
 from buildbot.test import fakedb
-from buildbot.test.util import connector_component
-from buildbot.test.util import db
-from buildbot.test.util import interfaces
+from buildbot.test.fake import fakemaster
+from buildbot.test.reactor import TestReactorMixin
 from buildbot.util import UTC
 from buildbot.util import datetime2epoch
 from buildbot.util import epoch2datetime
 
 
-class Tests(interfaces.InterfaceTests):
-    def setUpTests(self):
+class Tests(TestReactorMixin, unittest.TestCase):
+    @defer.inlineCallbacks
+    def setUp(self):
+        self.setup_test_reactor()
+        self.master = yield fakemaster.make_master(self, wantDb=True)
+        self.db = self.master.db
+
         self.now = 9272359
         self.reactor.advance(self.now)
 
         # set up a sourcestamp with id 234 for use below
-        return self.insert_test_data([
+        yield self.db.insert_test_data([
             fakedb.SourceStamp(id=234),
             fakedb.Builder(id=1, name='bldr1'),
             fakedb.Builder(id=2, name='bldr2'),
         ])
-
-    def test_signature_addBuildset(self):
-        @self.assertArgSpecMatches(self.db.buildsets.addBuildset)
-        def addBuildset(
-            self,
-            sourcestamps,
-            reason,
-            properties,
-            builderids,
-            waited_for,
-            external_idstring=None,
-            submitted_at=None,
-            rebuilt_buildid=None,
-            parent_buildid=None,
-            parent_relationship=None,
-            priority=0,
-        ):
-            pass
-
-    def test_signature_completeBuildset(self):
-        @self.assertArgSpecMatches(self.db.buildsets.completeBuildset)
-        def completeBuildset(self, bsid, results, complete_at=None):
-            pass
-
-    def test_signature_getBuildset(self):
-        @self.assertArgSpecMatches(self.db.buildsets.getBuildset)
-        def getBuildset(self, bsid):
-            pass
-
-    def test_signature_getBuildsets(self):
-        @self.assertArgSpecMatches(self.db.buildsets.getBuildsets)
-        def getBuildsets(self, complete=None, resultSpec=None):
-            pass
-
-    def test_signature_getRecentBuildsets(self):
-        @self.assertArgSpecMatches(self.db.buildsets.getRecentBuildsets)
-        def getBuildsets(self, count=None, branch=None, repository=None, complete=None):
-            pass
-
-    def test_signature_getBuildsetProperties(self):
-        @self.assertArgSpecMatches(self.db.buildsets.getBuildsetProperties)
-        def getBuildsetProperties(self, key, no_cache=False):
-            pass
 
     @defer.inlineCallbacks
     def test_addBuildset_getBuildset(self):
@@ -140,7 +101,7 @@ class Tests(interfaces.InterfaceTests):
 
     @defer.inlineCallbacks
     def do_test_getBuildsetProperties(self, buildsetid, rows, expected):
-        yield self.insert_test_data(rows)
+        yield self.db.insert_test_data(rows)
         props = yield self.db.buildsets.getBuildsetProperties(buildsetid)
 
         self.assertEqual(props, expected)
@@ -175,7 +136,7 @@ class Tests(interfaces.InterfaceTests):
 
     @defer.inlineCallbacks
     def test_getBuildset_incomplete_zero(self):
-        yield self.insert_test_data([
+        yield self.db.insert_test_data([
             fakedb.Buildset(
                 id=91,
                 complete=0,
@@ -206,7 +167,7 @@ class Tests(interfaces.InterfaceTests):
 
     @defer.inlineCallbacks
     def test_getBuildset_complete(self):
-        yield self.insert_test_data([
+        yield self.db.insert_test_data([
             fakedb.Buildset(
                 id=91,
                 complete=1,
@@ -242,7 +203,7 @@ class Tests(interfaces.InterfaceTests):
         self.assertEqual(bsdict, None)
 
     def insert_test_getBuildsets_data(self):
-        return self.insert_test_data([
+        return self.db.insert_test_data([
             fakedb.Buildset(
                 id=91,
                 complete=0,
@@ -356,15 +317,17 @@ class Tests(interfaces.InterfaceTests):
             ],
         )
 
+    @defer.inlineCallbacks
     def test_completeBuildset_already_completed(self):
-        d = self.insert_test_getBuildsets_data()
-        d.addCallback(lambda _: self.db.buildsets.completeBuildset(bsid=92, results=6))
-        return self.assertFailure(d, buildsets.AlreadyCompleteError)
+        yield self.insert_test_getBuildsets_data()
+        with self.assertRaises(buildsets.AlreadyCompleteError):
+            yield self.db.buildsets.completeBuildset(bsid=92, results=6)
 
+    @defer.inlineCallbacks
     def test_completeBuildset_missing(self):
-        d = self.insert_test_getBuildsets_data()
-        d.addCallback(lambda _: self.db.buildsets.completeBuildset(bsid=93, results=6))
-        return self.assertFailure(d, buildsets.AlreadyCompleteError)
+        yield self.insert_test_getBuildsets_data()
+        with self.assertRaises(buildsets.AlreadyCompleteError):
+            yield self.db.buildsets.completeBuildset(bsid=93, results=6)
 
     @defer.inlineCallbacks
     def test_completeBuildset(self):
@@ -403,7 +366,7 @@ class Tests(interfaces.InterfaceTests):
         self.assertEqual(sorted(bsdicts), sorted([(91, 1, 72759, 6), (92, 1, 298297876, 7)]))
 
     def insert_test_getRecentBuildsets_data(self):
-        return self.insert_test_data([
+        return self.db.insert_test_data([
             fakedb.SourceStamp(id=91, branch='branch_a', repository='repo_a'),
             fakedb.Buildset(
                 id=91,
@@ -520,8 +483,6 @@ class Tests(interfaces.InterfaceTests):
 
         self.assertEqual(bsdictlist, [])
 
-
-class RealTests(Tests):
     @defer.inlineCallbacks
     def test_addBuildset_simple(self):
         (bsid, brids) = yield self.db.buildsets.addBuildset(
@@ -630,53 +591,6 @@ class RealTests(Tests):
             self.assertEqual(sorted(rows), [(bsid, brids[1], 1), (bsid, brids[2], 2)])
 
         yield self.db.pool.do(thd)
-
-
-class TestFakeDB(unittest.TestCase, connector_component.FakeConnectorComponentMixin, Tests):
-    @defer.inlineCallbacks
-    def setUp(self):
-        yield self.setUpConnectorComponent()
-        yield self.setUpTests()
-
-    @defer.inlineCallbacks
-    def test_addBuildset_bad_waited_for(self):
-        # only the fake db asserts on the type of waited_for
-        d = self.db.buildsets.addBuildset(
-            sourcestamps=[234],
-            reason='because',
-            properties={},
-            builderids=[1],
-            external_idstring='extid',
-            waited_for='wat',
-        )
-        yield self.assertFailure(d, AssertionError)
-
-
-class TestRealDB(db.TestCase, connector_component.ConnectorComponentMixin, RealTests):
-    @defer.inlineCallbacks
-    def setUp(self):
-        yield self.setUpConnectorComponent(
-            table_names=[
-                'patches',
-                'buildsets',
-                'buildset_properties',
-                'objects',
-                'buildrequests',
-                'sourcestamps',
-                'buildset_sourcestamps',
-                'builders',
-                'builds',
-                'masters',
-                'workers',
-                "projects",
-            ]
-        )
-
-        self.db.buildsets = buildsets.BuildsetsConnectorComponent(self.db)
-        yield self.setUpTests()
-
-    def tearDown(self):
-        return self.tearDownConnectorComponent()
 
     @defer.inlineCallbacks
     def test_addBuildset_properties_cache(self):

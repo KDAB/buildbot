@@ -48,7 +48,6 @@ class TestMasterShellCommand(TestBuildStepMixin, TestReactorMixin, unittest.Test
                 os.environ[_COMSPEC_ENV] = self.comspec
             else:
                 del os.environ[_COMSPEC_ENV]
-        return self.tear_down_test_build_step()
 
     def test_constr_args(self):
         self.setup_step(
@@ -124,6 +123,44 @@ class TestMasterShellCommand(TestBuildStepMixin, TestReactorMixin, unittest.Test
             del os.environ['WORLD']
             del os.environ['LIST']
 
+    @defer.inlineCallbacks
+    def test_runtime_timeout_success(self):
+        """Test the runtime_timeout argument."""
+        runtime_timeout = 10
+        n_ping = 1
+        cmd = f'ping 127.0.0.1 -n {n_ping}'
+
+        if sys.platform == 'win32':
+            exp_argv = [r'C:\WINDOWS\system32\cmd.exe', '/c', cmd]
+        else:
+            exp_argv = ['/bin/sh', '-c', cmd]
+
+        self.setup_step(master.MasterShellCommand(command=cmd, runtime_timeout=runtime_timeout))
+
+        self.expect_commands(ExpectMasterShell(exp_argv).exit(0))
+        self.expect_outcome(result=SUCCESS)
+
+        yield self.run_step()
+
+    @defer.inlineCallbacks
+    def test_runtime_timeout_failed(self):
+        """Test the runtime_timeout argument aborts the step."""
+        runtime_timeout = 1
+        n_ping = 10
+        cmd = f'ping 127.0.0.1 -n {n_ping}'
+
+        if sys.platform == 'win32':
+            exp_argv = [r'C:\WINDOWS\system32\cmd.exe', '/c', cmd]
+        else:
+            exp_argv = ['/bin/sh', '-c', cmd]
+
+        self.setup_step(master.MasterShellCommand(command=cmd, runtime_timeout=runtime_timeout))
+
+        self.expect_commands(ExpectMasterShell(exp_argv).exit(2))
+        self.expect_outcome(result=FAILURE)
+
+        yield self.run_step()
+
     def test_prop_rendering(self):
         self.setup_step(
             master.MasterShellCommand(
@@ -171,9 +208,6 @@ class TestSetProperty(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_simple(self):
         self.setup_step(
             master.SetProperty(
@@ -193,9 +227,6 @@ class TestLogRenderable(TestBuildStepMixin, TestReactorMixin, unittest.TestCase)
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_simple(self):
         self.setup_step(
             master.LogRenderable(
@@ -213,9 +244,6 @@ class TestsSetProperties(TestBuildStepMixin, TestReactorMixin, unittest.TestCase
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     def doOneTest(self, **kwargs):
         # all three tests should create a 'a' property with 'b' value, all with different
@@ -244,9 +272,6 @@ class TestAssert(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     def test_eq_pass(self):
         self.setup_step(master.Assert(Property("test_prop") == "foo"))

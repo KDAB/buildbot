@@ -12,7 +12,7 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
-
+from __future__ import annotations
 
 from twisted.internet import defer
 from zope.interface import implementer
@@ -31,10 +31,11 @@ from buildbot.test.fake.step import BuildStepController
 from buildbot.test.fake.worker import WorkerController
 from buildbot.test.util.integration import RunFakeMasterTestCase
 
+RemoteWorker: type | None = None
 try:
     from buildbot_worker.bot import LocalWorker as RemoteWorker
 except ImportError:
-    RemoteWorker = None
+    pass
 
 
 @implementer(IBuildStepFactory)
@@ -107,6 +108,7 @@ class Tests(RunFakeMasterTestCase):
                 {'codebase': '', 'repository': '', 'branch': None, 'revision': None, 'project': ''},
             ],
         )
+        self.master.reactor.advance(1)
 
         # The worker fails to substantiate.
         controller.start_instance(True)
@@ -159,6 +161,7 @@ class Tests(RunFakeMasterTestCase):
                 {'codebase': '', 'repository': '', 'branch': None, 'revision': None, 'project': ''},
             ],
         )
+        self.master.reactor.advance(1)
 
         self.assertEqual(len(started_builds), 1)
 

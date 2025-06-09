@@ -16,14 +16,14 @@
 */
 
 import './PropertiesTable.scss';
-import {Table} from "react-bootstrap";
+import {Table} from 'react-bootstrap';
 import CopyToClipboard from 'react-copy-to-clipboard';
-import {observer} from "mobx-react";
-import {FaCopy} from "react-icons/fa";
+import {observer} from 'mobx-react';
+import {FaCopy} from 'react-icons/fa';
 
 type PropertiesTableProps = {
   properties: Map<string, any>;
-}
+};
 
 export const PropertiesTable = observer(({properties}: PropertiesTableProps) => {
   const propertyRows = Array.from(properties.entries()).map(([key, valueSource]: [string, any]) => {
@@ -34,14 +34,13 @@ export const PropertiesTable = observer(({properties}: PropertiesTableProps) => 
         <td className="text-left">{key}</td>
         <td className="text-left">
           <pre className="bb-properties-value">{valueString}</pre>
-          {/* @ts-ignore CopyToClipboard is not understood as React component for some reason */}
           <CopyToClipboard text={valueString}>
             <FaCopy className="bb-properties-copy clickable"></FaCopy>
           </CopyToClipboard>
         </td>
         <td className="text-right">{source}</td>
       </tr>
-    )
+    );
   });
 
   return (
@@ -53,9 +52,7 @@ export const PropertiesTable = observer(({properties}: PropertiesTableProps) => 
           <th className="text-right">Source</th>
         </tr>
       </thead>
-      <tbody>
-        {propertyRows}
-      </tbody>
+      <tbody>{propertyRows}</tbody>
     </Table>
   );
 });

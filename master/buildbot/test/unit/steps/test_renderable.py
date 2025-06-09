@@ -29,14 +29,11 @@ class TestBuildStep(BuildStep):
 
 
 class TestBuildStepNameIsRenderable(
-    TestBuildStepMixin, unittest.TestCase, TestReactorMixin, configmixin.ConfigErrorsMixin
+    TestBuildStepMixin, TestReactorMixin, configmixin.ConfigErrorsMixin, unittest.TestCase
 ):
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     def test_name_is_renderable(self):
         step = TestBuildStep(name=Interpolate('%(kw:foo)s', foo='bar'))

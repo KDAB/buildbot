@@ -16,7 +16,10 @@
 BuildSteps that are specific to the Twisted source tree
 """
 
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
 
 from twisted.internet import defer
 from twisted.python import log
@@ -29,6 +32,9 @@ from buildbot.process.results import SKIPPED
 from buildbot.process.results import SUCCESS
 from buildbot.process.results import WARNINGS
 from buildbot.steps import shell
+
+if TYPE_CHECKING:
+    from twisted.internet.base import ReactorBase
 
 
 class HLint(buildstep.ShellMixin, buildstep.BuildStep):
@@ -69,7 +75,7 @@ class HLint(buildstep.ShellMixin, buildstep.BuildStep):
         command = []
         if self.python:
             command.append(self.python)
-        command += ["bin/lore", "-p", "--output", "lint"] + self.hlintFiles
+        command += ["bin/lore", "-p", "--output", "lint", *self.hlintFiles]
 
         cmd = yield self.makeRemoteShellCommand(command=command)
         yield self.runCommand(cmd)
@@ -84,7 +90,7 @@ class HLint(buildstep.ShellMixin, buildstep.BuildStep):
         if cmd.didFail():
             return FAILURE
 
-        self.descriptionDone = f"{self.warnings} hlin{self.warnings == 1 and 't' or 'ts'}"
+        self.descriptionDone = f"{self.warnings} hlin{(self.warnings == 1 and 't') or 'ts'}"
 
         if self.warnings:
             return WARNINGS
@@ -182,18 +188,18 @@ class Trial(buildstep.ShellMixin, buildstep.BuildStep):
 
     renderables = ['tests', 'jobs']
     flunkOnFailure = True
-    python = None
+    python: list[str] | str | None = None
     trial = "trial"
     trialMode = ["--reporter=bwverbose"]  # requires Twisted-2.1.0 or newer
     # for Twisted-2.0.0 or 1.3.0, use ["-o"] instead
-    trialArgs = []
-    jobs = None
+    trialArgs: list[str] = []
+    jobs: int | None = None
     testpath = UNSPECIFIED  # required (but can be None)
     testChanges = False  # TODO: needs better name
     recurse = False
-    reactor = None
+    reactor: ReactorBase | None = None
     randomly = False
-    tests = None  # required
+    tests: list[str] | None = None  # required
 
     description = 'testing'
     descriptionDone = 'tests'
@@ -375,7 +381,7 @@ class Trial(buildstep.ShellMixin, buildstep.BuildStep):
             if parsed:
                 results = SUCCESS
                 if total:
-                    desc_parts += [str(total), total == 1 and "test" or "tests", "passed"]
+                    desc_parts += [str(total), (total == 1 and "test") or "tests", "passed"]
                 else:
                     desc_parts += ["no tests", "run"]
             else:
@@ -387,14 +393,14 @@ class Trial(buildstep.ShellMixin, buildstep.BuildStep):
             if parsed:
                 desc_parts += ["tests"]
                 if failures:
-                    desc_parts += [str(failures), failures == 1 and "failure" or "failures"]
+                    desc_parts += [str(failures), (failures == 1 and "failure") or "failures"]
                 if errors:
-                    desc_parts += [str(errors), errors == 1 and "error" or "errors"]
+                    desc_parts += [str(errors), (errors == 1 and "error") or "errors"]
             else:
                 desc_parts += ["tests", "failed"]
 
         if counts['skips']:
-            desc_parts += [str(counts['skips']), counts['skips'] == 1 and "skip" or "skips"]
+            desc_parts += [str(counts['skips']), (counts['skips'] == 1 and "skip") or "skips"]
         if counts['expectedFailures']:
             desc_parts += [
                 str(counts['expectedFailures']),

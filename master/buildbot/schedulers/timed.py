@@ -13,11 +13,15 @@
 #
 # Copyright Buildbot Team Members
 
+from __future__ import annotations
+
 import datetime
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import ClassVar
 
 import croniter
 from twisted.internet import defer
-from twisted.internet import reactor
 from twisted.python import log
 from zope.interface import implementer
 
@@ -29,6 +33,9 @@ from buildbot.process import buildstep
 from buildbot.process import properties
 from buildbot.schedulers import base
 from buildbot.util.codebase import AbsoluteSourceStampsMixin
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 # States of objects which have to be observed are registered in the data base table `object_state`.
 # `objectid` in the `object_state` refers to the object from the `object` table.
@@ -71,14 +78,14 @@ from buildbot.util.codebase import AbsoluteSourceStampsMixin
 # Thus upgrading the version does not start unnecessary builds.
 
 
-class Timed(AbsoluteSourceStampsMixin, base.BaseScheduler):
+class Timed(AbsoluteSourceStampsMixin, base.ReconfigurableBaseScheduler):
     """
     Parent class for timed schedulers.  This takes care of the (surprisingly
     subtle) mechanics of ensuring that each timed actuation runs to completion
     before the service stops.
     """
 
-    compare_attrs = (
+    compare_attrs: ClassVar[Sequence[str]] = (
         'reason',
         'createAbsoluteSourceStamps',
         'onlyIfChanged',
@@ -92,22 +99,9 @@ class Timed(AbsoluteSourceStampsMixin, base.BaseScheduler):
     class NoBranch:
         pass
 
-    def __init__(
-        self,
-        name,
-        builderNames,
-        reason='',
-        createAbsoluteSourceStamps=False,
-        onlyIfChanged=False,
-        branch=NoBranch,
-        change_filter=None,
-        fileIsImportant=None,
-        onlyImportant=False,
-        **kwargs,
-    ):
-        super().__init__(name, builderNames, **kwargs)
+    def __init__(self, name, builderNames, **kwargs):
+        super().__init__(name=name, builderNames=builderNames, **kwargs)
 
-        # tracking for when to start the next build
         self.lastActuated = None
 
         # A lock to make sure that each actuation occurs without interruption.
@@ -117,18 +111,61 @@ class Timed(AbsoluteSourceStampsMixin, base.BaseScheduler):
         self.actuateAt = None
         self.actuateAtTimer = None
 
-        self.reason = util.bytes2unicode(reason % {'name': name})
+        self.is_first_build = None
+
+    def checkConfig(  # type: ignore[override]
+        self,
+        builderNames,
+        reason='',
+        createAbsoluteSourceStamps=False,
+        onlyIfChanged=False,
+        branch=NoBranch,
+        change_filter=None,
+        fileIsImportant=None,
+        onlyImportant=False,
+        **kwargs: Any,
+    ):
+        super().checkConfig(builderNames=builderNames, **kwargs)
+
+        if fileIsImportant and not callable(fileIsImportant):
+            config.error("fileIsImportant must be a callable")
+
+    @defer.inlineCallbacks
+    def reconfigService(  # type: ignore[override]
+        self,
+        builderNames,
+        reason='',
+        createAbsoluteSourceStamps=False,
+        onlyIfChanged=False,
+        branch=NoBranch,
+        change_filter=None,
+        fileIsImportant=None,
+        onlyImportant=False,
+        **kwargs: Any,
+    ):
+        yield super().reconfigService(builderNames=builderNames, **kwargs)
+
+        self.reason = util.bytes2unicode(reason % {'name': self.name})
         self.branch = branch
         self.change_filter = ChangeFilter.fromSchedulerConstructorArgs(change_filter=change_filter)
         self.createAbsoluteSourceStamps = createAbsoluteSourceStamps
         self.onlyIfChanged = onlyIfChanged
-        if fileIsImportant and not callable(fileIsImportant):
-            config.error("fileIsImportant must be a callable")
         self.fileIsImportant = fileIsImportant
         # If True, only important changes will be added to the buildset.
         self.onlyImportant = onlyImportant
-        self._reactor = reactor  # patched by tests
-        self.is_first_build = None
+
+        if self.active:
+            # FIXME: there's a short time below where changes will not be picked up
+            yield self._stopConsumingChanges()
+
+            if self.onlyIfChanged or self.createAbsoluteSourceStamps:
+                yield self.startConsumingChanges(
+                    fileIsImportant=self.fileIsImportant,
+                    change_filter=self.change_filter,
+                    onlyImportant=self.onlyImportant,
+                )
+            else:
+                yield self.master.db.schedulers.flushChangeClassifications(self.serviceid)
 
     @defer.inlineCallbacks
     def activate(self):
@@ -183,20 +220,19 @@ class Timed(AbsoluteSourceStampsMixin, base.BaseScheduler):
 
     # Scheduler methods
 
+    @defer.inlineCallbacks
     def gotChange(self, change, important):
         # both important and unimportant changes on our branch are recorded, as
         # we will include all such changes in any buildsets we start.  Note
         # that we must check the branch here because it is not included in the
         # change filter.
         if self.branch is not Timed.NoBranch and change.branch != self.branch:
-            return defer.succeed(None)  # don't care about this change
+            return  # don't care about this change
 
-        d = self.master.db.schedulers.classifyChanges(self.serviceid, {change.number: important})
+        yield self.master.db.schedulers.classifyChanges(self.serviceid, {change.number: important})
 
         if self.createAbsoluteSourceStamps:
-            d.addCallback(lambda _: self.recordChange(change))
-
-        return d
+            yield self.recordChange(change)
 
     @defer.inlineCallbacks
     def startBuild(self):
@@ -299,7 +335,7 @@ class Timed(AbsoluteSourceStampsMixin, base.BaseScheduler):
 
     def now(self):
         "Similar to util.now, but patchable by tests"
-        return util.now(self._reactor)
+        return util.now(self.master.reactor)
 
     def current_utc_offset(self, tm):
         return (
@@ -329,7 +365,7 @@ class Timed(AbsoluteSourceStampsMixin, base.BaseScheduler):
                     f"{self.__class__.__name__} scheduler <{self.name}>: "
                     "missed scheduled build time - building immediately"
                 )
-            self.actuateAtTimer = self._reactor.callLater(untilNext, self._actuate)
+            self.actuateAtTimer = self.master.reactor.callLater(untilNext, self._actuate)
 
     @defer.inlineCallbacks
     def _actuate(self):
@@ -360,19 +396,29 @@ class Timed(AbsoluteSourceStampsMixin, base.BaseScheduler):
 
 
 class Periodic(Timed):
-    compare_attrs = ('periodicBuildTimer',)
+    compare_attrs: ClassVar[Sequence[str]] = ('periodicBuildTimer',)
 
-    def __init__(
+    def checkConfig(  # type: ignore[override]
         self,
-        name,
         builderNames,
         periodicBuildTimer,
         reason="The Periodic scheduler named '%(name)s' triggered this build",
-        **kwargs,
+        **kwargs: Any,
     ):
-        super().__init__(name, builderNames, reason=reason, **kwargs)
+        super().checkConfig(builderNames=builderNames, reason=reason, **kwargs)
+
         if periodicBuildTimer <= 0:
             config.error("periodicBuildTimer must be positive")
+
+    @defer.inlineCallbacks
+    def reconfigService(  # type: ignore[override]
+        self,
+        builderNames,
+        periodicBuildTimer,
+        reason="The Periodic scheduler named '%(name)s' triggered this build",
+        **kwargs: Any,
+    ):
+        yield super().reconfigService(builderNames=builderNames, reason=reason, **kwargs)
         self.periodicBuildTimer = periodicBuildTimer
 
     def getNextBuildTime(self, lastActuated):
@@ -382,7 +428,7 @@ class Periodic(Timed):
 
 
 class NightlyBase(Timed):
-    compare_attrs = (
+    compare_attrs: ClassVar[Sequence[str]] = (
         "minute",
         "hour",
         "dayOfMonth",
@@ -395,9 +441,8 @@ class NightlyBase(Timed):
         "force_at_day_of_week",
     )
 
-    def __init__(
+    def checkConfig(  # type: ignore[override]
         self,
-        name,
         builderNames,
         minute=0,
         hour='*',
@@ -409,9 +454,27 @@ class NightlyBase(Timed):
         force_at_day_of_month=None,
         force_at_month=None,
         force_at_day_of_week=None,
-        **kwargs,
+        **kwargs: Any,
     ):
-        super().__init__(name, builderNames, **kwargs)
+        super().checkConfig(builderNames=builderNames, **kwargs)
+
+    @defer.inlineCallbacks
+    def reconfigService(  # type: ignore[override]
+        self,
+        builderNames,
+        minute=0,
+        hour='*',
+        dayOfMonth='*',
+        month='*',
+        dayOfWeek='*',
+        force_at_minute=None,
+        force_at_hour=None,
+        force_at_day_of_month=None,
+        force_at_month=None,
+        force_at_day_of_week=None,
+        **kwargs: Any,
+    ):
+        yield super().reconfigService(builderNames=builderNames, **kwargs)
 
         self.minute = minute
         self.hour = hour
@@ -515,78 +578,46 @@ class NightlyBase(Timed):
 
 
 class Nightly(NightlyBase):
-    def __init__(
+    def checkConfig(
         self,
-        name,
-        builderNames,
-        minute=0,
-        hour='*',
-        dayOfMonth='*',
-        month='*',
-        dayOfWeek='*',
+        *args: Any,
         reason="The Nightly scheduler named '%(name)s' triggered this build",
-        force_at_minute=None,
-        force_at_hour=None,
-        force_at_day_of_month=None,
-        force_at_month=None,
-        force_at_day_of_week=None,
-        **kwargs,
+        **kwargs: Any,
     ):
-        super().__init__(
-            name=name,
-            builderNames=builderNames,
-            minute=minute,
-            hour=hour,
-            dayOfMonth=dayOfMonth,
-            month=month,
-            dayOfWeek=dayOfWeek,
-            reason=reason,
-            force_at_minute=force_at_minute,
-            force_at_hour=force_at_hour,
-            force_at_day_of_month=force_at_day_of_month,
-            force_at_month=force_at_month,
-            force_at_day_of_week=force_at_day_of_week,
-            **kwargs,
-        )
+        super().checkConfig(*args, reason=reason, **kwargs)
+
+    @defer.inlineCallbacks
+    def reconfigService(
+        self,
+        *args: Any,
+        reason="The Nightly scheduler named '%(name)s' triggered this build",
+        **kwargs: Any,
+    ):
+        yield super().reconfigService(*args, reason=reason, **kwargs)
 
 
 @implementer(ITriggerableScheduler)
 class NightlyTriggerable(NightlyBase):
-    def __init__(
-        self,
-        name,
-        builderNames,
-        minute=0,
-        hour='*',
-        dayOfMonth='*',
-        month='*',
-        dayOfWeek='*',
-        reason="The NightlyTriggerable scheduler named '%(name)s' triggered this build",
-        force_at_minute=None,
-        force_at_hour=None,
-        force_at_day_of_month=None,
-        force_at_month=None,
-        force_at_day_of_week=None,
-        **kwargs,
-    ):
-        super().__init__(
-            name=name,
-            builderNames=builderNames,
-            minute=minute,
-            hour=hour,
-            dayOfMonth=dayOfMonth,
-            month=month,
-            dayOfWeek=dayOfWeek,
-            reason=reason,
-            force_at_minute=force_at_minute,
-            force_at_hour=force_at_hour,
-            force_at_day_of_month=force_at_day_of_month,
-            force_at_month=force_at_month,
-            force_at_day_of_week=force_at_day_of_week,
-            **kwargs,
-        )
-
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
         self._lastTrigger = None
+
+    def checkConfig(
+        self,
+        *args: Any,
+        reason="The NightlyTriggerable scheduler named '%(name)s' triggered this build",
+        **kwargs: Any,
+    ):
+        super().checkConfig(*args, reason=reason, **kwargs)
+
+    @defer.inlineCallbacks
+    def reconfigService(
+        self,
+        *args: Any,
+        reason="The NightlyTriggerable scheduler named '%(name)s' triggered this build",
+        **kwargs: Any,
+    ):
+        yield super().reconfigService(*args, reason=reason, **kwargs)
 
     @defer.inlineCallbacks
     def activate(self):

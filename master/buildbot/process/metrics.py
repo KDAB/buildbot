@@ -32,11 +32,14 @@ Basic architecture:
     MetricWatcher
 """
 
+from __future__ import annotations
+
 import gc
 import os
 import sys
 from collections import defaultdict
 from collections import deque
+from typing import TYPE_CHECKING
 
 from twisted.application import service
 from twisted.internet import reactor
@@ -46,13 +49,16 @@ from twisted.python import log
 from buildbot import util
 from buildbot.util import service as util_service
 
+if TYPE_CHECKING:
+    from twisted.internet.base import ReactorBase
+
 # Make use of the resource module if we can
 try:
     import resource
 
     assert resource
 except ImportError:
-    resource = None
+    resource = None  # type: ignore[assignment]
 
 
 class MetricEvent:
@@ -98,7 +104,7 @@ def countMethod(counter):
 
 class Timer:
     # For testing
-    _reactor = None
+    _reactor: ReactorBase | None = None
 
     def __init__(self, name):
         self.name = name
@@ -210,7 +216,7 @@ class MetricHandler:
 
 
 class MetricCountHandler(MetricHandler):
-    _counters = None
+    _counters: defaultdict[str, int] | None = None
 
     def reset(self):
         self._counters = defaultdict(int)
@@ -241,7 +247,7 @@ class MetricCountHandler(MetricHandler):
 
 
 class MetricTimeHandler(MetricHandler):
-    _timers = None
+    _timers: defaultdict[str, AveragingFiniteList] | None = None
 
     def reset(self):
         self._timers = defaultdict(AveragingFiniteList)
@@ -269,7 +275,7 @@ class MetricTimeHandler(MetricHandler):
 
 
 class MetricAlarmHandler(MetricHandler):
-    _alarms = None
+    _alarms: defaultdict[str, tuple[int, str]] | None
 
     def reset(self):
         self._alarms = defaultdict(lambda x: ALARM_OK)

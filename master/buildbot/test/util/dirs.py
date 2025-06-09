@@ -16,14 +16,23 @@
 
 import os
 import shutil
+from typing import TYPE_CHECKING
 
 from twisted.internet import defer
+from twisted.trial import unittest
+
+if TYPE_CHECKING:
+    from twisted.trial import unittest
+
+    _DirsMixinBase = unittest.TestCase
+else:
+    _DirsMixinBase = object
 
 
-class DirsMixin:
+class DirsMixin(_DirsMixinBase):
     _dirs = None
 
-    def setUpDirs(self, *dirs):
+    def setUpDirs(self, *dirs) -> defer.Deferred[None]:
         """Make sure C{dirs} exist and are empty, and set them up to be deleted
         in tearDown."""
         self._dirs = map(os.path.abspath, dirs)
@@ -31,12 +40,13 @@ class DirsMixin:
             if os.path.exists(dir):
                 shutil.rmtree(dir)
             os.makedirs(dir)
-        # return a deferred to make chaining easier
-        return defer.succeed(None)
 
-    def tearDownDirs(self):
-        for dir in self._dirs:
-            if os.path.exists(dir):
-                shutil.rmtree(dir)
+        def cleanup():
+            for dir in self._dirs:
+                if os.path.exists(dir):
+                    shutil.rmtree(dir)
+
+        self.addCleanup(cleanup)
+
         # return a deferred to make chaining easier
         return defer.succeed(None)

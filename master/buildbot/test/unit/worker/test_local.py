@@ -26,13 +26,14 @@ from buildbot.worker import local
 
 class TestLocalWorker(TestReactorMixin, unittest.TestCase):
     try:
-        from buildbot_worker.bot import LocalWorker as _  # noqa
+        from buildbot_worker.bot import LocalWorker as _
     except ImportError:
         skip = "buildbot-worker package is not installed"
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantDb=True, wantData=True)
+        self.master = yield fakemaster.make_master(self, wantDb=True, wantData=True)
         self.botmaster = self.master.botmaster
         self.workers = self.master.workers
 

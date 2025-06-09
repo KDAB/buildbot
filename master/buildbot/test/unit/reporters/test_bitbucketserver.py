@@ -56,7 +56,7 @@ class TestBitbucketServerStatusPush(
     def setUp(self):
         self.setup_test_reactor()
         self.setup_reporter_test()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
         yield self.master.startService()
 
     @defer.inlineCallbacks
@@ -68,10 +68,7 @@ class TestBitbucketServerStatusPush(
             "serv", Interpolate("username"), Interpolate("passwd"), **kwargs
         )
         yield self.sp.setServiceParent(self.master)
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def _check_start_and_finish_build(self, build):
@@ -221,7 +218,7 @@ class TestBitbucketServerCoreAPIStatusPush(
     def setupReporter(self, token=None, **kwargs):
         self.setup_test_reactor()
         self.setup_reporter_test()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
 
         def setup_properties(props):
             props.setProperty("buildername", "Builder0", "Builder")
@@ -246,13 +243,15 @@ class TestBitbucketServerCoreAPIStatusPush(
         yield self.sp.setServiceParent(self.master)
         yield self.master.startService()
 
+        @defer.inlineCallbacks
+        def cleanup():
+            if self.master.running:
+                yield self.master.stopService()
+
+        self.addCleanup(cleanup)
+
     def setUp(self):
         self.master = None
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        if self.master and self.master.running:
-            yield self.master.stopService()
 
     @defer.inlineCallbacks
     def _check_start_and_finish_build(self, build, parentPlan=False, epoch=False):
@@ -498,14 +497,14 @@ class TestBitbucketServerCoreAPIStatusPush(
     def test_with_no_repo(self):
         yield self.setupReporter()
 
-        self.reporter_test_repo = None
+        self.reporter_test_repo = ''
         build = yield self.insert_build_finished(SUCCESS)
 
         self.setUpLogging()
         # we don't expect any request
         build['complete'] = False
         yield self.sp._got_event(('builds', 20, 'new'), build)
-        self.assertLogged("Unable to parse repository info from 'None' for SSID: 234")
+        self.assertLogged("Unable to parse repository info from '' for SSID: 234")
 
     @defer.inlineCallbacks
     def test_with_renderers(self):
@@ -630,8 +629,9 @@ class TestBitbucketServerPRCommentPush(
     def setUp(self):
         self.setup_test_reactor()
         self.setup_reporter_test()
-        self.master = fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
+        self.master = yield fakemaster.make_master(self, wantData=True, wantDb=True, wantMq=True)
         yield self.master.startService()
+        self.addCleanup(self.master.stopService)
 
     @defer.inlineCallbacks
     def setupReporter(self, verbose=True, generator_class=BuildStatusGenerator, **kwargs):
@@ -662,10 +662,6 @@ class TestBitbucketServerPRCommentPush(
             **kwargs,
         )
         yield self.cp.setServiceParent(self.master)
-
-    @defer.inlineCallbacks
-    def tearDown(self):
-        yield self.master.stopService()
 
     @defer.inlineCallbacks
     def setupBuildResults(self, buildResults, set_pr=True):

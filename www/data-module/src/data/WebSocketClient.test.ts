@@ -5,9 +5,9 @@
   Copyright Buildbot Team Members
 */
 
-import {describe, expect, it} from "vitest";
-import {getWebSocketUrl, WebSocketClient} from "./WebSocketClient";
-import {MockWebSocket} from "./MockWebSocket";
+import {describe, expect, it} from 'vitest';
+import {getWebSocketUrl, WebSocketClient} from './WebSocketClient';
+import {MockWebSocket} from './MockWebSocket';
 
 describe('Web socket client', () => {
   function createMockClient(): [WebSocketClient, MockWebSocket] {
@@ -17,8 +17,7 @@ describe('Web socket client', () => {
   }
 
   function openSocket(socket: MockWebSocket) {
-    if (socket.onopen !== null)
-      socket.onopen({} as Event);
+    if (socket.onopen !== null) socket.onopen({} as Event);
   }
 
   it('should send the data, when the WebSocket is open', () => {
@@ -29,8 +28,8 @@ describe('Web socket client', () => {
     const msg1 = {a: 1};
     const msg2 = {b: 2};
     const msg3 = {c: 3};
-    client.send(msg1);
-    client.send(msg2);
+    void client.send(msg1);
+    void client.send(msg2);
     expect(socket.sendQueue.length).toBe(0);
     openSocket(socket);
     expect(socket.sendQueue.length).toBe(2);
@@ -44,11 +43,11 @@ describe('Web socket client', () => {
 
     socket.readyState = WebSocket.OPEN;
     expect(socket.sendQueue.length).toBe(0);
-    client.send({});
-    expect(socket.sendQueue).toContain(JSON.stringify({'_id': 1}));
+    void client.send({});
+    expect(socket.sendQueue).toContain(JSON.stringify({_id: 1}));
   });
 
-  it('should resolve the promise when a response message is received with code 200', () => {
+  it('should resolve the promise when a response message is received with code 200', async () => {
     const [client, socket] = createMockClient();
 
     socket.readyState = WebSocket.OPEN;
@@ -60,10 +59,10 @@ describe('Web socket client', () => {
     const response = JSON.stringify({_id: id, code: 200});
 
     socket.respond(response);
-    expect(promise).resolves.toEqual(undefined);
+    await expect(promise).resolves.toEqual(undefined);
   });
 
-  it('should reject the promise when a response message is received, but the code is not 200', () => {
+  it('should reject the promise when a response message is received, but the code is not 200', async () => {
     const [client, socket] = createMockClient();
 
     socket.readyState = WebSocket.OPEN;
@@ -73,12 +72,10 @@ describe('Web socket client', () => {
     // send a response message with status code 500
     const id = socket.parsedSendQueue[0]._id;
     socket.respond(JSON.stringify({_id: id, code: 500}));
-    expect(promise).rejects.toBeInstanceOf(Error);
+    await expect(promise).rejects.toBeInstanceOf(Error);
   });
 
-
   describe('getWebSocketUrl()', () => {
-
     it('should support url based on the host and port (localhost)', () => {
       const location = {
         protocol: 'http:',

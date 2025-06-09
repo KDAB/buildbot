@@ -38,10 +38,7 @@ from buildbot.test.util import sourcesteps
 class TestCVS(sourcesteps.SourceStepMixin, TestReactorMixin, unittest.TestCase):
     def setUp(self):
         self.setup_test_reactor()
-        return self.setUpSourceStep()
-
-    def tearDown(self):
-        return self.tearDownSourceStep()
+        return self.setup_test_build_step()
 
     def setup_step(self, step, *args, **kwargs):
         super().setup_step(step, *args, **kwargs)

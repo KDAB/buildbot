@@ -52,7 +52,6 @@ class TestFileUpload(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
     def tearDown(self):
         if os.path.exists(self.destfile):
             os.unlink(self.destfile)
-        return self.tear_down_test_build_step()
 
     def testConstructorModeType(self):
         with self.assertRaises(config.ConfigErrors):
@@ -320,8 +319,6 @@ class TestDirectoryUpload(TestBuildStepMixin, TestReactorMixin, unittest.TestCas
         if os.path.exists(self.destdir):
             shutil.rmtree(self.destdir)
 
-        return self.tear_down_test_build_step()
-
     def testBasic(self):
         self.setup_step(transfer.DirectoryUpload(workersrc="srcdir", masterdest=self.destdir))
 
@@ -503,8 +500,6 @@ class TestMultipleFileUpload(TestBuildStepMixin, TestReactorMixin, unittest.Test
     def tearDown(self):
         if os.path.exists(self.destdir):
             shutil.rmtree(self.destdir)
-
-        return self.tear_down_test_build_step()
 
     def testEmpty(self):
         self.setup_step(transfer.MultipleFileUpload(workersrcs=[], masterdest=self.destdir))
@@ -945,7 +940,6 @@ class TestFileDownload(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
     def tearDown(self):
         if os.path.exists(self.destfile):
             os.unlink(self.destfile)
-        return self.tear_down_test_build_step()
 
     def test_init_workerdest_keyword(self):
         step = transfer.FileDownload(mastersrc='srcfile', workerdest='dstfile')
@@ -1038,7 +1032,7 @@ class TestFileDownload(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
 
         self.expect_outcome(
             result=FAILURE,
-            state_string=f"downloading to {os.path.basename(self.destfile)} " "(failure)",
+            state_string=f"downloading to {os.path.basename(self.destfile)} (failure)",
         )
         self.expect_log_file('stderr', "File 'not existing file' not available at master")
         yield self.run_step()
@@ -1048,9 +1042,6 @@ class TestStringDownload(TestBuildStepMixin, TestReactorMixin, unittest.TestCase
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     # check that ConfigErrors is raised on invalid 'mode' argument
 
@@ -1157,9 +1148,6 @@ class TestJSONStringDownload(TestBuildStepMixin, TestReactorMixin, unittest.Test
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     @defer.inlineCallbacks
     def testBasic(self):
         msg = {"message": 'Hello World'}
@@ -1257,9 +1245,6 @@ class TestJSONPropertiesDownload(TestBuildStepMixin, TestReactorMixin, unittest.
     def setUp(self):
         self.setup_test_reactor()
         return self.setup_test_build_step()
-
-    def tearDown(self):
-        return self.tear_down_test_build_step()
 
     @defer.inlineCallbacks
     def testBasic(self):

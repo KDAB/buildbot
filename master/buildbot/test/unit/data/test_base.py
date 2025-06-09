@@ -15,12 +15,15 @@
 
 from unittest import mock
 
+from twisted.internet import defer
 from twisted.trial import unittest
 
 from buildbot.data import base
 from buildbot.test.fake import fakemaster
 from buildbot.test.reactor import TestReactorMixin
 from buildbot.test.util import endpoint
+from buildbot.test.util.warnings import assertProducesWarnings
+from buildbot.warnings import DeprecatedApiWarning
 
 
 class ResourceType(TestReactorMixin, unittest.TestCase):
@@ -55,11 +58,12 @@ class ResourceType(TestReactorMixin, unittest.TestCase):
         self.assertIsInstance(eps[0], MyEndpoint)
         self.assertIdentical(eps[0].master, master)
 
+    @defer.inlineCallbacks
     def test_produceEvent(self):
         cls = self.makeResourceTypeSubclass(
-            name='singular', eventPathPatterns="/foo/:fooid/bar/:barid"
+            name='singular', eventPathPatterns=["/foo/:fooid/bar/:barid"]
         )
-        master = fakemaster.make_master(self, wantMq=True)
+        master = yield fakemaster.make_master(self, wantMq=True)
         master.mq.verifyMessages = False  # since this is a pretend message
         inst = cls(master)
         inst.produceEvent(
@@ -70,16 +74,34 @@ class ResourceType(TestReactorMixin, unittest.TestCase):
             (('foo', '10', 'bar', '20', 'tested'), {"fooid": 10, "barid": '20'})
         ])
 
+    @defer.inlineCallbacks
     def test_compilePatterns(self):
+        class MyResourceType(base.ResourceType):
+            eventPathPatterns = [
+                "/builder/:builderid/build/:number",
+                "/build/:buildid",
+            ]
+
+        master = yield fakemaster.make_master(self, wantMq=True)
+        master.mq.verifyMessages = False  # since this is a pretend message
+        inst = MyResourceType(master)
+        self.assertEqual(inst.eventPaths, ['builder/{builderid}/build/{number}', 'build/{buildid}'])
+
+    @defer.inlineCallbacks
+    def test_compilePatterns_multiline_string_deprecation(self):
         class MyResourceType(base.ResourceType):
             eventPathPatterns = """
                 /builder/:builderid/build/:number
                 /build/:buildid
             """
 
-        master = fakemaster.make_master(self, wantMq=True)
+        master = yield fakemaster.make_master(self, wantMq=True)
         master.mq.verifyMessages = False  # since this is a pretend message
-        inst = MyResourceType(master)
+        with assertProducesWarnings(
+            DeprecatedApiWarning,
+            message_pattern='.*ResourceType.eventPathPatterns as a multiline string is deprecated.*',
+        ):
+            inst = MyResourceType(master)
         self.assertEqual(inst.eventPaths, ['builder/{builderid}/build/{number}', 'build/{buildid}'])
 
 
@@ -88,18 +110,16 @@ class Endpoint(endpoint.EndpointMixin, unittest.TestCase):
         name = "my"
 
     class MyEndpoint(base.Endpoint):
-        pathPatterns = """
-            /my/pattern
-        """
+        pathPatterns = [
+            "/my/pattern",
+        ]
 
     endpointClass = MyEndpoint
     resourceTypeClass = MyResourceType
 
+    @defer.inlineCallbacks
     def setUp(self):
-        self.setUpEndpoint()
-
-    def tearDown(self):
-        self.tearDownEndpoint()
+        yield self.setUpEndpoint()
 
     def test_sets_master(self):
         self.assertIdentical(self.master, self.ep.master)

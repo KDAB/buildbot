@@ -13,45 +13,31 @@
 #
 # Copyright Buildbot Team Members
 
-import json
+from __future__ import annotations
 
-from twisted.internet import defer
-from twisted.python import failure
+import json
+from typing import TYPE_CHECKING
 
 from buildbot.data import connector
 from buildbot.data import resultspec
-from buildbot.db.buildrequests import AlreadyClaimedError
 from buildbot.test.util import validation
 from buildbot.util import service
+from buildbot.util.twisted import async_to_deferred
+
+if TYPE_CHECKING:
+    import datetime
 
 
 class FakeUpdates(service.AsyncService):
     # unlike "real" update methods, all of the fake methods are here in a
     # single class.
 
-    def __init__(self, testcase):
+    def __init__(self, testcase, data):
         self.testcase = testcase
+        self.data = data
 
         # test cases should assert the values here:
         self.changesAdded = []  # Changes are numbered starting at 1.
-        # { name : id }; users can add changesources here
-        self.changesourceIds = {}
-        self.buildsetsAdded = []  # Buildsets are numbered starting at 1
-        self.maybeBuildsetCompleteCalls = 0
-        self.masterStateChanges = []  # dictionaries
-        self.schedulerIds = {}  # { name : id }; users can add schedulers here
-        self.builderIds = {}  # { name : id }; users can add builders here
-        self.schedulerMasters = {}  # { schedulerid : masterid }
-        self.changesourceMasters = {}  # { changesourceid : masterid }
-        self.workerIds = {}  # { name : id }; users can add workers here
-        # { logid : {'finished': .., 'name': .., 'type': .., 'content': [ .. ]} }
-        self.logs = {}
-        self.claimedBuildRequests = set([])
-        self.stepStateString = {}  # { stepid : string }
-        self.stepUrls = {}  # { stepid : [(name,url)] }
-        self.properties = []
-        self.missingWorkers = []
-        # extra assertions
 
     def assertProperties(self, sourced, properties):
         self.testcase.assertIsInstance(properties, dict)
@@ -88,9 +74,6 @@ class FakeUpdates(service.AsyncService):
         project='',
         src=None,
     ):
-        if properties is None:
-            properties = {}
-
         # double-check args, types, etc.
         if files is not None:
             self.testcase.assertIsInstance(files, list)
@@ -101,56 +84,64 @@ class FakeUpdates(service.AsyncService):
         self.testcase.assertIsInstance(revision, (type(None), str))
         self.testcase.assertIsInstance(when_timestamp, (type(None), int))
         self.testcase.assertIsInstance(branch, (type(None), str))
-
-        if callable(category):
-            pre_change = self.master.config.preChangeGenerator(
-                author=author,
-                committer=committer,
-                files=files,
-                comments=comments,
-                revision=revision,
-                when_timestamp=when_timestamp,
-                branch=branch,
-                revlink=revlink,
-                properties=properties,
-                repository=repository,
-                project=project,
-            )
-            category = category(pre_change)
-
-        self.testcase.assertIsInstance(category, (type(None), str))
         self.testcase.assertIsInstance(revlink, (type(None), str))
-        self.assertProperties(sourced=False, properties=properties)
+        if properties is not None:
+            self.assertProperties(sourced=False, properties=properties)
         self.testcase.assertIsInstance(repository, str)
         self.testcase.assertIsInstance(codebase, (type(None), str))
         self.testcase.assertIsInstance(project, str)
         self.testcase.assertIsInstance(src, (type(None), str))
 
-        # use locals() to ensure we get all of the args and don't forget if
-        # more are added
-        self.changesAdded.append(locals())
-        self.changesAdded[-1].pop('self')
-        return defer.succeed(len(self.changesAdded))
+        self.changesAdded.append({
+            'files': files,
+            'comments': comments,
+            'author': author,
+            'committer': committer,
+            'revision': revision,
+            'when_timestamp': when_timestamp,
+            'branch': branch,
+            'category': category,
+            'revlink': revlink,
+            'properties': properties.copy() if properties is not None else None,
+            'repository': repository,
+            'codebase': codebase,
+            'project': project,
+            'src': src,
+        })
+        return self.data.updates.addChange(
+            files=files,
+            comments=comments,
+            author=author,
+            committer=committer,
+            revision=revision,
+            when_timestamp=when_timestamp,
+            branch=branch,
+            category=category,
+            revlink=revlink,
+            properties=properties,
+            repository=repository,
+            codebase=codebase,
+            project=project,
+            src=src,
+        )
 
     def masterActive(self, name, masterid):
         self.testcase.assertIsInstance(name, str)
         self.testcase.assertIsInstance(masterid, int)
         if masterid:
             self.testcase.assertEqual(masterid, 1)
-        self.thisMasterActive = True
-        return defer.succeed(None)
+        return self.data.updates.masterActive(name, masterid)
 
     def masterStopped(self, name, masterid):
         self.testcase.assertIsInstance(name, str)
         self.testcase.assertEqual(masterid, 1)
-        self.thisMasterActive = False
-        return defer.succeed(None)
+        return self.data.updates.masterStopped(name, masterid)
 
     def expireMasters(self, forceHouseKeeping=False):
-        return defer.succeed(None)
+        return self.data.updates.expireMasters(forceHouseKeeping=forceHouseKeeping)
 
-    @defer.inlineCallbacks
-    def addBuildset(
+    @async_to_deferred
+    async def addBuildset(
         self,
         waited_for,
         scheduler=None,
@@ -163,49 +154,38 @@ class FakeUpdates(service.AsyncService):
         parent_buildid=None,
         parent_relationship=None,
         priority=0,
-    ):
-        if sourcestamps is None:
-            sourcestamps = []
-        if properties is None:
-            properties = {}
-        if builderids is None:
-            builderids = []
-        # assert types
+    ) -> tuple[int, dict[int, int]]:
         self.testcase.assertIsInstance(scheduler, str)
-        self.testcase.assertIsInstance(sourcestamps, list)
-        for ss in sourcestamps:
-            if not isinstance(ss, int) and not isinstance(ss, dict):
-                self.testcase.fail(f"{ss} ({type(ss)}) is not an integer or a dictionary")
-            del ss  # since we use locals(), below
+        self.testcase.assertIsInstance(sourcestamps, (type(None), list))
+        if sourcestamps is not None:
+            for ss in sourcestamps:
+                if not isinstance(ss, int) and not isinstance(ss, dict):
+                    self.testcase.fail(f"{ss} ({type(ss)}) is not an integer or a dictionary")
         self.testcase.assertIsInstance(reason, str)
-        self.assertProperties(sourced=True, properties=properties)
-        self.testcase.assertIsInstance(builderids, list)
+        if properties is not None:
+            self.assertProperties(sourced=True, properties=properties)
+        self.testcase.assertIsInstance(builderids, (type(None), list))
         self.testcase.assertIsInstance(external_idstring, (type(None), str))
 
-        self.buildsetsAdded.append(locals())
-        self.buildsetsAdded[-1].pop('self')
-
-        # call through to the db layer, since many scheduler tests expect to
-        # find the buildset in the db later - TODO fix this!
-        bsid, brids = yield self.master.db.buildsets.addBuildset(
+        return await self.data.updates.addBuildset(
+            waited_for,
+            scheduler=scheduler,
             sourcestamps=sourcestamps,
             reason=reason,
             properties=properties,
             builderids=builderids,
-            waited_for=waited_for,
             external_idstring=external_idstring,
             rebuilt_buildid=rebuilt_buildid,
             parent_buildid=parent_buildid,
             parent_relationship=parent_relationship,
+            priority=priority,
         )
-        return (bsid, brids)
 
     def maybeBuildsetComplete(self, bsid):
-        self.maybeBuildsetCompleteCalls += 1
-        return defer.succeed(None)
+        return self.data.updates.maybeBuildsetComplete(bsid)
 
-    @defer.inlineCallbacks
-    def claimBuildRequests(self, brids, claimed_at=None):
+    @async_to_deferred
+    async def claimBuildRequests(self, brids, claimed_at=None) -> bool:
         validation.verifyType(
             self.testcase, 'brids', brids, validation.ListValidator(validation.IntValidator())
         )
@@ -215,25 +195,14 @@ class FakeUpdates(service.AsyncService):
             claimed_at,
             validation.NoneOk(validation.DateTimeValidator()),
         )
-        if not brids:
-            return True
-        try:
-            yield self.master.db.buildrequests.claimBuildRequests(
-                brids=brids, claimed_at=claimed_at
-            )
-        except AlreadyClaimedError:
-            return False
-        self.claimedBuildRequests.update(set(brids))
-        return True
+        return await self.data.updates.claimBuildRequests(brids, claimed_at=claimed_at)
 
-    @defer.inlineCallbacks
-    def unclaimBuildRequests(self, brids):
+    @async_to_deferred
+    async def unclaimBuildRequests(self, brids) -> None:
         validation.verifyType(
             self.testcase, 'brids', brids, validation.ListValidator(validation.IntValidator())
         )
-        self.claimedBuildRequests.difference_update(set(brids))
-        if brids:
-            yield self.master.db.buildrequests.unclaimBuildRequests(brids)
+        return await self.data.updates.unclaimBuildRequests(brids)
 
     def completeBuildRequests(self, brids, results, complete_at=None):
         validation.verifyType(
@@ -246,84 +215,159 @@ class FakeUpdates(service.AsyncService):
             complete_at,
             validation.NoneOk(validation.DateTimeValidator()),
         )
-        return defer.succeed(True)
+        return self.data.updates.completeBuildRequests(brids, results, complete_at=complete_at)
 
     def rebuildBuildrequest(self, buildrequest):
-        return defer.succeed(None)
+        return self.data.updates.rebuildBuildrequest(buildrequest)
 
-    @defer.inlineCallbacks
-    def update_project_info(
+    @async_to_deferred
+    async def update_project_info(
         self,
         projectid,
         slug,
         description,
         description_format,
         description_html,
-    ):
-        yield self.master.db.projects.update_project_info(
+    ) -> None:
+        return await self.data.updates.update_project_info(
             projectid, slug, description, description_format, description_html
         )
 
-    def find_project_id(self, name):
+    def find_project_id(self, name: str, auto_create: bool = True):
         validation.verifyType(self.testcase, 'project name', name, validation.StringValidator())
-        return self.master.db.projects.find_project_id(name)
+        validation.verifyType(
+            self.testcase, 'auto_create', auto_create, validation.BooleanValidator()
+        )
+        return self.data.updates.find_project_id(name)
+
+    @async_to_deferred
+    async def add_commit(
+        self,
+        *,
+        codebaseid: int,
+        author: str,
+        committer: str | None = None,
+        files: list[str] | None = None,
+        comments: str,
+        when_timestamp: datetime.datetime,
+        revision: str,
+        parent_commitid: int | None = None,
+    ) -> None:
+        validation.verifyType(self.testcase, 'codebaseid', codebaseid, validation.IntValidator())
+        validation.verifyType(self.testcase, 'author', author, validation.StringValidator())
+        validation.verifyType(
+            self.testcase, 'committer', committer, validation.NoneOk(validation.StringValidator())
+        )
+        validation.verifyType(
+            self.testcase,
+            'files',
+            files,
+            validation.NoneOk(validation.StringListValidator()),
+        )
+        validation.verifyType(self.testcase, 'comments', comments, validation.StringValidator())
+        validation.verifyType(
+            self.testcase, 'when_timestamp', when_timestamp, validation.IntValidator()
+        )
+        validation.verifyType(self.testcase, 'revision', revision, validation.StringValidator())
+        validation.verifyType(
+            self.testcase,
+            'parent_commitid',
+            parent_commitid,
+            validation.NoneOk(validation.IntValidator()),
+        )
+
+        return await self.data.updates.add_commit(
+            codebaseid=codebaseid,
+            author=author,
+            committer=committer,
+            files=files,
+            comments=comments,
+            when_timestamp=when_timestamp,
+            revision=revision,
+            parent_commitid=parent_commitid,
+        )
+
+    @async_to_deferred
+    async def update_branch(
+        self,
+        *,
+        codebaseid: int,
+        name: str,
+        commitid: int | None = None,
+        last_timestamp: datetime.datetime,
+    ) -> None:
+        validation.verifyType(self.testcase, 'codebaseid', codebaseid, validation.IntValidator())
+        validation.verifyType(self.testcase, 'name', name, validation.StringValidator())
+        validation.verifyType(
+            self.testcase, 'commitid', commitid, validation.NoneOk(validation.IntValidator())
+        )
+        validation.verifyType(
+            self.testcase, 'last_timestamp', last_timestamp, validation.IntValidator()
+        )
+
+        return await self.data.updates.update_branch(
+            codebaseid=codebaseid,
+            name=name,
+            commitid=commitid,
+            last_timestamp=last_timestamp,
+        )
+
+    @async_to_deferred
+    async def update_codebase_info(
+        self,
+        *,
+        codebaseid: int,
+        projectid: int,
+        slug: str,
+    ) -> None:
+        validation.verifyType(self.testcase, 'codebaseid', codebaseid, validation.IntValidator())
+        validation.verifyType(self.testcase, 'projectid', projectid, validation.IntValidator())
+        validation.verifyType(self.testcase, 'slug', slug, validation.StringValidator())
+
+        await self.data.updates.update_codebase_info(
+            codebaseid=codebaseid, projectid=projectid, slug=slug
+        )
+
+    def find_codebase_id(self, *, projectid: int, name: str, auto_create: bool = True):
+        validation.verifyType(self.testcase, 'project id', projectid, validation.IntValidator())
+        validation.verifyType(self.testcase, 'codebase name', name, validation.StringValidator())
+        return self.data.updates.find_codebase_id(
+            projectid=projectid, name=name, auto_create=auto_create
+        )
 
     def updateBuilderList(self, masterid, builderNames):
         self.testcase.assertEqual(masterid, self.master.masterid)
         for n in builderNames:
             self.testcase.assertIsInstance(n, str)
         self.builderNames = builderNames
-        return defer.succeed(None)
+        return self.data.updates.updateBuilderList(masterid, builderNames)
 
-    @defer.inlineCallbacks
-    def updateBuilderInfo(
+    @async_to_deferred
+    async def updateBuilderInfo(
         self, builderid, description, description_format, description_html, projectid, tags
-    ):
-        yield self.master.db.builders.updateBuilderInfo(
+    ) -> None:
+        await self.data.updates.updateBuilderInfo(
             builderid, description, description_format, description_html, projectid, tags
         )
 
-    def masterDeactivated(self, masterid):
-        return defer.succeed(None)
-
     def findSchedulerId(self, name):
-        return self.master.db.schedulers.findSchedulerId(name)
-
-    def forget_about_it(self, name):
-        validation.verifyType(self.testcase, 'scheduler name', name, validation.StringValidator())
-        if name not in self.schedulerIds:
-            self.schedulerIds[name] = max([0] + list(self.schedulerIds.values())) + 1
-        return defer.succeed(self.schedulerIds[name])
+        return self.data.updates.findSchedulerId(name)
 
     def findChangeSourceId(self, name):
         validation.verifyType(
             self.testcase, 'changesource name', name, validation.StringValidator()
         )
-        if name not in self.changesourceIds:
-            self.changesourceIds[name] = max([0] + list(self.changesourceIds.values())) + 1
-        return defer.succeed(self.changesourceIds[name])
+        return self.data.updates.findChangeSourceId(name)
 
     def findBuilderId(self, name):
         validation.verifyType(self.testcase, 'builder name', name, validation.StringValidator())
-        return self.master.db.builders.findBuilderId(name)
+        return self.data.updates.findBuilderId(name)
 
     def trySetSchedulerMaster(self, schedulerid, masterid):
-        currentMasterid = self.schedulerMasters.get(schedulerid)
-        if isinstance(currentMasterid, Exception):
-            return defer.fail(failure.Failure(currentMasterid))
-        if currentMasterid and masterid is not None:
-            return defer.succeed(False)
-        self.schedulerMasters[schedulerid] = masterid
-        return defer.succeed(True)
+        return self.data.updates.trySetSchedulerMaster(schedulerid, masterid)
 
     def trySetChangeSourceMaster(self, changesourceid, masterid):
-        currentMasterid = self.changesourceMasters.get(changesourceid)
-        if isinstance(currentMasterid, Exception):
-            return defer.fail(failure.Failure(currentMasterid))
-        if currentMasterid and masterid is not None:
-            return defer.succeed(False)
-        self.changesourceMasters[changesourceid] = masterid
-        return defer.succeed(True)
+        return self.data.updates.trySetChangeSourceMaster(changesourceid, masterid)
 
     def addBuild(self, builderid, buildrequestid, workerid):
         validation.verifyType(self.testcase, 'builderid', builderid, validation.IntValidator())
@@ -331,28 +375,28 @@ class FakeUpdates(service.AsyncService):
             self.testcase, 'buildrequestid', buildrequestid, validation.IntValidator()
         )
         validation.verifyType(self.testcase, 'workerid', workerid, validation.IntValidator())
-        return defer.succeed((10, 1))
+        return self.data.updates.addBuild(builderid, buildrequestid, workerid)
 
     def generateNewBuildEvent(self, buildid):
         validation.verifyType(self.testcase, 'buildid', buildid, validation.IntValidator())
-        return defer.succeed(None)
+        return self.data.updates.generateNewBuildEvent(buildid)
 
     def setBuildStateString(self, buildid, state_string):
         validation.verifyType(self.testcase, 'buildid', buildid, validation.IntValidator())
         validation.verifyType(
             self.testcase, 'state_string', state_string, validation.StringValidator()
         )
-        return defer.succeed(None)
+        return self.data.updates.setBuildStateString(buildid, state_string)
 
     def add_build_locks_duration(self, buildid, duration_s):
         validation.verifyType(self.testcase, 'buildid', buildid, validation.IntValidator())
         validation.verifyType(self.testcase, 'duration_s', duration_s, validation.IntValidator())
-        return defer.succeed(None)
+        return self.data.updates.add_build_locks_duration(buildid, duration_s)
 
     def finishBuild(self, buildid, results):
         validation.verifyType(self.testcase, 'buildid', buildid, validation.IntValidator())
         validation.verifyType(self.testcase, 'results', results, validation.IntValidator())
-        return defer.succeed(None)
+        return self.data.updates.finishBuild(buildid, results)
 
     def setBuildProperty(self, buildid, name, value, source):
         validation.verifyType(self.testcase, 'buildid', buildid, validation.IntValidator())
@@ -362,13 +406,10 @@ class FakeUpdates(service.AsyncService):
         except (TypeError, ValueError):
             self.testcase.fail(f"Value for {name} is not JSON-able")
         validation.verifyType(self.testcase, 'source', source, validation.StringValidator())
-        return defer.succeed(None)
+        return self.data.updates.setBuildProperty(buildid, name, value, source)
 
-    @defer.inlineCallbacks
-    def setBuildProperties(self, buildid, properties):
-        for k, v, s in properties.getProperties().asList():
-            self.properties.append((buildid, k, v, s))
-            yield self.setBuildProperty(buildid, k, v, s)
+    def setBuildProperties(self, buildid, properties) -> None:
+        return self.data.updates.setBuildProperties(buildid, properties)
 
     def addStep(self, buildid, name):
         validation.verifyType(self.testcase, 'buildid', buildid, validation.IntValidator())
@@ -376,14 +417,13 @@ class FakeUpdates(service.AsyncService):
         # thus the effective API is that step name can be any string. We should first
         # fix the API and only then verify correct usage in tests.
         validation.verifyType(self.testcase, 'name', name, validation.StringValidator())
-        return defer.succeed((10, 1, name))
+        return self.data.updates.addStep(buildid, name)
 
     def addStepURL(self, stepid, name, url):
         validation.verifyType(self.testcase, 'stepid', stepid, validation.IntValidator())
         validation.verifyType(self.testcase, 'name', name, validation.StringValidator())
         validation.verifyType(self.testcase, 'url', url, validation.StringValidator())
-        self.stepUrls.setdefault(stepid, []).append((name, url))
-        return defer.succeed(None)
+        return self.data.updates.addStepURL(stepid, name, url)
 
     def startStep(self, stepid, started_at=None, locks_acquired=False):
         validation.verifyType(self.testcase, 'stepid', stepid, validation.IntValidator())
@@ -393,7 +433,9 @@ class FakeUpdates(service.AsyncService):
         validation.verifyType(
             self.testcase, "locks_acquired", locks_acquired, validation.BooleanValidator()
         )
-        return defer.succeed(None)
+        return self.data.updates.startStep(
+            stepid, started_at=started_at, locks_acquired=locks_acquired
+        )
 
     def set_step_locks_acquired_at(self, stepid, locks_acquired_at=None):
         validation.verifyType(self.testcase, 'stepid', stepid, validation.IntValidator())
@@ -403,45 +445,42 @@ class FakeUpdates(service.AsyncService):
             locks_acquired_at,
             validation.NoneOk(validation.IntValidator()),
         )
-        return defer.succeed(None)
+        return self.data.updates.set_step_locks_acquired_at(
+            stepid, locks_acquired_at=locks_acquired_at
+        )
 
     def setStepStateString(self, stepid, state_string):
         validation.verifyType(self.testcase, 'stepid', stepid, validation.IntValidator())
         validation.verifyType(
             self.testcase, 'state_string', state_string, validation.StringValidator()
         )
-        self.stepStateString[stepid] = state_string
-        return defer.succeed(None)
+        return self.data.updates.setStepStateString(stepid, state_string)
 
     def finishStep(self, stepid, results, hidden):
         validation.verifyType(self.testcase, 'stepid', stepid, validation.IntValidator())
         validation.verifyType(self.testcase, 'results', results, validation.IntValidator())
         validation.verifyType(self.testcase, 'hidden', hidden, validation.BooleanValidator())
-        return defer.succeed(None)
+        return self.data.updates.finishStep(stepid, results, hidden)
 
     def addLog(self, stepid, name, type):
         validation.verifyType(self.testcase, 'stepid', stepid, validation.IntValidator())
         validation.verifyType(self.testcase, 'name', name, validation.StringValidator())
         validation.verifyType(self.testcase, 'type', type, validation.IdentifierValidator(1))
-        logid = max([0] + list(self.logs)) + 1
-        self.logs[logid] = {"name": name, "type": type, "content": [], "finished": False}
-        return defer.succeed(logid)
+        return self.data.updates.addLog(stepid, name, type)
 
     def finishLog(self, logid):
         validation.verifyType(self.testcase, 'logid', logid, validation.IntValidator())
-        self.logs[logid]['finished'] = True
-        return defer.succeed(None)
+        return self.data.updates.finishLog(logid)
 
     def compressLog(self, logid):
         validation.verifyType(self.testcase, 'logid', logid, validation.IntValidator())
-        return defer.succeed(None)
+        return self.data.updates.compressLog(logid)
 
     def appendLog(self, logid, content):
         validation.verifyType(self.testcase, 'logid', logid, validation.IntValidator())
         validation.verifyType(self.testcase, 'content', content, validation.StringValidator())
         self.testcase.assertEqual(content[-1], '\n')
-        self.logs[logid]['content'].append(content)
-        return defer.succeed(None)
+        return self.data.updates.appendLog(logid, content)
 
     def findWorkerId(self, name):
         validation.verifyType(
@@ -449,48 +488,50 @@ class FakeUpdates(service.AsyncService):
         )
         # this needs to actually get inserted into the db (fake or real) since
         # getWorker will get called later
-        return self.master.db.workers.findWorkerId(name)
+        return self.data.updates.findWorkerId(name)
 
     def workerConnected(self, workerid, masterid, workerinfo):
-        return self.master.db.workers.workerConnected(
+        return self.data.updates.workerConnected(
             workerid=workerid, masterid=masterid, workerinfo=workerinfo
         )
 
     def workerConfigured(self, workerid, masterid, builderids):
-        return self.master.db.workers.workerConfigured(
+        return self.data.updates.workerConfigured(
             workerid=workerid, masterid=masterid, builderids=builderids
         )
 
     def workerDisconnected(self, workerid, masterid):
-        return self.master.db.workers.workerDisconnected(workerid=workerid, masterid=masterid)
+        return self.data.updates.workerDisconnected(workerid=workerid, masterid=masterid)
 
     def deconfigureAllWorkersForMaster(self, masterid):
-        return self.master.db.workers.deconfigureAllWorkersForMaster(masterid=masterid)
+        return self.data.updates.deconfigureAllWorkersForMaster(masterid=masterid)
 
     def workerMissing(self, workerid, masterid, last_connection, notify):
-        self.missingWorkers.append((workerid, masterid, last_connection, notify))
+        return self.data.updates.workerMissing(workerid, masterid, last_connection, notify)
 
     def schedulerEnable(self, schedulerid, v):
-        return self.master.db.schedulers.enable(schedulerid, v)
+        return self.data.updates.schedulerEnable(schedulerid, v)
 
     def set_worker_paused(self, workerid, paused, pause_reason=None):
-        return self.master.db.workers.set_worker_paused(workerid, paused, pause_reason=pause_reason)
+        return self.data.updates.set_worker_paused(workerid, paused, pause_reason)
 
     def set_worker_graceful(self, workerid, graceful):
-        return self.master.db.workers.set_worker_graceful(workerid, graceful)
+        return self.data.updates.set_worker_graceful(workerid, graceful)
 
     # methods form BuildData resource
-    @defer.inlineCallbacks
-    def setBuildData(self, buildid, name, value, source):
+    @async_to_deferred
+    async def setBuildData(self, buildid, name, value, source) -> None:
         validation.verifyType(self.testcase, 'buildid', buildid, validation.IntValidator())
         validation.verifyType(self.testcase, 'name', name, validation.StringValidator())
         validation.verifyType(self.testcase, 'value', value, validation.BinaryValidator())
         validation.verifyType(self.testcase, 'source', source, validation.StringValidator())
-        yield self.master.db.build_data.setBuildData(buildid, name, value, source)
+        return await self.data.updates.setBuildData(buildid, name, value, source)
 
     # methods from TestResultSet resource
-    @defer.inlineCallbacks
-    def addTestResultSet(self, builderid, buildid, stepid, description, category, value_unit):
+    @async_to_deferred
+    async def addTestResultSet(
+        self, builderid, buildid, stepid, description, category, value_unit
+    ) -> int:
         validation.verifyType(self.testcase, 'builderid', builderid, validation.IntValidator())
         validation.verifyType(self.testcase, 'buildid', buildid, validation.IntValidator())
         validation.verifyType(self.testcase, 'stepid', stepid, validation.IntValidator())
@@ -499,14 +540,14 @@ class FakeUpdates(service.AsyncService):
         )
         validation.verifyType(self.testcase, 'category', category, validation.StringValidator())
         validation.verifyType(self.testcase, 'value_unit', value_unit, validation.StringValidator())
-
-        test_result_setid = yield self.master.db.test_result_sets.addTestResultSet(
+        return await self.data.updates.addTestResultSet(
             builderid, buildid, stepid, description, category, value_unit
         )
-        return test_result_setid
 
-    @defer.inlineCallbacks
-    def completeTestResultSet(self, test_result_setid, tests_passed=None, tests_failed=None):
+    @async_to_deferred
+    async def completeTestResultSet(
+        self, test_result_setid, tests_passed=None, tests_failed=None
+    ) -> None:
         validation.verifyType(
             self.testcase, 'test_result_setid', test_result_setid, validation.IntValidator()
         )
@@ -523,16 +564,12 @@ class FakeUpdates(service.AsyncService):
             validation.NoneOk(validation.IntValidator()),
         )
 
-        yield self.master.db.test_result_sets.completeTestResultSet(
-            test_result_setid, tests_passed, tests_failed
-        )
+        await self.data.updates.completeTestResultSet(test_result_setid, tests_passed, tests_failed)
 
     # methods from TestResult resource
-    @defer.inlineCallbacks
-    def addTestResults(self, builderid, test_result_setid, result_values):
-        yield self.master.db.test_results.addTestResults(
-            builderid, test_result_setid, result_values
-        )
+    @async_to_deferred
+    async def addTestResults(self, builderid, test_result_setid, result_values) -> None:
+        await self.data.updates.addTestResults(builderid, test_result_setid, result_values)
 
 
 class FakeDataConnector(service.AsyncMultiService):
@@ -543,15 +580,15 @@ class FakeDataConnector(service.AsyncMultiService):
     def __init__(self, master, testcase):
         super().__init__()
         self.setServiceParent(master)
-        self.updates = FakeUpdates(testcase)
-        self.updates.setServiceParent(self)
 
-        # get and control are delegated to a real connector,
+        # get, control and updates are delegated to a real connector,
         # after some additional assertions
         self.realConnector = connector.DataConnector()
         self.realConnector.setServiceParent(self)
+
+        self.updates = FakeUpdates(testcase, self.realConnector)
+        self.updates.setServiceParent(self)
         self.rtypes = self.realConnector.rtypes
-        self.plural_rtypes = self.realConnector.plural_rtypes
 
     def _scanModule(self, mod):
         return self.realConnector._scanModule(mod)
@@ -585,6 +622,3 @@ class FakeDataConnector(service.AsyncMultiService):
 
     def resultspec_from_jsonapi(self, args, entityType, is_collection):
         return self.realConnector.resultspec_from_jsonapi(args, entityType, is_collection)
-
-    def getResourceTypeForGraphQlType(self, type):
-        return self.realConnector.getResourceTypeForGraphQlType(type)

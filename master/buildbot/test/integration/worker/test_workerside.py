@@ -93,7 +93,7 @@ class TestingWorker(buildbot_worker.bot.Worker):
         self.bf.failedToGetPerspective = failedToGetPerspective
 
 
-class TestWorkerConnection(unittest.TestCase, TestReactorMixin):
+class TestWorkerConnection(TestReactorMixin, unittest.TestCase):
     """
     Test handling of connections from real worker code
 
@@ -112,7 +112,7 @@ class TestWorkerConnection(unittest.TestCase, TestReactorMixin):
     @defer.inlineCallbacks
     def setUp(self):
         self.setup_test_reactor()
-        self.master = fakemaster.make_master(self, wantMq=True, wantData=True, wantDb=True)
+        self.master = yield fakemaster.make_master(self, wantMq=True, wantData=True, wantDb=True)
         # set the worker port to a loopback address with unspecified
         # port
         self.pbmanager = self.master.pbmanager = PBManager()
@@ -142,18 +142,20 @@ class TestWorkerConnection(unittest.TestCase, TestReactorMixin):
 
         self.tmpdirs = set()
 
-    @defer.inlineCallbacks
-    def tearDown(self):
-        for tmp in self.tmpdirs:
-            if os.path.exists(tmp):
-                shutil.rmtree(tmp)
-        yield self.pbmanager.stopService()
-        yield self.botmaster.stopService()
-        yield self.workers.stopService()
+        @defer.inlineCallbacks
+        def cleanup():
+            for tmp in self.tmpdirs:
+                if os.path.exists(tmp):
+                    shutil.rmtree(tmp)
+            yield self.pbmanager.stopService()
+            yield self.botmaster.stopService()
+            yield self.workers.stopService()
 
-        # if the worker is still attached, wait for it to detach, too
-        if self.buildworker:
-            yield self.buildworker.waitForCompleteShutdown()
+            # if the worker is still attached, wait for it to detach, too
+            if self.buildworker:
+                yield self.buildworker.waitForCompleteShutdown()
+
+        self.addCleanup(cleanup)
 
     @defer.inlineCallbacks
     def addMasterSideWorker(

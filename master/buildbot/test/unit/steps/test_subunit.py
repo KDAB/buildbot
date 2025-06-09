@@ -58,9 +58,6 @@ class TestSubUnit(TestBuildStepMixin, TestReactorMixin, unittest.TestCase):
         self.setup_test_reactor()
         return self.setup_test_build_step()
 
-    def tearDown(self):
-        return self.tear_down_test_build_step()
-
     def test_empty(self):
         self.setup_step(subunit.SubunitShellCommand(command='test'))
         self.expect_commands(ExpectShell(workdir='wkdir', command="test").exit(0))
@@ -110,7 +107,7 @@ testtools.testresult.real._StringException:.*ValueError: invalid literal for int
 .*""",
                 re.MULTILINE | re.DOTALL,
             ),
-        )  # noqa pylint: disable=line-too-long
+        )
         return self.run_step()
 
     def test_multiple_errors(self):
@@ -142,7 +139,7 @@ testtools.testresult.real._StringException:.*ValueError: invalid literal for int
 .*""",
                 re.MULTILINE | re.DOTALL,
             ),
-        )  # noqa pylint: disable=line-too-long
+        )
         return self.run_step()
 
     def test_warnings(self):
@@ -174,5 +171,5 @@ ValueError: invalid literal for int\(\) with base 10: '_error2'
 """,
                 re.MULTILINE | re.DOTALL,
             ),
-        )  # noqa pylint: disable=line-too-long
+        )
         return self.run_step()

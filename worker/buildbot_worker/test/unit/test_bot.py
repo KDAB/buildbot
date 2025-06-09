@@ -12,10 +12,13 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 # Copyright Buildbot Team Members
+from __future__ import annotations
 
 import multiprocessing
 import os
 import shutil
+from typing import TYPE_CHECKING
+from typing import cast
 
 from twisted.internet import defer
 from twisted.internet import reactor
@@ -37,9 +40,18 @@ try:
 except ImportError:
     from unittest import mock
 
+if TYPE_CHECKING:
+    from typing import Any
+    from typing import Iterable
+    from typing import Sequence
+
+    from twisted.internet.interfaces import IReactorTime
+
+    from buildbot_worker.util.twisted import InlineCallbacksType
+
 
 class TestBot(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.basedir = os.path.abspath("basedir")
         if os.path.exists(self.basedir):
             shutil.rmtree(self.basedir)
@@ -56,34 +68,32 @@ ID_LIKE=generic
 PRETTY_NAME="Test 1.0 Generic"
 VERSION_ID="1"
 """)
-        self.real_bot = pb.BotPbLike(self.basedir, False)
+        self.real_bot = pb.BotPbLike(self.basedir)
         self.real_bot.setOsReleaseFile(f"{self.basedir}/test-release-file")
         self.real_bot.startService()
+        self.addCleanup(self.real_bot.stopService)
 
         self.bot = FakeRemote(self.real_bot)
 
-    @defer.inlineCallbacks
-    def tearDown(self):
-        if self.real_bot and self.real_bot.running:
-            yield self.real_bot.stopService()
+    def tearDown(self) -> None:
         if os.path.exists(self.basedir):
             shutil.rmtree(self.basedir)
 
     @defer.inlineCallbacks
-    def test_getCommands(self):
+    def test_getCommands(self) -> InlineCallbacksType[None]:
         cmds = yield self.bot.callRemote("getCommands")
 
         # just check that 'shell' is present..
         self.assertTrue('shell' in cmds)
 
     @defer.inlineCallbacks
-    def test_getVersion(self):
+    def test_getVersion(self) -> InlineCallbacksType[None]:
         vers = yield self.bot.callRemote("getVersion")
 
         self.assertEqual(vers, buildbot_worker.version)
 
     @defer.inlineCallbacks
-    def test_getWorkerInfo(self):
+    def test_getWorkerInfo(self) -> InlineCallbacksType[None]:
         infodir = os.path.join(self.basedir, "info")
         os.makedirs(infodir)
         with open(os.path.join(infodir, "admin"), "w") as f:
@@ -114,7 +124,7 @@ VERSION_ID="1"
         )
 
     @defer.inlineCallbacks
-    def test_getWorkerInfo_nodir(self):
+    def test_getWorkerInfo_nodir(self) -> InlineCallbacksType[None]:
         info = yield self.bot.callRemote("getWorkerInfo")
 
         info = {k: v for k, v in info.items() if not k.startswith("os_")}
@@ -133,7 +143,7 @@ VERSION_ID="1"
         )
 
     @defer.inlineCallbacks
-    def test_getWorkerInfo_decode_error(self):
+    def test_getWorkerInfo_decode_error(self) -> InlineCallbacksType[None]:
         infodir = os.path.join(self.basedir, "info")
         os.makedirs(infodir)
         with open(os.path.join(infodir, "admin"), "w") as f:
@@ -170,32 +180,32 @@ VERSION_ID="1"
             },
         )
 
-    def test_shutdown(self):
-        d1 = defer.Deferred()
+    def test_shutdown(self) -> defer.Deferred[Any]:
+        d1: defer.Deferred[None] = defer.Deferred()
         self.patch(reactor, "stop", lambda: d1.callback(None))
         d2 = self.bot.callRemote("shutdown")
         # don't return until both the shutdown method has returned, and
         # reactor.stop has been called
-        return defer.gatherResults([d1, d2])
+        return defer.gatherResults([d1, d2], consumeErrors=True)
 
 
 class FakeStep:
     "A fake master-side BuildStep that records its activities."
 
-    def __init__(self):
-        self.finished_d = defer.Deferred()
-        self.actions = []
+    def __init__(self) -> None:
+        self.finished_d: defer.Deferred[None] = defer.Deferred()
+        self.actions: list[list[Any]] = []
 
-    def wait_for_finish(self):
+    def wait_for_finish(self) -> defer.Deferred[None]:
         return self.finished_d
 
-    def remote_update(self, updates):
+    def remote_update(self, updates: Iterable[Sequence[Any]]) -> None:
         for update in updates:
             if 'elapsed' in update[0]:
                 update[0]['elapsed'] = 1
         self.actions.append(["update", updates])
 
-    def remote_complete(self, f):
+    def remote_complete(self, f: Any) -> None:
         self.actions.append(["complete", f])
         self.finished_d.callback(None)
 
@@ -206,14 +216,15 @@ class FakeBot(pb.BotPbLike):
 
 class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
     @defer.inlineCallbacks
-    def setUp(self):
+    def setUp(self) -> InlineCallbacksType[None]:  # type: ignore[override]
         self.basedir = os.path.abspath("basedir")
         if os.path.exists(self.basedir):
             shutil.rmtree(self.basedir)
         os.makedirs(self.basedir)
 
-        self.bot = FakeBot(self.basedir, False)
+        self.bot = FakeBot(self.basedir)
         self.bot.startService()
+        self.addCleanup(self.bot.stopService)
 
         # get a WorkerForBuilder object from the bot and wrap it as a fake
         # remote
@@ -222,33 +233,33 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
 
         self.setUpCommand()
 
-    @defer.inlineCallbacks
-    def tearDown(self):
-        self.tearDownCommand()
-
-        if self.bot and self.bot.running:
-            yield self.bot.stopService()
+    def tearDown(self) -> None:
         if os.path.exists(self.basedir):
             shutil.rmtree(self.basedir)
 
-    def test_print(self):
+    def test_print(self) -> defer.Deferred[Any]:
         return self.wfb.callRemote("print", "Hello, WorkerForBuilder.")
 
-    def test_printWithCommand(self):
-        self.wfb.original.command = Command("builder", "1", ["arg1", "arg2"])
+    def test_printWithCommand(self) -> defer.Deferred[Any]:
+        self.wfb.original.command = Command(  # type: ignore[attr-defined]
+            # FIXME: str passed to protocol_command?
+            "builder",  # type: ignore[arg-type]
+            "1",
+            ["arg1", "arg2"],
+        )
         return self.wfb.callRemote("print", "Hello again, WorkerForBuilder.")
 
-    def test_setMaster(self):
+    def test_setMaster(self) -> defer.Deferred[Any]:
         # not much to check here - what the WorkerForBuilder does with the
         # master is not part of the interface (and, in fact, it does very
         # little)
         return self.wfb.callRemote("setMaster", mock.Mock())
 
-    def test_startBuild(self):
+    def test_startBuild(self) -> defer.Deferred[Any]:
         return self.wfb.callRemote("startBuild")
 
     @defer.inlineCallbacks
-    def test_startCommand(self):
+    def test_startCommand(self) -> InlineCallbacksType[None]:
         # set up a fake step to receive updates
         st = FakeStep()
 
@@ -281,7 +292,7 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
         )
 
     @defer.inlineCallbacks
-    def test_startCommand_interruptCommand(self):
+    def test_startCommand_interruptCommand(self) -> InlineCallbacksType[None]:
         # set up a fake step to receive updates
         st = FakeStep()
 
@@ -302,8 +313,8 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
         )
 
         # wait a jiffy..
-        d = defer.Deferred()
-        reactor.callLater(0.01, d.callback, None)
+        d: defer.Deferred[None] = defer.Deferred()
+        cast("IReactorTime", reactor).callLater(0.01, d.callback, None)
         yield d
 
         # and then interrupt the step
@@ -321,7 +332,7 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
         )
 
     @defer.inlineCallbacks
-    def test_startCommand_failure(self):
+    def test_startCommand_failure(self) -> InlineCallbacksType[None]:
         # set up a fake step to receive updates
         st = FakeStep()
 
@@ -349,45 +360,48 @@ class TestWorkerForBuilder(command.CommandTestMixin, unittest.TestCase):
         self.assertTrue(isinstance(st.actions[1][1], failure.Failure))
 
     @defer.inlineCallbacks
-    def test_startCommand_missing_args(self):
+    def test_startCommand_missing_args(self) -> InlineCallbacksType[None]:
         # set up a fake step to receive updates
         st = FakeStep()
 
-        def do_start():
+        def do_start() -> defer.Deferred[Any]:
             return self.wfb.callRemote("startCommand", FakeRemote(st), "13", "shell", {})
 
-        yield self.assertFailure(do_start(), KeyError)
+        with self.assertRaises(KeyError):
+            yield do_start()
 
     @defer.inlineCallbacks
-    def test_startCommand_invalid_command(self):
+    def test_startCommand_invalid_command(self) -> InlineCallbacksType[None]:
         # set up a fake step to receive updates
         st = FakeStep()
 
-        def do_start():
+        def do_start() -> defer.Deferred[Any]:
             return self.wfb.callRemote("startCommand", FakeRemote(st), "13", "invalid command", {})
 
-        unknownCommand = yield self.assertFailure(do_start(), base.UnknownCommand)
+        with self.assertRaises(base.UnknownCommand) as e:
+            yield do_start()
         self.assertEqual(
-            str(unknownCommand), "(command 13): unrecognized WorkerCommand 'invalid command'"
+            e.exception.args,
+            ("(command 13): unrecognized WorkerCommand 'invalid command'",),
         )
 
 
 class TestBotFactory(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.bf = pb.BotFactory('mstr', 9010, 35, 200)
 
     # tests
 
-    def test_timers(self):
+    def test_timers(self) -> None:
         clock = self.bf._reactor = task.Clock()
 
         calls = []
 
-        def callRemote(method):
+        def callRemote(method: str) -> defer.Deferred[None]:
             calls.append(clock.seconds())
             self.assertEqual(method, 'keepalive')
             # simulate the response taking a few seconds
-            d = defer.Deferred()
+            d: defer.Deferred[None] = defer.Deferred()
             clock.callLater(5, d.callback, None)
             return d
 
@@ -400,12 +414,12 @@ class TestBotFactory(unittest.TestCase):
         clock.pump(1 for _ in range(150))
         self.assertEqual(calls, [35, 70])
 
-    def test_timers_exception(self):
+    def test_timers_exception(self) -> None:
         clock = self.bf._reactor = task.Clock()
 
         self.bf.perspective = mock.Mock()
 
-        def callRemote(method):
+        def callRemote(method: str) -> defer.Deferred[None]:
             return defer.fail(RuntimeError("oh noes"))
 
         self.bf.perspective.callRemote = callRemote
